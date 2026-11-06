@@ -2364,8 +2364,9 @@ void RasterizerVulkan::UpdateDynamicStates() {
     if (device.IsExtExtendedDynamicState3EnablesSupported()) {
         using namespace Tegra::Engines;
         // AMD Workaround: LogicOp incompatible with float render targets
-        if (device.GetDriverID() == VkDriverIdKHR::VK_DRIVER_ID_AMD_OPEN_SOURCE ||
-            device.GetDriverID() == VkDriverIdKHR::VK_DRIVER_ID_AMD_PROPRIETARY) {
+        if (!Device::AmdQuirkOff("logicop") &&
+            (device.GetDriverID() == VkDriverIdKHR::VK_DRIVER_ID_AMD_OPEN_SOURCE ||
+             device.GetDriverID() == VkDriverIdKHR::VK_DRIVER_ID_AMD_PROPRIETARY)) {
             const auto has_float = std::any_of(
                 regs.vertex_attrib_format.begin(), regs.vertex_attrib_format.end(),
                 [](const auto& attrib) {

@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -424,7 +425,13 @@ Id CasLoop(EmitContext& ctx, Operation operation, Id array_pointer, Id element_p
         }
         return is_u32 ? word : ctx.OpBitcast(value_type, word);
     }};
-    const Id expected{ctx.OpLoad(ctx.U32[1], expected_var)};
+    // Experiment: EDEN_NX2_CAS_RELOAD=1 reloads the word each attempt, as before Lichii #206.
+    static const bool cas_reload = [] {
+        const char* value = std::getenv("EDEN_NX2_CAS_RELOAD");
+        return value != nullptr && value[0] == '1';
+    }();
+    const Id expected{cas_reload ? ctx.OpLoad(ctx.U32[1], word_pointer)
+                                 : ctx.OpLoad(ctx.U32[1], expected_var)};
     const Id new_value{ctx.OpFunctionCall(value_type, cas_func, from_word(expected), op_b)};
     const Id new_word{packed_half ? ctx.OpPackHalf2x16(ctx.U32[1], new_value)
                       : is_u32    ? new_value

@@ -33,6 +33,17 @@
 
 namespace Vulkan {
 
+namespace {
+// Experiment: EDEN_NX2_COMPUTE_WAVE32=1 runs every compute shader at the guest warp size.
+bool ForceComputeWave32() {
+    static const bool forced = [] {
+        const char* value = std::getenv("EDEN_NX2_COMPUTE_WAVE32");
+        return value != nullptr && value[0] == '1';
+    }();
+    return forced;
+}
+} // Anonymous namespace
+
 using Shader::ImageBufferDescriptor;
 using Shader::Backend::SPIRV::RESCALING_LAYOUT_WORDS_OFFSET;
 using Tegra::Texture::TexturePair;
@@ -255,7 +266,8 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
         // compile SIMD32, which can spill a register-heavy kernel for minutes (Mario Kart World).
         const bool uses_warp_ops = info.uses_subgroup_vote || info.uses_subgroup_invocation_id ||
                                    info.uses_subgroup_shuffles || info.uses_subgroup_mask ||
-                                   info.uses_quad_shuffles || info.uses_fswzadd;
+                                   info.uses_quad_shuffles || info.uses_fswzadd ||
+                                   ForceComputeWave32();
         VkPipelineCreateFlags flags{};
         if (device.IsKhrPipelineExecutablePropertiesEnabled() && Settings::values.renderer_debug.GetValue()) {
             flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;

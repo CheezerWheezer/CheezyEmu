@@ -14,6 +14,7 @@
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include "common/container/unordered_map.h"
 #include <vector>
 
@@ -393,7 +394,22 @@ public:
 
     /// Returns storage alignment requirement.
     VkDeviceSize GetStorageBufferAlignment() const {
-        return properties.properties.limits.minStorageBufferOffsetAlignment;
+        // Experiment: EDEN_NX2_SSBO_ALIGN=<bytes> raises the alignment storage buffers are bound at.
+        static const VkDeviceSize forced = [] {
+            const char* value = std::getenv("EDEN_NX2_SSBO_ALIGN");
+            return value == nullptr ? VkDeviceSize{0} : std::strtoull(value, nullptr, 10);
+        }();
+        const VkDeviceSize limit = properties.properties.limits.minStorageBufferOffsetAlignment;
+        return forced > limit && (forced & (forced - 1)) == 0 ? forced : limit;
+    }
+
+    /// Experiment: EDEN_NX2_AMD_QUIRK_OFF=demote,gather,logicop turns off AMD-only workarounds.
+    static bool AmdQuirkOff(std::string_view quirk) {
+        static const std::string list = [] {
+            const char* value = std::getenv("EDEN_NX2_AMD_QUIRK_OFF");
+            return value == nullptr ? std::string{} : std::string{value};
+        }();
+        return list.find(quirk) != std::string::npos;
     }
 
     /// Returns the maximum range for storage buffers.

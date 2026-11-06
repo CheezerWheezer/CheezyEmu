@@ -547,13 +547,14 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
 
         .lower_left_origin_mode = false,
         .need_declared_frag_colors = false,
-        .need_gather_subpixel_offset = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
+        .need_gather_subpixel_offset = !Device::AmdQuirkOff("gather") &&
+                                       (driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
                                        driver_id == VK_DRIVER_ID_AMD_OPEN_SOURCE ||
                                        driver_id == VK_DRIVER_ID_MESA_RADV ||
                                        driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS ||
                                        driver_id == VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA ||
                                        driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ||
-                                       driver_id == VK_DRIVER_ID_MESA_TURNIP,
+                                       driver_id == VK_DRIVER_ID_MESA_TURNIP),
 
         .has_broken_spirv_clamp = driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS,
         .has_broken_spirv_position_input = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY,
@@ -589,9 +590,10 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
         .support_float64 = device.IsFloat64Supported(),
         .support_float16 = device.IsFloat16Supported(),
         .support_int64 = device.IsShaderInt64Supported(),
-        .needs_demote_reorder = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
-                                driver_id == VK_DRIVER_ID_AMD_OPEN_SOURCE ||
-                                driver_id == VK_DRIVER_ID_SAMSUNG_PROPRIETARY,
+        .needs_demote_reorder = !Device::AmdQuirkOff("demote") &&
+                                (driver_id == VK_DRIVER_ID_AMD_PROPRIETARY ||
+                                 driver_id == VK_DRIVER_ID_AMD_OPEN_SOURCE ||
+                                 driver_id == VK_DRIVER_ID_SAMSUNG_PROPRIETARY),
         .support_snorm_render_buffer = true,
         .support_viewport_index_layer = device.IsExtShaderViewportIndexLayerSupported(),
         .support_viewport_mask = device.IsNvViewportArray2Supported(),
