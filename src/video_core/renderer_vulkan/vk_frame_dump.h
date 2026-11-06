@@ -154,6 +154,9 @@ public:
     /// Returns true when copies were recorded, which ends the current render pass.
     bool BeginPass(const void* framebuffer, std::span<ImageView* const> colors);
     void NoteDraw(std::span<const u64> shader_hashes);
+    /// EDEN_NX2_FRAME_DUMP_PER_DRAW=<size>: records the pass targets before each draw when every
+    /// target is at most size x size. Returns true when a copy ended the render pass.
+    bool RecordBeforeDraw(std::span<const u64> shader_hashes);
     /// Captures the current pass; returns true when copies were recorded.
     bool EndPass();
     void CaptureDispatch(u64 shader_hash, std::span<ImageView* const> written);
@@ -207,6 +210,7 @@ private:
 
     std::optional<Target> MakeTarget(ImageView& view, u32 slot) const;
     static u32 TexelBytes(const Target& target);
+    static size_t TargetBytes(const Target& target);
     static int Decode(const Target& target, const u8* pixel, std::array<float, 4>& out);
     bool Record(const Target& target, std::string name, std::string tags);
     bool RecordSampled(const Sampled& texture, u32 index, std::string name, std::string tags);

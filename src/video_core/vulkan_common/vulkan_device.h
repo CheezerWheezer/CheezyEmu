@@ -403,6 +403,16 @@ public:
         return forced > limit && (forced & (forced - 1)) == 0 ? forced : limit;
     }
 
+    /// Experiment: EDEN_NX2_WARP_EXACT=1 runs every stage that allows it at the guest warp size
+    /// and emits shaders as for a 32-wide host (no wider-warp emulation), as on NVIDIA.
+    static bool WarpExact() {
+        static const bool on = [] {
+            const char* value = std::getenv("EDEN_NX2_WARP_EXACT");
+            return value != nullptr && value[0] == '1';
+        }();
+        return on;
+    }
+
     /// Experiment: EDEN_NX2_AMD_QUIRK_OFF=demote,gather,logicop turns off AMD-only workarounds.
     static bool AmdQuirkOff(std::string_view quirk) {
         static const std::string list = [] {

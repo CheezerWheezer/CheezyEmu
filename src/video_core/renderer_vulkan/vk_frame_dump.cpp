@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include "common/cityhash.h"
+#include "common/div_ceil.h"
 #include "common/logging.h"
 #include "common/settings.h"
 #include "common/stb.h"
@@ -300,7 +301,8 @@ std::optional<FrameDump::Target> FrameDump::MakeTarget(ImageView& view, u32 slot
     if (info.type == VideoCommon::ImageType::Buffer ||
         (type != SurfaceType::ColorTexture && type != SurfaceType::Depth &&
          type != SurfaceType::DepthStencil) ||
-        DefaultBlockWidth(info.format) != 1 || DefaultBlockHeight(info.format) != 1) {
+        (DefaultBlockWidth(info.format) != 1 &&
+         True(image->flags & VideoCommon::ImageFlagBits::Converted))) {
         return std::nullopt;
     }
     DepthEncoding depth_encoding = DepthEncoding::None;
@@ -344,6 +346,13 @@ std::optional<FrameDump::Target> FrameDump::MakeTarget(ImageView& view, u32 slot
         .msaa = info.num_samples > 1,
         .depth_encoding = depth_encoding,
     };
+}
+
+size_t FrameDump::TargetBytes(const Target& target) {
+    using namespace VideoCore::Surface;
+    return size_t{Common::DivCeil(target.width, DefaultBlockWidth(target.format))} *
+           Common::DivCeil(target.height, DefaultBlockHeight(target.format)) * target.depth *
+           TexelBytes(target);
 }
 
 u32 FrameDump::TexelBytes(const Target& target) {
@@ -519,6 +528,37 @@ void FrameDump::NoteDraw(std::span<const u64> shader_hashes) {
     }
 }
 
+bool FrameDump::RecordBeforeDraw(std::span<const u64> shader_hashes) {
+    static const u32 max_size = [] {
+        const char* value = std::getenv("EDEN_NX2_FRAME_DUMP_PER_DRAW");
+        return value == nullptr ? 0U : static_cast<u32>(std::strtoul(value, nullptr, 10));
+    }();
+    if (max_size == 0 || pass_targets.empty()) {
+        return false;
+    }
+    for (const Target& target : pass_targets) {
+        if (target.width > max_size || target.height > max_size) {
+            return false;
+        }
+    }
+    std::string shaders;
+    for (const u64 hash : shader_hashes) {
+        if (hash != 0) {
+            shaders += fmt::format("{}\"{:016x}\"", shaders.empty() ? "" : ",", hash);
+        }
+    }
+    const u32 draw = draws - 1;
+    bool recorded = false;
+    for (const Target& target : pass_targets) {
+        recorded |= Record(target,
+                           fmt::format("{:04}_pass{:03}_before_d{}_rt{}", sequence++, pass_index,
+                                       draw, target.slot),
+                           fmt::format(R"("kind":"draw","pass":{},"draw":{},"slot":{},"shaders":[{}])",
+                                       pass_index, draw, target.slot, shaders));
+    }
+    return recorded;
+}
+
 bool FrameDump::EndPass() {
     if (!pass_framebuffer) {
         return false;
@@ -573,7 +613,7 @@ bool FrameDump::Record(const Target& target, std::string name, std::string tags)
         Enqueue({.tags = fmt::format(R"({{"name":"{}",{},"skipped":"msaa"}})", name, tags)});
         return false;
     }
-    const size_t size = size_t{target.width} * target.height * target.depth * TexelBytes(target);
+    const size_t size = TargetBytes(target);
     if (recorded_bytes + size > SIZE_CAP) {
         truncated = true;
         return false;
@@ -687,8 +727,7 @@ void FrameDump::Drain() {
         readback.buffer.Invalidate();
         const Target& target = readback.target;
         const auto mapped = readback.buffer.Mapped().first(
-            readback.raw ? readback.bytes
-                         : size_t{target.width} * target.height * target.depth * TexelBytes(target));
+            readback.raw ? readback.bytes : TargetBytes(target));
         Enqueue({.target = target,
                  .name = std::move(readback.name),
                  .tags = std::move(readback.tags),

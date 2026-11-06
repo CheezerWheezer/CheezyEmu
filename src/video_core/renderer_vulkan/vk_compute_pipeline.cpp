@@ -40,7 +40,7 @@ bool ForceComputeWave32() {
         const char* value = std::getenv("EDEN_NX2_COMPUTE_WAVE32");
         return value != nullptr && value[0] == '1';
     }();
-    return forced;
+    return forced || Device::WarpExact();
 }
 } // Anonymous namespace
 
