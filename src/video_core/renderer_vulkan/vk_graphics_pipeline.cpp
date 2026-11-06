@@ -1220,27 +1220,39 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         .dynamicStateCount = static_cast<u32>(dynamic_states.size()),
         .pDynamicStates = dynamic_states.data(),
     };
-    [[maybe_unused]] const VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroup_size_ci{
+    const VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroup_size_ci{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
         .pNext = nullptr,
         .requiredSubgroupSize = GuestWarpSize,
     };
+    // Experiment: run graphics stages at the guest's 32-wide warp where the host defaults wider
+    // (AMD runs fragment shaders as wave64), as compute already does. EDEN_NX2_GRAPHICS_WAVE32=0/1.
+    static const int forced_wave32 = [] {
+        const char* value = std::getenv("EDEN_NX2_GRAPHICS_WAVE32");
+        return value == nullptr ? -1 : (value[0] == '0' ? 0 : 1);
+    }();
+    const bool graphics_wave32 =
+        device.IsWarpSizePotentiallyBiggerThanGuest() &&
+        (forced_wave32 >= 0 ? forced_wave32 == 1
+                            : device.GetDriverID() == VK_DRIVER_ID_AMD_PROPRIETARY ||
+                                  device.GetDriverID() == VK_DRIVER_ID_MESA_RADV);
     static_vector<VkPipelineShaderStageCreateInfo, 5> shader_stages;
     for (size_t stage = 0; stage < Maxwell::MaxShaderStage; ++stage) {
         if (!spv_modules[stage]) {
             continue;
         }
-        [[maybe_unused]] auto& stage_ci =
-            shader_stages.emplace_back(VkPipelineShaderStageCreateInfo{
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .stage = StageFlag(stage_infos[stage],
-                                   MaxwellToVK::ShaderStage(Shader::StageFromIndex(stage))),
-                .module = *spv_modules[stage],
-                .pName = "main",
-                .pSpecializationInfo = nullptr,
-            });
+        const VkShaderStageFlagBits stage_flag =
+            StageFlag(stage_infos[stage], MaxwellToVK::ShaderStage(Shader::StageFromIndex(stage)));
+        const bool force_warp = graphics_wave32 && device.IsGuestWarpSizeSupported(stage_flag);
+        shader_stages.emplace_back(VkPipelineShaderStageCreateInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext = force_warp ? &subgroup_size_ci : nullptr,
+            .flags = 0,
+            .stage = stage_flag,
+            .module = *spv_modules[stage],
+            .pName = "main",
+            .pSpecializationInfo = nullptr,
+        });
     }
     VkPipelineCreateFlags flags{};
     if (device.IsKhrPipelineExecutablePropertiesEnabled() && Settings::values.renderer_debug.GetValue()) {
