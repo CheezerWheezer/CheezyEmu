@@ -105,6 +105,7 @@ add_executable(tests
     video_core/spirv_builtin_capabilities.cpp
     video_core/spirv_mesh_topology.cpp
     video_core/spirv_min_max_denorms.cpp
+    video_core/spirv_nan_safe_min_max.cpp
     common/bit_field.cpp
     common/cityhash.cpp
     common/container_hash.cpp
@@ -195,7 +196,9 @@ endif()
 
 add_executable(update_checker_tests
     common/update_checker.cpp
-    ../frontend_common/update_checker.cpp)
+    common/update_installer.cpp
+    ../frontend_common/update_checker.cpp
+    ../frontend_common/update_installer.cpp)
 target_link_libraries(update_checker_tests PRIVATE common Catch2::Catch2WithMain)
 add_test(NAME update_checker_tests COMMAND update_checker_tests)
 
