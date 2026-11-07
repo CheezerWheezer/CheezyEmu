@@ -5,9 +5,10 @@ new feature: **compiled shaders are saved to disk**, so each shader is compiled 
 every time you start the game.
 
 It runs and behaves like normal Lichii on every other GPU. Built on
-[zortos293/Lichii](https://github.com/zortos293/Lichii).
+[zortos293/Lichii](https://github.com/zortos293/Lichii) **build 117** (`89440b2`), which also fixes
+the RDNA2 driver crash from cooperative matrices (zortos293/Lichii#657).
 
-## What's different from Lichii builds 95 / 115
+## What's different from Lichii (builds 95 / 115 / 117)
 
 ### New in this build
 
@@ -55,6 +56,10 @@ the main changes are:
 - Lichii #337 is reverted (cost ~9 fps in Castle Town).
 
 ### Also merged
+
+- **Updates come from this fork**: the built-in updater checks the repository that built the
+  release, so it offers AMD Superior updates instead of replacing it with upstream Lichii.
+- Linux build fix for `vk_flash_watch` (X11 `Success` macro clash).
 
 - [zortos293/Lichii#555](https://github.com/zortos293/Lichii/pull/555) by ne1i: shaders built by
   the "build every shader at boot" switch are no longer thrown away a few minutes later.
