@@ -18,6 +18,8 @@ add_executable(tests
     common/dkb_cpu_trace.cpp
     common/dkb_frame_trace.cpp
     audio_core/nx2_sysmix.cpp
+    audio_core/nx2_input_service.cpp
+    audio_core/audio_in.cpp
     audio_core/sysmix_sink.cpp
     audio_core/sysmix_test_context.h
     video_core/ampere_starfox_test10.cpp
@@ -25,6 +27,7 @@ add_executable(tests
     video_core/ampere_yoshi_compute.cpp
     video_core/texture_rect_descriptor.cpp
     audio_core/batch_decoder.cpp
+    audio_core/microphone.cpp
     audio_core/hardware_audio_codec.cpp
     core/gpu_dirty_memory.cpp
     core/memory_acquire.cpp
@@ -117,6 +120,7 @@ add_executable(tests
     common/ring_buffer.cpp
     common/scratch_buffer.cpp
     common/slot_vector.cpp
+    common/sparse_large_vector.cpp
     common/undefined_fix.cpp
     common/unique_function.cpp
     common/zstd_compression.cpp
@@ -148,6 +152,7 @@ add_executable(tests
     video_core/native_macro_fifo.cpp
     video_core/turing_macro_ram.cpp
     video_core/uniform_stream_reuse.cpp
+    video_core/usage_tracker.cpp
     video_core/shader_invalidation.cpp
     video_core/descriptor_table.cpp
     video_core/global_address_tracking.cpp
