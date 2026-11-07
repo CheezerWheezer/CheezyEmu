@@ -2588,6 +2588,8 @@ struct SvcTimeline {
         u64 arg;
         u64 arg2;
         u64 present;
+        u64 lr;
+        u64 pc;
         u32 imm;
         s32 core;
         u32 result;
@@ -2632,10 +2634,11 @@ struct SvcTimeline {
             return;
         }
         const auto path = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir) / "svc-timeline.csv";
-        std::string text = "in_ns,out_ns,thread,core,svc,arg,arg2,result,present\n";
+        std::string text = "in_ns,out_ns,thread,core,svc,arg,arg2,result,present,lr,pc\n";
         for (const Event& e : events) {
-            text += fmt::format("{},{},{},{},{:#x},{:#x},{:#x},{:#x},{}\n", e.in_ns, e.out_ns,
-                                e.thread, e.core, e.imm, e.arg, e.arg2, e.result, e.present);
+            text += fmt::format("{},{},{},{},{:#x},{:#x},{:#x},{:#x},{},{:#x},{:#x}\n", e.in_ns,
+                                e.out_ns, e.thread, e.core, e.imm, e.arg, e.arg2, e.result,
+                                e.present, e.lr, e.pc);
         }
         if (std::FILE* file = std::fopen(path.string().c_str(), "wb")) {
             std::fwrite(text.data(), 1, text.size(), file);
@@ -2730,6 +2733,12 @@ void Call(Core::System& system, u32 imm) {
         event.core = GetCurrentThread(kernel).GetActiveCore();
         event.imm = imm;
         event.present = presents;
+        {
+            Svc::ThreadContext context{};
+            process.GetArmInterface(kernel.CurrentPhysicalCoreIndex())->GetContext(context);
+            event.lr = context.lr;
+            event.pc = context.pc;
+        }
         // WaitSynchronization: the first handle and the count; the rest: the first two arguments.
         if (imm == 0x18 && static_cast<s32>(GetArg64(args, 2)) > 0) {
             event.arg = process.GetMemory().Read32(GetArg64(args, 1));
