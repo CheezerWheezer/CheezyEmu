@@ -134,6 +134,12 @@ public:
     virtual RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) = 0;
 
     /// Whether reports in the range wait for host query results not yet in guest memory.
+    /// Whether the query cache holds a report in the region; callable from the split's front.
+    [[nodiscard]] virtual bool HasCachedQueries([[maybe_unused]] DAddr addr,
+                                                [[maybe_unused]] u64 size) {
+        return true;
+    }
+
     [[nodiscard]] virtual bool HasPendingQueries([[maybe_unused]] DAddr addr,
                                                  [[maybe_unused]] u64 size) {
         return false;

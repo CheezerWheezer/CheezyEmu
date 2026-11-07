@@ -86,6 +86,18 @@ public:
         return mask;
     }
 
+    /// Whether the cache still holds a report in the region (written out or not). Any thread: it
+    /// only takes the cache's lock. A report writes up to 16 bytes from its address.
+    [[nodiscard]] bool HasCachedQueries(VAddr addr, size_t size) {
+        bool found = false;
+        const VAddr begin = addr >= 12 ? addr - 12 : 0;
+        IterateCache<false>(begin, size + (addr - begin), [&found](QueryLocation) {
+            found = true;
+            return true;
+        });
+        return found;
+    }
+
     /// Return true when a CPU region is modified from the GPU
     [[nodiscard]] bool IsRegionGpuModified(VAddr addr, size_t size) {
         bool result = false;

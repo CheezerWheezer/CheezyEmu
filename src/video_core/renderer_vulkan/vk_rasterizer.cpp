@@ -1517,6 +1517,13 @@ void RasterizerVulkan::ResetCounter(VideoCommon::QueryType type) {
 void RasterizerVulkan::Query(GPUVAddr gpu_addr, VideoCommon::QueryType type,
                              VideoCommon::QueryPropertiesFlags flags, u32 payload, u32 subreport) {
     query_cache.CounterReport(gpu_addr, type, flags, payload, subreport);
+    // The split's front reads reports with MME DMA: it flushes the pages left pending here.
+    if (VideoCommon::GpuSplit::Get().Active()) {
+        if (const auto report = gpu_memory ? gpu_memory->GpuToCpuAddress(gpu_addr) : std::nullopt;
+            report && query_cache.IsRegionGpuModified(*report, 16)) {
+            Tegra::Nx2MarkReportPages(*report, 16);
+        }
+    }
 }
 
 void RasterizerVulkan::BindGraphicsUniformBuffer(size_t stage, u32 index, GPUVAddr gpu_addr,
@@ -1610,6 +1617,10 @@ bool RasterizerVulkan::MustFlushRegion(DAddr addr, u64 size, VideoCommon::CacheT
 
 bool RasterizerVulkan::HasPendingQueries(DAddr addr, u64 size) {
     return query_cache.IsRegionGpuModified(addr, size);
+}
+
+bool RasterizerVulkan::HasCachedQueries(DAddr addr, u64 size) {
+    return query_cache.HasCachedQueries(addr, size);
 }
 
 VideoCore::RasterizerDownloadArea RasterizerVulkan::GetFlushArea(DAddr addr, u64 size) {
@@ -1796,18 +1807,29 @@ void RasterizerVulkan::FlushQueryResults(DAddr addr, u64 size) {
     // Below High GPU accuracy a fence runs its own callback at once, so wait for an operation
     // queued behind the pending report writes instead. On the split's back the fence's
     // submission may be deferred, and the fencing thread would wait for this thread to submit it.
-    std::mutex wait_mutex;
-    std::condition_variable wait_cv;
-    bool written{};
-    fence_manager.SyncOperation([&] {
-        std::scoped_lock lock{wait_mutex};
-        written = true;
-        wait_cv.notify_all();
+    // Shared with the callback: it may run after a timed-out wait returned.
+    struct WaitState {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool written{};
+    };
+    const auto state = std::make_shared<WaitState>();
+    fence_manager.SyncOperation([state] {
+        std::scoped_lock lock{state->mutex};
+        state->written = true;
+        state->cv.notify_all();
     });
     fence_manager.SignalFence([] {});
     scheduler.FlushDeferred();
-    std::unique_lock lock{wait_mutex};
-    wait_cv.wait(lock, [&written] { return written; });
+    std::unique_lock lock{state->mutex};
+    if (!state->cv.wait_for(lock, std::chrono::seconds{2}, [&state] { return state->written; })) {
+        static std::atomic<bool> warned{};
+        if (!warned.exchange(true, std::memory_order_relaxed)) {
+            LOG_WARNING(Render_Vulkan,
+                        "Query results at {:#x} not written after 2 s: reading them as they are",
+                        addr);
+        }
+    }
 }
 
 void RasterizerVulkan::FlushAndInvalidateRegion(DAddr addr, u64 size,

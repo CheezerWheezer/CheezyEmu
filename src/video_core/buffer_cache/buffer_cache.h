@@ -113,7 +113,6 @@ void BufferCache<P>::TickFrame() {
         return;
     }
     runtime.TickFrame(slot_buffers);
-    native_indirect_uniforms_this_frame.clear();
     if (frame_tick % 600 == 0 && !uploaded_buffer_ranges.empty()) {
         for (const auto& [address, size] : uploaded_buffer_ranges) {
             device_memory.HintCold(address, size);
@@ -1403,59 +1402,62 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
     }();
     // Native programs keep tables next to their code in uniform banks read with indirect offsets
     // (Splatoon Raiders: the dialogue box corners in c1). Writes to that memory can go unnoticed by
-    // the memory tracker, leaving stale host contents, so upload such a bank again on every bind:
-    // once per frame left Ocarina of Time's per-draw material data stale for a frame now and then
-    // (white flashes). EDEN_NX2_BANK_REUPLOAD: 0 off, 1 once per frame, 2 every bind of a 64 KiB
-    // bank whose words changed (the default), 3 the same for any native bank (to test banks of
-    // other sizes), 4 every bind of a 64 KiB bank unconditionally.
-    static const char bank_mode = [] {
-        const char* value = std::getenv("EDEN_NX2_BANK_REUPLOAD");
-        return value != nullptr ? value[0] : '2';
-    }();
-    const bool native_bank = has_host_buffer && size != 0 && gpu_memory != nullptr &&
-                             gpu_memory->UsesNativeTiling() &&
-                             !memory_tracker.IsRegionGpuModified(device_addr, size);
-    const bool every_bind =
-        bank_mode == '2' || bank_mode == '3' || bank_mode == '4' || Nx2Perf::Verify();
-    if (bank_mode != '0' && native_bank &&
-        (bank_mode == '3' || (*channel_state->uniform_buffer_sizes)[stage][index] == 0x10000) &&
-        (every_bind || native_indirect_uniforms_this_frame.insert(device_addr).second)) {
+    // the memory tracker, leaving stale host contents, so check such a bank on every bind: games
+    // rewrite per-draw data between draws, and checking once per frame left it stale for a frame
+    // now and then (white flashes in Ocarina of Time, Eglantine 031e07436c).
+    if (has_host_buffer && (*channel_state->uniform_buffer_sizes)[stage][index] == 0x10000 &&
+        size != 0 && gpu_memory != nullptr && gpu_memory->UsesNativeTiling() &&
+        !memory_tracker.IsRegionGpuModified(device_addr, size)) {
         // The bank size is only an upper limit: stop at the end of the mapped memory.
         u64 mapped_size = 0;
         while (mapped_size < size &&
                device_memory.template GetPointer<u8>(device_addr + mapped_size) != nullptr) {
             mapped_size += Core::DEVICE_PAGESIZE - ((device_addr + mapped_size) & Core::DEVICE_PAGEMASK);
         }
-        const u64 upload_size = (std::min<u64>)(mapped_size, size);
-        // Every upload ends the render pass (the bank is in use by earlier draws), ~20,000 times a
-        // second in Ocarina: only upload when the words changed since the last upload.
-        const bool changed = [&] {
-            if (Nx2Perf::Verify() || bank_mode == '4') {
-                return true;
+        const u64 check_size = (std::min<u64>)(mapped_size, size);
+        // Banks slide through larger buffers, a new address per draw: compare each page with
+        // its last contents and mark only the pages that changed.
+        if (native_indirect_page_snapshots.size() >= 16384) {
+            native_indirect_page_snapshots.clear();
+        }
+        const DAddr first_page = Common::AlignDown(device_addr, Core::DEVICE_PAGESIZE);
+        const DAddr end = device_addr + check_size;
+        for (DAddr page = first_page; page < end; page += Core::DEVICE_PAGESIZE) {
+            const u8* const guest = device_memory.template GetPointer<u8>(page);
+            if (guest == nullptr) {
+                continue;
             }
-            std::vector<u8>& shadow = native_bank_shadows[device_addr];
-            bool differs = shadow.size() != upload_size;
-            shadow.resize(upload_size);
-            for (u64 offset = 0; offset < upload_size;) {
-                const u64 chunk = (std::min<u64>)(
-                    upload_size - offset,
-                    Core::DEVICE_PAGESIZE - ((device_addr + offset) & Core::DEVICE_PAGEMASK));
-                const u8* const guest = device_memory.template GetPointer<u8>(device_addr + offset);
-                if (differs || std::memcmp(shadow.data() + offset, guest, chunk) != 0) {
-                    std::memcpy(shadow.data() + offset, guest, chunk);
-                    differs = true;
+            auto [it, inserted] = native_indirect_page_snapshots.try_emplace(page);
+            const bool same =
+                !inserted && std::memcmp(it->second.data(), guest, Core::DEVICE_PAGESIZE) == 0;
+            // EDEN_NX2_MME_DMA_STATS: how many checked pages had changed.
+            if (static const bool stats = std::getenv("EDEN_NX2_MME_DMA_STATS") != nullptr;
+                stats) {
+                static std::array<u64, 3> counts{};
+                static std::array<u64, 4> changed_state{};
+                ++counts[same ? 0 : (inserted ? 1 : 2)];
+                if (!same && !inserted) {
+                    // Did the tracker already know (CPU-modified), or was the page clean, and
+                    // was it GPU-modified?
+                    const bool known =
+                        memory_tracker.IsRegionCpuModified(page, Core::DEVICE_PAGESIZE);
+                    const bool gpu =
+                        memory_tracker.IsRegionGpuModified(page, Core::DEVICE_PAGESIZE);
+                    ++changed_state[(known ? 1 : 0) | (gpu ? 2 : 0)];
                 }
-                offset += chunk;
+                if (((counts[0] + counts[1] + counts[2]) & 0x3ffff) == 0) {
+                    LOG_INFO(HW_GPU,
+                             "Native bank pages checked: same {}, new {}, changed {} (tracker "
+                             "clean {}, CPU-modified {}, GPU {}, both {})",
+                             counts[0], counts[1], counts[2], changed_state[0],
+                             changed_state[1], changed_state[2], changed_state[3]);
+                }
             }
-            return differs;
-        }();
-        if (upload_size != 0 && changed) {
-            std::array<BufferCopy, 1> copies{BufferCopy{
-                .src_offset = 0,
-                .dst_offset = buffer.Offset(device_addr),
-                .size = upload_size,
-            }};
-            UploadMemory(buffer, upload_size, upload_size, copies);
+            if (same) {
+                continue;
+            }
+            std::memcpy(it->second.data(), guest, Core::DEVICE_PAGESIZE);
+            memory_tracker.MarkRegionAsCpuModified(page, Core::DEVICE_PAGESIZE);
         }
     }
     const bool use_fast_buffer = needs_alignment_stream
