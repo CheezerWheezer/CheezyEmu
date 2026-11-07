@@ -8,6 +8,10 @@
 #include <chrono>
 #include <thread>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 #include "common/assert.h"
 #include "common/dkb_cpu_trace.h"
 #include "common/scope_exit.h"
@@ -90,6 +94,10 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
         const Common::DkbCpuTrace::Registration cpu_trace{Common::DkbCpuTrace::Role::GpuCommand};
         Common::SetCurrentThreadName("GPU");
         VideoCommon::GpuSplit::MarkGpuThread();
+#ifdef __linux__
+        // The pending-channel polls below sleep 50 us; the default timer slack adds up to 50 more.
+        prctl(PR_SET_TIMERSLACK, 1UL, 0, 0, 0);
+#endif
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Critical);
         Common::SetCurrentThreadToPerformanceCores();
         if (Settings::values.pin_gpu_threads.GetValue()) {
@@ -129,6 +137,8 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                     const auto waited = std::chrono::steady_clock::now() - last_progress;
                     if (waited < std::chrono::microseconds{500}) {
                         std::this_thread::yield();
+                    } else if (waited < std::chrono::seconds{2}) {
+                        std::this_thread::sleep_for(std::chrono::microseconds{50});
                     } else {
                         // A GPU release that meets a suspended acquire wakes this at once;
                         // CPU releases are still found by polling.
