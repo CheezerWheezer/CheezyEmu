@@ -230,9 +230,10 @@ bool DmaPusher::Step() {
         // Recheck even when the wait returns at once: a writer may have finished (and marked the
         // pages) since the check above.
         if (!gpu_written && VideoCommon::GpuSplit::Get().Active()) {
-            VideoCommon::GpuSplit::Get().WaitForWriters();
+            const bool blocked = VideoCommon::GpuSplit::Get().WaitForWriters();
             gpu_written =
                 IsGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
+            Nx2CmdPageDiag::CountWriterCheck(blocked, gpu_written);
         }
         // Resume and GPU-written entries need live words, even after a flush cleared dirty state.
         const bool submitted = (command_list.snapshot_suspensions & 1) == 0 &&

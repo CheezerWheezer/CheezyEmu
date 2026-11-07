@@ -203,12 +203,18 @@ def run(a):
         summary_scene = load_save(a.slot)
     time.sleep(a.settle)
     samples = [round(call("status", {"fps_window_ms": 5000}, timeout=30)["fps"], 2) for _ in range(a.measure)]
+    if a.frametimes:
+        ft = call("frame_times", {"seconds": a.frametimes}, timeout=a.frametimes + 30)
+        frame_stats = {k: round(ft[k], 2) for k in ("fps", "p50_ms", "p90_ms", "p99_ms", "max_ms")}
+        frame_stats["stutters"] = ft["stutters"]
     status = call("status", {"fps_window_ms": 0}, timeout=10)
     call("screenshot", out=os.path.join(d, "shot.png"), timeout=30)
     summary = {"scene_diff": None if summary_scene is None else round(summary_scene, 1), "name": a.name, "time": datetime.datetime.now().isoformat(timespec="seconds"),
                "rev": git_rev(), "build": status.get("build"), "env": env, "fps": samples,
                "fps_mean": round(statistics.mean(samples), 2), "fps_min": min(samples),
                "fps_max": max(samples)}
+    if a.frametimes:
+        summary["frames"] = frame_stats
     if a.profile:
         lines = call("log_tail", {"contains": "per second", "limit": 4}, timeout=10)["lines"]
         summary["profile"] = lines
@@ -238,6 +244,8 @@ def run(a):
             f.write("time\tname\trev\tmean\tmin\tmax\tenv\n")
         extra = " ".join(f"{k}={v}" for k, v in env.items() if k != "EDEN_NX2_DEBUG_SERVER")
         extra += f" affinity={a.affinity}" if a.affinity else ""
+        if a.frametimes:
+            extra += " p99={p99_ms}ms max={max_ms}ms stutters={stutters}".format(**frame_stats)
         f.write(f"{summary['time']}\t{a.name}\t{summary['rev']}\t{summary['fps_mean']}\t"
                 f"{summary['fps_min']}\t{summary['fps_max']}\t{extra}\n")
     print(json.dumps({k: v for k, v in summary.items() if k != "profile"}, indent=1))
@@ -257,6 +265,8 @@ def main():
                    help="save the log lines containing this text (e.g. 'DKB gpu_frame'), repeatable")
     r.add_argument("--measure", type=int, default=6, help="number of 5 s fps windows")
     r.add_argument("--settle", type=float, default=10)
+    r.add_argument("--frametimes", type=float, default=0,
+                   help="seconds of present intervals to summarise (p50/p90/p99/max, stutters)")
     r.add_argument("--exe", default=os.environ.get("LICHII_EXE", "lichii.exe"))
     r.add_argument("--affinity", help="hex CPU mask for the process (e.g. ffff = the first CCD of a 16-core Ryzen, SMT included)")
     r.add_argument("--slot", type=int, default=int(os.environ.get("OOT_SLOT", "1")),
