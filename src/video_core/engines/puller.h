@@ -49,6 +49,10 @@ namespace Tegra::Engines {
 
 class Puller final {
 public:
+    /// A semaphore release this channel just queued for the split's back writes `payload`
+    /// (puller releases, and native compute releases through KeplerCompute's front).
+    void NoteRelease(GPUVAddr address, u32 payload);
+
     struct MethodCall {
         u32 method{};
         u32 argument{};
@@ -160,7 +164,6 @@ private:
     std::unordered_map<GPUVAddr, QueuedRelease> queued_releases;
     /// Whether no queued write or undownloaded GPU write can change the semaphore at `address`.
     bool StableSemaphore(DmaPusher& dma_pusher, GPUVAddr address);
-    void NoteRelease(GPUVAddr address, u32 payload);
     /// The payload of this channel's queued release at `address`, if it is still queued and is
     /// the last write to it before what is sent now.
     std::optional<u32> OwnQueuedRelease(DmaPusher& dma_pusher, GPUVAddr address);

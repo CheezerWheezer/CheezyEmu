@@ -27,6 +27,7 @@
 #include "video_core/nx2.h"
 #include "video_core/engines/fermi_2d.h"
 #include "video_core/engines/kepler_compute.h"
+#include "video_core/engines/puller.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/game_dlss_status.h"
 #include "video_core/memory_manager.h"
@@ -1199,6 +1200,19 @@ void KeplerCompute::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit&
     }
     FrontApply(fs, method, argument);
     split.Method(this, method, argument, is_last_call, segment);
+    if (method == 0x6c3) {
+        FrontNoteRelease(fs, argument);
+    }
+}
+
+void KeplerCompute::FrontNoteRelease(const FrontState& fs, u32 control) const {
+    // ProcessNativeReportSemaphore: operation 0 without reduction writes the payload.
+    if (front_puller == nullptr || (control & 3) != 0 || ((control >> 3) & 1) != 0) {
+        return;
+    }
+    const GPUVAddr address =
+        (GPUVAddr{fs.registers[0x6c0] & 0x1ffffff} << 32) | fs.registers[0x6c1];
+    front_puller->NoteRelease(address, fs.registers[0x6c2]);
 }
 
 void KeplerCompute::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split,
@@ -1217,6 +1231,9 @@ void KeplerCompute::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuS
         }
     }
     split.MultiMethod(this, method, base_start, amount, methods_pending, segment);
+    if (method == 0x6c3 && amount != 0) {
+        FrontNoteRelease(fs, base_start[amount - 1]);
+    }
 }
 
 void KeplerCompute::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split,
@@ -1238,6 +1255,9 @@ void KeplerCompute::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& s
         }
         FrontApply(fs, address, value);
         split.MacroWrite(this, address, value);
+        if (address == 0x6c3) {
+            FrontNoteRelease(fs, value);
+        }
         return true;
     };
 #ifdef ARCHITECTURE_x86_64

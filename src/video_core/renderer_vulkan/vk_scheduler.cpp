@@ -45,17 +45,22 @@ std::atomic<u64> g_profile_finish_ns{};
 std::atomic<u64> g_profile_window_start{};
 std::mutex g_profile_end_mutex;
 std::map<std::string, u64> g_profile_ends;
+std::map<std::string, u64> g_profile_flushes;
 
-void CountRenderPassEnd(const char* file, u32 line) {
+void CountSite(std::map<std::string, u64>& sites, const char* file, u32 line) {
     if (!VideoCommon::Nx2Profile::Enabled()) {
         return;
     }
     std::string_view name{file};
-    if (const auto slash = name.find_last_of('/'); slash != std::string_view::npos) {
+    if (const auto slash = name.find_last_of("/\\"); slash != std::string_view::npos) {
         name.remove_prefix(slash + 1);
     }
     std::scoped_lock lock{g_profile_end_mutex};
-    ++g_profile_ends[fmt::format("{}:{}", name, line)];
+    ++sites[fmt::format("{}:{}", name, line)];
+}
+
+void CountRenderPassEnd(const char* file, u32 line) {
+    CountSite(g_profile_ends, file, line);
 }
 
 void ReportSubmitCounts() {
@@ -77,19 +82,23 @@ void ReportSubmitCounts() {
              static_cast<double>(g_profile_renderpasses.exchange(0)) / seconds,
              static_cast<double>(g_profile_finishes.exchange(0)) / seconds,
              static_cast<double>(g_profile_finish_ns.exchange(0)) / 1e6 / seconds);
-    std::vector<std::pair<u64, std::string>> ends;
-    {
-        std::scoped_lock lock{g_profile_end_mutex};
-        for (const auto& [site, count] : g_profile_ends) {
-            ends.emplace_back(count, site);
+    const auto report = [seconds](std::map<std::string, u64>& sites, const char* what) {
+        std::vector<std::pair<u64, std::string>> sorted;
+        {
+            std::scoped_lock lock{g_profile_end_mutex};
+            for (const auto& [site, count] : sites) {
+                sorted.emplace_back(count, site);
+            }
+            sites.clear();
         }
-        g_profile_ends.clear();
-    }
-    std::sort(ends.rbegin(), ends.rend());
-    for (size_t i = 0; i < ends.size() && i < 16; ++i) {
-        LOG_INFO(Render_Vulkan, "Render pass ends {:.0f}/s at {}",
-                 static_cast<double>(ends[i].first) / seconds, ends[i].second);
-    }
+        std::sort(sorted.rbegin(), sorted.rend());
+        for (size_t i = 0; i < sorted.size() && i < 16; ++i) {
+            LOG_INFO(Render_Vulkan, "{} {:.0f}/s at {}", what,
+                     static_cast<double>(sorted[i].first) / seconds, sorted[i].second);
+        }
+    };
+    report(g_profile_ends, "Render pass ends");
+    report(g_profile_flushes, "Submits");
 }
 }
 
@@ -114,6 +123,7 @@ Scheduler::Scheduler(const Device& device_, StateTracker& state_tracker_)
       command_pool{std::make_unique<CommandPool>(*master_semaphore, device)} {
 
     if (Common::DkbFrameTrace::Enabled()) {
+        vk::CmdTrace::g_on = true;
         const auto physical = device.GetPhysical();
         trace_timestamp_bits =
             physical.GetQueueFamilyProperties()[device.GetGraphicsFamily()].timestampValidBits;
@@ -165,6 +175,8 @@ Scheduler::~Scheduler() {
 
 u64 Scheduler::Flush(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore,
                      std::source_location location) {
+    CountSite(g_profile_flushes, flush_pending ? "deferred" : location.file_name(),
+              flush_pending ? 0 : location.line());
     if (state.renderpass) {
         CountRenderPassEnd(location.file_name(), location.line());
     }
@@ -655,6 +667,7 @@ void Scheduler::ReportWorkTimes() {
     double gap_ms{};
     u32 gaps{};
     std::map<std::string, std::pair<double, u32>> gaps_before;
+    std::map<std::string, std::pair<double, u32>> gaps_by_ops;
     for (u32 i = 1; i < count; ++i) {
         const WorkTrace& previous = trace_work_items[i - 1];
         const WorkTrace& item = trace_work_items[i];
@@ -674,6 +687,16 @@ void Scheduler::ReportWorkTimes() {
         auto& before = gaps_before[shader_name(item)];
         before.first += ms;
         ++before.second;
+        std::string ops;
+        for (u32 op = 0; op < vk::CmdTrace::Count; ++op) {
+            if (item.ops_before[op] != 0) {
+                ops += fmt::format("{}{}{}", ops.empty() ? "" : "+", vk::CmdTrace::op_names[op],
+                                   item.ops_before[op]);
+            }
+        }
+        auto& by_ops = gaps_by_ops[ops.empty() ? "none" : ops];
+        by_ops.first += ms;
+        ++by_ops.second;
     }
     std::vector<std::pair<double, std::string>> slow_gaps;
     for (const auto& [name, totals] : gaps_before) {
@@ -687,6 +710,18 @@ void Scheduler::ReportWorkTimes() {
     }
     LOG_INFO(Render_Vulkan, "DKB gpu_gaps renderer_frame={} gaps={} gap_sum_ms={:.3f} before:{}",
              trace_sample_frame, gaps, gap_ms, gap_text);
+    std::vector<std::pair<double, std::string>> op_gaps;
+    for (const auto& [ops, totals] : gaps_by_ops) {
+        op_gaps.emplace_back(totals.first,
+                             fmt::format("{}={:.3f}ms/{}x", ops, totals.first, totals.second));
+    }
+    std::ranges::sort(op_gaps, std::greater<>{});
+    std::string op_text;
+    for (size_t i = 0; i < op_gaps.size() && i < 12; ++i) {
+        op_text += ' ' + op_gaps[i].second;
+    }
+    LOG_INFO(Render_Vulkan, "DKB gpu_gap_ops renderer_frame={} by commands between:{}",
+             trace_sample_frame, op_text);
     for (u32 i = 0; i < count; ++i) {
         if (results[i * 2].available == 0 || results[i * 2 + 1].available == 0) {
             continue;

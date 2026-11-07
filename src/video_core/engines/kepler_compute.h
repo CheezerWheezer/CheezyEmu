@@ -43,6 +43,8 @@ class RasterizerInterface;
 
 namespace Tegra::Engines {
 
+class Puller;
+
 /// Draws left to trace after an upscale fallback (debug aid).
 extern std::atomic<u32> g_nx2_trace_draws_after_upscale;
 
@@ -75,6 +77,8 @@ public:
 
     /// The channel's MME data RAM, shared with its 3D engine.
     void SetNativeDataRam(std::array<u32, 0xc00>* data_ram) { native_data_ram = data_ram; }
+    /// The channel's puller, told about the semaphore releases the split's front sends.
+    void SetFrontPuller(Puller* puller) { front_puller = puller; }
     void SetNativeMacroMode(MacroEngine* shared_macro, std::span<u32> positions, NativeMacroContext* context = nullptr) {
         if (native_context != context) native_compute_uploaded = false;
         native_context = context;
@@ -272,6 +276,10 @@ private:
     MacroEngine& FrontMacroEngine(FrontState& state);
     std::span<u32> FrontMacroPositions(FrontState& state);
     void FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split, FrontState& state);
+    /// SET_REPORT_SEMAPHORE_D sent from the front: a plain release is noted to the puller, so an
+    /// acquire it meets while still queued needs no wait (Frizti/Lichii 9932d05c4a).
+    void FrontNoteRelease(const FrontState& state, u32 control) const;
+    Puller* front_puller{};
     std::unique_ptr<FrontState> front;
     bool front_macros{}; ///< The front owns the macro code and bindings (the back skips them)
 

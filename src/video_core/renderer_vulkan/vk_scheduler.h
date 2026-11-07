@@ -92,10 +92,12 @@ public:
             return;
         }
         const u32 query = trace_work_count * 2;
-        trace_work_items[trace_work_count++] = {hash, fragment_hash, size, trace_gpu_count};
+        trace_work_items[trace_work_count++] = {hash, fragment_hash, size, trace_gpu_count,
+                                                vk::CmdTrace::g_ops};
         cmdbuf.WriteTimestamp(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, *trace_work_pool, query);
         work();
         cmdbuf.WriteTimestamp(VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, *trace_work_pool, query + 1);
+        vk::CmdTrace::g_ops = {};
     }
 
     /// Sends currently recorded work to the worker thread.
@@ -476,6 +478,8 @@ private:
         std::array<u32, 3> size{};
         /// Which measured submission it is in: gaps are only counted within one.
         u32 submission{};
+        /// Commands recorded since the previous timed item (vk::CmdTrace).
+        std::array<u16, vk::CmdTrace::Count> ops_before{};
     };
     vk::QueryPool trace_work_pool;
     std::vector<WorkTrace> trace_work_items;
