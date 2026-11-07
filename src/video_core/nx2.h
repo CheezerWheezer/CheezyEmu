@@ -22,6 +22,16 @@ namespace Tegra {
 // Ampere classes and the Turing+ macro ISA, which Eden's Maxwell engines don't implement.
 inline std::atomic<bool> g_nx2_ampere{false};
 
+// Counts the points at which guest memory a later draw reads may have changed without the memory
+// tracker seeing it: the guest submitting command lists, semaphore acquires the GPU passes, and
+// inline-to-memory uploads. Checks of such memory need repeating only when it moved
+// (BufferCache::BindHostGraphicsUniformBuffer).
+inline std::atomic<u64> g_nx2_guest_sync_epoch{1};
+
+inline void Nx2BumpGuestSyncEpoch() {
+    g_nx2_guest_sync_epoch.fetch_add(1, std::memory_order_acq_rel);
+}
+
 // Device pages the GPU has written through the buffer cache (shader stores, copies), ever. Title 1
 // runs command lists the GPU writes each frame (20-byte entries its culling fills in); read
 // without a flush they are stale and the draws behind them (trees) go missing. The bits never

@@ -12,6 +12,7 @@
 #include "core/core.h"
 #include "video_core/control/channel_state.h"
 #include "video_core/control/scheduler.h"
+#include "video_core/nx2.h"
 #include "video_core/gpu.h"
 #include "video_core/gpu_split.h"
 
@@ -32,6 +33,7 @@ void Scheduler::BindChannel(GPU& gpu, s32 bind_id) {
 }
 
 void Scheduler::Push(GPU& gpu, s32 channel, CommandList&& entries) {
+    Tegra::Nx2BumpGuestSyncEpoch();
     std::shared_ptr<ChannelState> channel_state;
     {
         std::unique_lock lk(scheduling_guard);
