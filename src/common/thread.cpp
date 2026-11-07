@@ -492,6 +492,9 @@ const WindowsCpuSets& CpuSets() {
         struct Entry {
             ULONG id;
             u8 efficiency_class;
+            u8 last_level_cache;
+            WORD group;
+            u8 logical_index;
         };
         std::vector<Entry> entries;
         u8 best = 0;
@@ -502,7 +505,9 @@ const WindowsCpuSets& CpuSets() {
                 break;
             }
             if (info->Type == CpuSetInformation) {
-                entries.push_back({info->CpuSet.Id, info->CpuSet.EfficiencyClass});
+                entries.push_back({info->CpuSet.Id, info->CpuSet.EfficiencyClass,
+                                   info->CpuSet.LastLevelCacheIndex, info->CpuSet.Group,
+                                   info->CpuSet.LogicalProcessorIndex});
                 best = (std::max)(best, static_cast<u8>(info->CpuSet.EfficiencyClass));
             }
             offset += info->Size;
@@ -517,6 +522,65 @@ const WindowsCpuSets& CpuSets() {
                      "Hybrid CPU: {} performance and {} efficiency logical processors, "
                      "time-critical threads stay on the performance cores",
                      result.performance.size(), result.efficiency.size());
+            return result;
+        }
+        // Ryzen X3D parts have one CCD with a larger L3: the emulator's threads hand work to each
+        // other thousands of times a frame, and keeping them on that CCD's cache was worth ~1.5
+        // fps of 57 in Ocarina of Time on a 9950X3D. CPUs whose L3s are all the same size are
+        // left alone.
+        DWORD cache_length = 0;
+        GetLogicalProcessorInformationEx(RelationCache, nullptr, &cache_length);
+        std::vector<u8> caches(cache_length);
+        if (cache_length == 0 ||
+            !GetLogicalProcessorInformationEx(
+                RelationCache,
+                reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(caches.data()),
+                &cache_length)) {
+            return result;
+        }
+        struct L3 {
+            WORD group;
+            KAFFINITY mask;
+            DWORD size;
+        };
+        std::vector<L3> l3s;
+        for (DWORD offset = 0; offset < cache_length;) {
+            const auto* info = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(
+                caches.data() + offset);
+            if (info->Size == 0) {
+                break;
+            }
+            if (info->Relationship == RelationCache && info->Cache.Level == 3 &&
+                (info->Cache.Type == CacheUnified || info->Cache.Type == CacheData)) {
+                l3s.push_back({info->Cache.GroupMask.Group, info->Cache.GroupMask.Mask,
+                               info->Cache.CacheSize});
+            }
+            offset += info->Size;
+        }
+        if (l3s.size() < 2) {
+            return result;
+        }
+        const auto largest = std::max_element(
+            l3s.begin(), l3s.end(), [](const L3& a, const L3& b) { return a.size < b.size; });
+        const bool unequal = std::any_of(l3s.begin(), l3s.end(),
+                                         [&](const L3& l3) { return l3.size != largest->size; });
+        if (!unequal) {
+            return result;
+        }
+        result.performance.clear();
+        result.efficiency.clear();
+        for (const Entry& entry : entries) {
+            const bool on_largest = entry.group == largest->group &&
+                                    entry.logical_index < sizeof(KAFFINITY) * 8 &&
+                                    (largest->mask >> entry.logical_index) & 1;
+            (on_largest ? result.performance : result.efficiency).push_back(entry.id);
+        }
+        result.hybrid = !result.efficiency.empty() && result.performance.size() >= 2;
+        if (result.hybrid) {
+            LOG_INFO(Common,
+                     "CPU with a larger L3 ({} KiB) on {} of {} logical processors: "
+                     "time-critical threads stay on them (EDEN_HYBRID_CORES=0 turns this off)",
+                     largest->size / 1024, result.performance.size(), entries.size());
         }
         return result;
     }();
