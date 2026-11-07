@@ -164,6 +164,8 @@ TEST_CASE("sysmix backpressure leaves guest ownership unchanged and resumes in o
     REQUIRE(ReadCursor(context) == 720);
     REQUIRE(stream.GetCounters().accepted_frames == 720);
     REQUIRE(stream.GetCounters().backpressure == 1);
+    REQUIRE(stream.GetCounters().copied_frames == 960);
+    REQUIRE(stream.GetCounters().retried_frames == 240);
     std::array<s16, 480> output{};
     context.sink.last->ProcessAudioOutAndRender(output, 240);
     stream.Pump();
