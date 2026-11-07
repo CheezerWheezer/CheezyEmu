@@ -157,9 +157,11 @@ def load_save(slot):
     else:
         sys.exit("never reached the save list")
     time.sleep(1.0)
-    for _ in range(slot):
-        press("Down", 0.6)
-    if not near(screen()(285, 110 + 145 * slot), (255, 255, 255), 40):
+    # slot -1: the bottom of the list (Down stops at the last save; the list scrolls, so only the
+    # scene check after loading can tell it was the right one).
+    for _ in range(slot if slot >= 0 else 24):
+        press("Down", 0.6 if slot >= 0 else 0.35)
+    if slot >= 0 and not near(screen()(285, 110 + 145 * slot), (255, 255, 255), 40):
         sys.exit(f"save slot {slot} is not selected on the Load list")
     press("A", 1.5)
     press("A", 0.5)
@@ -258,7 +260,7 @@ def main():
     r.add_argument("--exe", default=os.environ.get("LICHII_EXE", "lichii.exe"))
     r.add_argument("--affinity", help="hex CPU mask for the process (e.g. ffff = the first CCD of a 16-core Ryzen, SMT included)")
     r.add_argument("--slot", type=int, default=int(os.environ.get("OOT_SLOT", "1")),
-                   help="save on the Load list, 0 = newest (default 1: the save after the newest)")
+                   help="save on the Load list, 0 = newest, -1 = the bottom one (default 1)")
     r.add_argument("--attach", action="store_true", help="measure the game already running in gameplay")
     r.add_argument("--kill", action="store_true", help="close a running lichii.exe first")
     sub.add_parser("results")
