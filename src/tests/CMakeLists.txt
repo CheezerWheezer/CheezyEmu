@@ -59,6 +59,7 @@ add_executable(tests
     video_core/async_draw_policy.cpp
     video_core/async_shader_emission.cpp
     video_core/pipeline_build.cpp
+    video_core/pipeline_optimization.cpp
     video_core/multi_range_refresh.cpp
     video_core/command_fetch_order.cpp
     video_core/command_writer.cpp
@@ -91,6 +92,7 @@ add_executable(tests
     video_core/ampere_matrix.cpp
     video_core/spirv_software_matrix.cpp
     video_core/spirv_builtin_capabilities.cpp
+    video_core/spirv_mesh_topology.cpp
     common/bit_field.cpp
     common/cityhash.cpp
     common/container_hash.cpp

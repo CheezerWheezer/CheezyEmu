@@ -557,13 +557,16 @@ TEST_CASE("Native uniform banks upload directly without overwriting GPU-owned by
     REQUIRE(f.runtime.upload_bytes == 0x10000);
     REQUIRE(Access::CpuMarks(*f.cache) == 0);
     REQUIRE(Access::Get(*f.cache, id).bytes[0xffff] == 0x5a);
+    // A bank is uploaded again on its next bind: once per frame left stale bytes in Ocarina of
+    // Time's per-draw material tables. EDEN_NX2_BANK_REUPLOAD=1 restores once per frame.
     Access::Uniform(*f.cache, channel, id, 0x20000, 0x10000);
-    REQUIRE(f.runtime.uploads == 1);
+    REQUIRE(f.runtime.uploads == 2);
     Access::NextFrame(*f.cache);
     Access::Dirty(*f.cache, 0x21000, 0x1000);
     std::memset(f.bytes + 0x10000, 0xa5, 0x10000);
     Access::Uniform(*f.cache, channel, id, 0x20000, 0x10000);
-    REQUIRE(f.runtime.uploads == 1);
+    // The GPU wrote part of the range, so the guest copy may be stale: leave the bank alone.
+    REQUIRE(f.runtime.uploads == 2);
     REQUIRE(Access::Get(*f.cache, id).bytes[0x1000] == 0x5a);
 }
 
