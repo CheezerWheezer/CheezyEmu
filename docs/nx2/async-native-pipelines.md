@@ -96,3 +96,28 @@ can overlap only the emission fraction with useful GPUBack work, and queue delay
 and remaining draw holds can reduce that benefit. Its actual savings require
 equivalent cold-cache sessions against the original synchronous implementation, not a
 warmed-cache second run.
+
+## Skipping draws into redrawn targets (native_async_draws Transient)
+
+With asynchronous shaders on, a native draw whose pipeline is still building waits for it unless
+`native_async_draws` (port of Lichii #465: Wait, Bounded, Skip) says otherwise. The default is now
+`Transient`: `RasterizerVulkan::PrepareDraw` skips the draw only when the pipeline writes no storage,
+transform feedback is off, and every bound color and depth image was fully cleared in this frame and
+in the one before (`TextureCache::NoteRenderTargetsCleared`, `RenderTargetsRedrawnReason`), so what the
+draw would add is drawn again next frame. Draws into images that persist (HUD and text images, atlases,
+impostor mip chains, history buffers) still wait. `EDEN_NX2_NATIVE_ASYNC=wait|bounded|skip|transient`
+overrides the setting for comparisons; `EDEN_NX2_ASYNC_DISCARD=1` still forces Skip.
+
+Ocarina of Time, Hyrule Field save, cold Lichii shader cache, `perf.py --walk 2` (RX 9070 XT):
+
+| Mode | Hitches over 50 ms | Hitch time | Worst |
+|---|---|---|---|
+| Wait | 58-62 | 6.4-7.2 s | 0.25-0.98 s |
+| Bounded, 8 ms | 51 | 6.1 s | 0.42 s |
+| Transient | 34-38 | 3.2-3.7 s | 0.20-0.31 s |
+| Skip | 10-17 | 0.8-1.4 s | 0.15-0.34 s |
+
+Skip leaves the HUD's item labels and D-pad icon missing for good (their images are drawn once, while
+the pipeline built); Transient keeps them. What is left is mostly IR translation on the GPU thread
+(1.5-1.7 s per 10 s while ~700 new pipelines appear; 500 distinct stage shaders in 847 uses, so
+reusing translations would save at most ~40%) and draws into persistent images, which must wait.

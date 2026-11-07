@@ -1339,6 +1339,48 @@ void PipelineCache::EvictUnusedPipelines() {
              EvictAfterFrames, graphics_cache.size());
 }
 
+namespace {
+/// native_async_draws, or EDEN_NX2_NATIVE_ASYNC=wait|bounded|skip|transient to compare modes
+/// without changing the configuration. EDEN_NX2_ASYNC_DISCARD=1 still means skip.
+Settings::NativeAsyncDraws NativeAsyncMode() {
+    static const int forced = [] {
+        if (const char* value = std::getenv("EDEN_NX2_ASYNC_DISCARD"); value && value[0] == '1') {
+            return static_cast<int>(Settings::NativeAsyncDraws::Skip);
+        }
+        const char* value = std::getenv("EDEN_NX2_NATIVE_ASYNC");
+        if (value == nullptr) {
+            return -1;
+        }
+        const std::string_view mode{value};
+        return static_cast<int>(mode == "bounded" ? Settings::NativeAsyncDraws::Bounded
+                                : mode == "skip"  ? Settings::NativeAsyncDraws::Skip
+                                : mode == "transient" ? Settings::NativeAsyncDraws::Transient
+                                                      : Settings::NativeAsyncDraws::Wait);
+    }();
+    return forced >= 0 ? static_cast<Settings::NativeAsyncDraws>(forced)
+                       : Settings::values.native_async_draws.GetValue();
+}
+
+std::atomic<u64> g_transient_skips{};
+/// Native draws that waited under Transient: [1] no render target, [2] a target not cleared
+/// this frame, [3] cleared this frame only, [4] storage or transform feedback writes.
+std::array<std::atomic<u64>, 5> g_unbuilt_held{};
+} // Anonymous namespace
+
+bool PipelineCache::SkipsUnbuiltTransientDraws() const noexcept {
+    return use_asynchronous_shaders && maxwell3d->GetNativeMacroEngine().native_turing &&
+           NativeAsyncMode() == Settings::NativeAsyncDraws::Transient;
+}
+
+void PipelineCache::CountTransientSkip() noexcept {
+    g_transient_skips.fetch_add(1, std::memory_order_relaxed);
+}
+
+void PipelineCache::CountUnbuiltHeld(int reason) noexcept {
+    g_unbuilt_held[static_cast<size_t>(reason) % g_unbuilt_held.size()].fetch_add(
+        1, std::memory_order_relaxed);
+}
+
 /// Returns `pipeline` when it is built or the current draw must wait for it, and nullptr when the
 /// draw may be skipped while it builds (asynchronous shaders; native draws only with
 /// EDEN_NX2_ASYNC_DISCARD=1). Each nullptr returned for an unbuilt pipeline is counted for the log.
@@ -1349,23 +1391,13 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) noexc
     if (!use_asynchronous_shaders) {
         return pipeline;
     }
-    // EDEN_NX2_ASYNC_DISCARD=1: skip native draws whose pipeline is still building instead of
-    // waiting for it (experimental; the draw may be missing for a frame or more).
-    /// Reads EDEN_NX2_ASYNC_DISCARD once and logs when it is on.
-    static const bool discard_native = [] {
-        const char* value = std::getenv("EDEN_NX2_ASYNC_DISCARD");
-        const bool enabled = value != nullptr && value[0] == '1';
-        if (enabled) {
-            LOG_INFO(Render_Vulkan, "EDEN_NX2_ASYNC_DISCARD: native draws skip unbuilt pipelines");
-        }
-        return enabled;
-    }();
     const auto& draw_state = maxwell3d->draw_manager.draw_state;
     const bool native = maxwell3d->GetNativeMacroEngine().native_turing;
     // The environment variable wins over the setting; the setting is read per call.
     NativePendingMode mode = NativePendingMode::Wait;
     if (native) {
-        switch (Settings::values.native_async_draws.GetValue()) {
+        // Transient waits here: the rasterizer skips the draw once it knows its render targets.
+        switch (NativeAsyncMode()) {
         case Settings::NativeAsyncDraws::Bounded:
             mode = NativePendingMode::Bounded;
             break;
@@ -1374,9 +1406,6 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) noexc
             break;
         default:
             break;
-        }
-        if (discard_native) {
-            mode = NativePendingMode::Skip;
         }
     }
     // Native draws are judged by the heuristic only when a mode other than Wait is chosen.
@@ -1681,9 +1710,14 @@ void ReportRuntimePipeline(const char* kind, std::chrono::steady_clock::time_poi
         LOG_INFO(Render_Vulkan,
                  "Runtime pipelines in the last 10 s: {} built, {:.1f} ms on the GPU thread "
                  "({:.1f} ms of it graphics SPIR-V), {:.1f} ms graphics SPIR-V on workers, "
-                 "{:.1f} ms of draws held for unbuilt pipelines",
+                 "{:.1f} ms of draws held for unbuilt pipelines, {} draws skipped into "
+                 "redrawn targets, held: {} without targets, {} not cleared this frame, {} "
+                 "cleared this frame only, {} writing memory",
                  count, ms(total), ms(take(runtime_spirv_ns[0])), ms(take(runtime_spirv_ns[1])),
-                 ms(GraphicsPipeline::TakeHoldTime()));
+                 ms(GraphicsPipeline::TakeHoldTime()),
+                 g_transient_skips.exchange(0, std::memory_order_relaxed),
+                 g_unbuilt_held[1].exchange(0), g_unbuilt_held[2].exchange(0),
+                 g_unbuilt_held[3].exchange(0), g_unbuilt_held[4].exchange(0));
         total = {};
         count = 0;
         window = now;

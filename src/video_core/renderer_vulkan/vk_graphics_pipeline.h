@@ -235,6 +235,14 @@ private:
     u32 color_output_mask{};
     bool writes_storage{};
 
+public:
+    /// Whether a stage writes storage buffers or images (its draws change memory).
+    [[nodiscard]] bool WritesStorage() const noexcept {
+        return writes_storage;
+    }
+
+private:
+
     vk::DescriptorSetLayout descriptor_set_layout;
     DescriptorAllocator descriptor_allocator;
     vk::PipelineLayout pipeline_layout;
