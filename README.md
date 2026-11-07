@@ -12,6 +12,10 @@
 
 # Lichii
 
+> **This is Lichii AMD Superior**: AMD performance fixes plus saved compiled shaders. See
+> [AMD-SUPERIOR.md](AMD-SUPERIOR.md) for the changes, credits, shader pack setup, one-time
+> precompiling and the grid-line fix.
+
 Lichii is an experimental, open-source Nintendo Switch and Switch 2 emulator written in C++. It builds on Eglantine, Eden, yuzu and Sudachi, preserving their contributions while developing this fork's game compatibility and renderer fixes.
 
 This is an independent fork, not an official release of those upstream projects. Lichii is not affiliated with Nintendo.
