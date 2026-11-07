@@ -120,18 +120,22 @@ void ThreadManager::StartThread(VideoCore::RendererBase& renderer, Core::Fronten
                 }
                 if (!state.queue.TryPop(next)) {
                     // The CPU usually releases the semaphore soon after: poll for half a
-                    // millisecond before sleeping, or every wait also waits out a host sleep
-                    // (title 1 waits ~25 times a second).
+                    // millisecond, then in short waits. Ocarina of Time waits here ~330 times a
+                    // second and its present waits for the work behind them: with 1 ms waits the
+                    // present waited ~17 ms a frame in Kokiri village, with 50 us ~1 ms. A channel
+                    // still waiting after 2 s (menus, loading) goes back to 1 ms waits.
                     Profile::Scope scope{Profile::Zone::PendingSleep};
                     const ThreadStats::Timer timer{thread_stats, ThreadStats::PendingEmpty};
-                    if (std::chrono::steady_clock::now() - last_progress <
-                        std::chrono::microseconds{500}) {
+                    const auto waited = std::chrono::steady_clock::now() - last_progress;
+                    if (waited < std::chrono::microseconds{500}) {
                         std::this_thread::yield();
                     } else {
                         // A GPU release that meets a suspended acquire wakes this at once;
                         // CPU releases are still found by polling.
                         Tegra::Nx2SemaphoreWaiters::Get().WaitForLatch(
-                            seen_latch, std::chrono::milliseconds{1});
+                            seen_latch, waited < std::chrono::seconds{2}
+                                            ? std::chrono::microseconds{50}
+                                            : std::chrono::microseconds{1000});
                     }
                     continue;
                 }
