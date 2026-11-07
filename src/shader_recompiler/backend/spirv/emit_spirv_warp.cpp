@@ -95,18 +95,10 @@ Id GuestLane(EmitContext& ctx, Id index) {
 // Fragment shaders on AMD's proprietary driver lower absolute and relative shuffles through the
 // broadcast loop Qualcomm already uses: amdvlk64 crashes in vkCreateGraphicsPipelines on some
 // Ocarina of Time fragment shaders, and Djihads80/Eglantine#618 reduced that crash to
-// OpGroupNonUniformShuffle. EDEN_NX2_FRAGMENT_SHUFFLE_FALLBACK=0/1 overrides the driver default.
+// OpGroupNonUniformShuffle.
 bool UseShuffleFallback(EmitContext& ctx) {
-    if (ctx.profile.has_broken_spirv_subgroup_shuffle) {
-        return true;
-    }
-    static const int forced = [] {
-        const char* value = std::getenv("EDEN_NX2_FRAGMENT_SHUFFLE_FALLBACK");
-        return value == nullptr ? -1 : (value[0] == '0' ? 0 : 1);
-    }();
-    const bool fragment_fallback =
-        forced >= 0 ? forced == 1 : ctx.profile.has_broken_spirv_fragment_shuffle;
-    return fragment_fallback && ctx.stage == Stage::Fragment;
+    return ctx.profile.has_broken_spirv_subgroup_shuffle ||
+           (ctx.profile.has_broken_spirv_fragment_shuffle && ctx.stage == Stage::Fragment);
 }
 
 Id ShuffleAbsolute(EmitContext& ctx, Id value, Id src_thread_id) {
