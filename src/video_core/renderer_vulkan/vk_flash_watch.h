@@ -16,8 +16,10 @@
 #include <vector>
 
 #include "common/common_types.h"
-#include "video_core/renderer_vulkan/vk_descriptor_pool.h"
+// surface.h first: it reaches nvdata.h (NvResult::Success) before vulkan.h brings in
+// X11, whose Success macro would break it on Linux.
 #include "video_core/surface.h"
+#include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 
 namespace Vulkan {
