@@ -1406,7 +1406,8 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
     // the memory tracker, leaving stale host contents, so upload such a bank again on every bind:
     // once per frame left Ocarina of Time's per-draw material data stale for a frame now and then
     // (white flashes). EDEN_NX2_BANK_REUPLOAD: 0 off, 1 once per frame, 2 every bind of a 64 KiB
-    // bank (the default), 3 every bind of any native bank (to test banks of other sizes).
+    // bank whose words changed (the default), 3 the same for any native bank (to test banks of
+    // other sizes), 4 every bind of a 64 KiB bank unconditionally.
     static const char bank_mode = [] {
         const char* value = std::getenv("EDEN_NX2_BANK_REUPLOAD");
         return value != nullptr ? value[0] : '2';
@@ -1414,7 +1415,8 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
     const bool native_bank = has_host_buffer && size != 0 && gpu_memory != nullptr &&
                              gpu_memory->UsesNativeTiling() &&
                              !memory_tracker.IsRegionGpuModified(device_addr, size);
-    const bool every_bind = bank_mode == '2' || bank_mode == '3' || Nx2Perf::Verify();
+    const bool every_bind =
+        bank_mode == '2' || bank_mode == '3' || bank_mode == '4' || Nx2Perf::Verify();
     if (bank_mode != '0' && native_bank &&
         (bank_mode == '3' || (*channel_state->uniform_buffer_sizes)[stage][index] == 0x10000) &&
         (every_bind || native_indirect_uniforms_this_frame.insert(device_addr).second)) {
@@ -1425,7 +1427,29 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             mapped_size += Core::DEVICE_PAGESIZE - ((device_addr + mapped_size) & Core::DEVICE_PAGEMASK);
         }
         const u64 upload_size = (std::min<u64>)(mapped_size, size);
-        if (upload_size != 0) {
+        // Every upload ends the render pass (the bank is in use by earlier draws), ~20,000 times a
+        // second in Ocarina: only upload when the words changed since the last upload.
+        const bool changed = [&] {
+            if (Nx2Perf::Verify() || bank_mode == '4') {
+                return true;
+            }
+            std::vector<u8>& shadow = native_bank_shadows[device_addr];
+            bool differs = shadow.size() != upload_size;
+            shadow.resize(upload_size);
+            for (u64 offset = 0; offset < upload_size;) {
+                const u64 chunk = (std::min<u64>)(
+                    upload_size - offset,
+                    Core::DEVICE_PAGESIZE - ((device_addr + offset) & Core::DEVICE_PAGEMASK));
+                const u8* const guest = device_memory.template GetPointer<u8>(device_addr + offset);
+                if (differs || std::memcmp(shadow.data() + offset, guest, chunk) != 0) {
+                    std::memcpy(shadow.data() + offset, guest, chunk);
+                    differs = true;
+                }
+                offset += chunk;
+            }
+            return differs;
+        }();
+        if (upload_size != 0 && changed) {
             std::array<BufferCopy, 1> copies{BufferCopy{
                 .src_offset = 0,
                 .dst_offset = buffer.Offset(device_addr),

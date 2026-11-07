@@ -465,6 +465,9 @@ public:
     bool any_buffer_uploaded = false;
     /// Indirectly read banks of native programs already uploaded this frame.
     std::unordered_set<DAddr> native_indirect_uniforms_this_frame;
+    /// What each native uniform bank held at its last upload: a bind uploads it again only when
+    /// guest memory differs (BindHostGraphicsUniformBuffer).
+    std::unordered_map<DAddr, std::vector<u8>> native_bank_shadows;
 
 private:
     template <typename Func>
