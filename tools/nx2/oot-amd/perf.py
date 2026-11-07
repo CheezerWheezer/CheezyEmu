@@ -180,6 +180,31 @@ def load_save(slot):
     sys.exit("the save did not load")
 
 
+# A route that shows new things to draw: walk ahead, turn the camera around, walk back, then a full
+# camera sweep. In frames (at 60 fps about 18 s).
+WALK_ROUTE = [
+    {"left_stick": [0, 1], "frames": 240},
+    {"right_stick": [1, 0], "frames": 90},
+    {"left_stick": [0, 1], "frames": 240},
+    {"right_stick": [-1, 0], "frames": 180},
+    {"left_stick": [1, 0.3], "frames": 180},
+    {"right_stick": [1, 0.2], "frames": 180},
+]
+
+
+def walk(times):
+    """Plays WALK_ROUTE `times` times, then reads the presents of that whole span (frame_times
+    `past`; the debug server answers one request at a time). Hitches: intervals over 50 ms."""
+    started = time.time()
+    for _ in range(times):
+        call("input_sequence", {"steps": WALK_ROUTE, "timeout_s": 600}, timeout=660)
+    seconds = time.time() - started
+    ft = call("frame_times", {"past": seconds}, timeout=60)
+    return {"seconds": round(seconds, 1), "frames": ft["frames"], "fps": round(ft["fps"], 1),
+            "hitches": ft["hitches"], "hitch_ms": ft["hitch_ms"], "max_ms": round(ft["max_ms"], 1),
+            "worst": ft["worst_ms"], "truncated": ft["truncated"]}
+
+
 def git_rev():
     r = subprocess.run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
     dirty = subprocess.run(["git", "-C", REPO, "status", "--porcelain", "-uno"], capture_output=True, text=True)
@@ -202,6 +227,7 @@ def run(a):
         launch(env, a.exe, a.kill, a.affinity)
         summary_scene = load_save(a.slot)
     time.sleep(a.settle)
+    walk_stats = walk(a.walk) if a.walk else None
     samples = [round(call("status", {"fps_window_ms": 5000}, timeout=30)["fps"], 2) for _ in range(a.measure)]
     if a.frametimes:
         ft = call("frame_times", {"seconds": a.frametimes}, timeout=a.frametimes + 30)
@@ -215,6 +241,8 @@ def run(a):
                "fps_max": max(samples)}
     if a.frametimes:
         summary["frames"] = frame_stats
+    if walk_stats:
+        summary["walk"] = walk_stats
     if a.profile:
         lines = call("log_tail", {"contains": "per second", "limit": 4}, timeout=10)["lines"]
         summary["profile"] = lines
@@ -265,6 +293,9 @@ def main():
                    help="save the log lines containing this text (e.g. 'DKB gpu_frame'), repeatable")
     r.add_argument("--measure", type=int, default=6, help="number of 5 s fps windows")
     r.add_argument("--settle", type=float, default=10)
+    r.add_argument("--walk", type=int, default=0,
+                   help="play the scripted route this many times right after loading and report its "
+                        "hitches (frames over 50 ms) from the present intervals")
     r.add_argument("--frametimes", type=float, default=0,
                    help="seconds of present intervals to summarise (p50/p90/p99/max, stutters)")
     r.add_argument("--exe", default=os.environ.get("LICHII_EXE", "lichii.exe"))
