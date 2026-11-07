@@ -16,6 +16,9 @@
 #include "common/settings.h"
 #include "video_core/host_shaders/vulkan_flash_watch_comp_spv.h"
 #include "video_core/renderer_vulkan/vk_flash_watch.h"
+/* X11 defines (Linux): they clash with NvResult::Success in nvdata.h */
+#undef Success
+#undef BadValue
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_texture_cache.h"
 #include "video_core/texture_cache/formatter.h"
