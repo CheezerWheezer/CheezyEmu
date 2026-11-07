@@ -646,6 +646,47 @@ void Scheduler::ReportWorkTimes() {
     };
     std::map<std::pair<u64, u64>, Totals> by_shaders;
     double total_ms{};
+    // GPU time between one timed item's end and the next one's start in the same submission:
+    // what was recorded between them (barriers, render pass ends and loads, copies, queries).
+    const auto shader_name = [](const WorkTrace& item) {
+        return item.fragment_hash == 0 ? fmt::format("s6:{:016x}", item.hash)
+                                       : fmt::format("s5:{:016x}", item.fragment_hash);
+    };
+    double gap_ms{};
+    u32 gaps{};
+    std::map<std::string, std::pair<double, u32>> gaps_before;
+    for (u32 i = 1; i < count; ++i) {
+        const WorkTrace& previous = trace_work_items[i - 1];
+        const WorkTrace& item = trace_work_items[i];
+        if (previous.submission != item.submission || results[i * 2 - 1].available == 0 ||
+            results[i * 2].available == 0) {
+            continue;
+        }
+        const double ms = static_cast<double>(Common::DkbFrameTrace::TimestampDelta(
+                              results[i * 2 - 1].timestamp, results[i * 2].timestamp,
+                              trace_timestamp_bits)) *
+                          trace_timestamp_period / 1e6;
+        if (ms < 0.0 || ms > 1000.0) {
+            continue;
+        }
+        gap_ms += ms;
+        ++gaps;
+        auto& before = gaps_before[shader_name(item)];
+        before.first += ms;
+        ++before.second;
+    }
+    std::vector<std::pair<double, std::string>> slow_gaps;
+    for (const auto& [name, totals] : gaps_before) {
+        slow_gaps.emplace_back(totals.first, fmt::format("{}={:.3f}ms/{}x", name, totals.first,
+                                                         totals.second));
+    }
+    std::ranges::sort(slow_gaps, std::greater<>{});
+    std::string gap_text;
+    for (size_t i = 0; i < slow_gaps.size() && i < 8; ++i) {
+        gap_text += ' ' + slow_gaps[i].second;
+    }
+    LOG_INFO(Render_Vulkan, "DKB gpu_gaps renderer_frame={} gaps={} gap_sum_ms={:.3f} before:{}",
+             trace_sample_frame, gaps, gap_ms, gap_text);
     for (u32 i = 0; i < count; ++i) {
         if (results[i * 2].available == 0 || results[i * 2 + 1].available == 0) {
             continue;

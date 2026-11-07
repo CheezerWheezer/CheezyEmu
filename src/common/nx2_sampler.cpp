@@ -204,6 +204,21 @@ struct Symbolizer {
     std::unordered_map<DWORD64, std::string> cache;
 };
 
+// "module+0xoffset" (or "(jit)"), for symbolizing offline when dbghelp can't read the PDB.
+std::string Location(DWORD64 address) {
+    HMODULE module{};
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCSTR>(address), &module)) {
+        return "(jit)";
+    }
+    char path[MAX_PATH] = "?";
+    GetModuleFileNameA(module, path, sizeof(path));
+    const char* base = std::strrchr(path, '\\');
+    return fmt::format("{}+{:#x}", base != nullptr ? base + 1 : path,
+                       address - reinterpret_cast<DWORD64>(module));
+}
+
 std::string Report(const std::vector<Target>& targets, const std::vector<Sample>& samples,
                    const char* path) {
     Symbolizer symbolizer;
@@ -297,6 +312,27 @@ std::string Report(const std::vector<Target>& targets, const std::vector<Sample>
     }
     if (std::FILE* const out = std::fopen((std::string{path} + ".folded").c_str(), "w")) {
         for (const auto& [line, count] : folded) {
+            std::fprintf(out, "%s %u\n", line.c_str(), count);
+        }
+        std::fclose(out);
+    }
+    // <out>.raw: the same with module offsets (tools/nx2/symbolize.py names them offline).
+    std::map<std::string, unsigned> raw;
+    std::unordered_map<DWORD64, std::string> locations;
+    for (const Sample& sample : samples) {
+        std::string line = targets[sample.thread].name;
+        for (unsigned i = sample.depth; i-- > 0;) {
+            auto [it, is_new] = locations.try_emplace(sample.frames[i]);
+            if (is_new) {
+                it->second = Location(sample.frames[i]);
+            }
+            line += ';';
+            line += it->second;
+        }
+        ++raw[line];
+    }
+    if (std::FILE* const out = std::fopen((std::string{path} + ".raw").c_str(), "w")) {
+        for (const auto& [line, count] : raw) {
             std::fprintf(out, "%s %u\n", line.c_str(), count);
         }
         std::fclose(out);
