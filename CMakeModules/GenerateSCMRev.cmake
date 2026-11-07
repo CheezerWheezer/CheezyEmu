@@ -37,11 +37,21 @@ set(GIT_DESC ${BUILD_VERSION})
 
 # Generate cpp with Git revision from template
 
-set(BUILD_AUTO_UPDATE_STABLE_REPO "zortos293/Lichii")
+# Builds look for updates in the repository that built them, so a fork's releases update to
+# that fork's releases instead of being replaced by upstream ones. LICHII_UPDATE_REPO overrides it;
+# local builds outside GitHub Actions keep the upstream repository.
+if (DEFINED LICHII_UPDATE_REPO AND NOT LICHII_UPDATE_REPO STREQUAL "")
+    set(LICHII_UPDATE_REPO_RESOLVED "${LICHII_UPDATE_REPO}")
+elseif (DEFINED ENV{GITHUB_REPOSITORY} AND NOT "$ENV{GITHUB_REPOSITORY}" STREQUAL "")
+    set(LICHII_UPDATE_REPO_RESOLVED "$ENV{GITHUB_REPOSITORY}")
+else()
+    set(LICHII_UPDATE_REPO_RESOLVED "zortos293/Lichii")
+endif()
+set(BUILD_AUTO_UPDATE_STABLE_REPO "${LICHII_UPDATE_REPO_RESOLVED}")
 set(BUILD_AUTO_UPDATE_STABLE_API "api.github.com")
-set(BUILD_AUTO_UPDATE_API_PATH "/repos/zortos293/Lichii/releases?per_page=100")
+set(BUILD_AUTO_UPDATE_API_PATH "/repos/${LICHII_UPDATE_REPO_RESOLVED}/releases?per_page=100")
 set(BUILD_AUTO_UPDATE_WEBSITE "https://github.com")
-set(BUILD_AUTO_UPDATE_REPO "zortos293/Lichii")
+set(BUILD_AUTO_UPDATE_REPO "${LICHII_UPDATE_REPO_RESOLVED}")
 if (NIGHTLY_BUILD)
     set(REPO_NAME "Lichii Nightly")
 else()
