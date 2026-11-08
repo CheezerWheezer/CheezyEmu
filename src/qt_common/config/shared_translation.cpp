@@ -21,6 +21,12 @@
 
 namespace ConfigurationShared {
 
+/**
+ * Builds the label and tooltip every settings widget shows, keyed by setting id.
+ *
+ * @param parent Object used for translation lookups.
+ * @return The translation map.
+ */
 std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     std::unique_ptr<TranslationMap> translations = std::make_unique<TranslationMap>();
     const auto& tr = [](const char* text) -> QString { return QCoreApplication::translate("ConfigurationShared", text); };
@@ -159,12 +165,18 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Uses NVIDIA DLSS on GeForce RTX cards in place of a Switch 2 game's own DLSS, "
               "instead of AMD FSR 3.1.\nNeeds NVIDIA's Streamline loader, and NVIDIA DLSS unless "
               "the NVIDIA app has downloaded it; Lichii does not ship NVIDIA's files. Use the "
-              "download button below.\nCurrently requires Fire Emblem: Fortune's Weave and "
+              "download button below.\nFire Emblem: Fortune's Weave also needs "
               "EDEN_NX2_DLSS_REPLACEMENT=dlss. Without that override, its spatial workaround "
-              "remains active.\nTakes effect when a game starts."));
+              "remains active.\nIn The Legend of Zelda: Ocarina of Time it replaces the game's "
+              "upscaler at 1x resolution scale.\nTakes effect when a game starts."));
     INSERT(Settings, anti_aliasing, tr("Anti-Aliasing Method:"),
            tr("The anti-aliasing method to use.\nSMAA offers the best quality.\nFXAA "
               "can produce a more stable picture in lower resolutions."));
+    INSERT(Settings, oot_anti_aliasing, tr("Ocarina of Time anti-aliasing:"),
+           tr("The Legend of Zelda: Ocarina of Time only.\nGame: the game's own anti-aliasing "
+              "network, which sharpens heavily.\nNo sharpening: the image as the game renders it, "
+              "without the network (faster; pairs well with a higher resolution). Has no effect while "
+              "NVIDIA DLSS is on.\nTakes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),
@@ -209,6 +221,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, skip_cpu_inner_invalidation, tr("Skip CPU Inner Invalidation"),
            tr("Skips certain cache invalidations during memory updates, reducing CPU usage and "
               "improving latency. This may cause soft-crashes."));
+    INSERT(Settings, fps_limit, tr("FPS Limit"),
+           tr("Caps how often the game presents, so the game itself runs at this rate. 0 leaves "
+              "the frame rate to the game and the display."));
     INSERT(Settings, vsync_mode, tr("VSync Mode:"),
            tr("FIFO (VSync) does not drop frames or exhibit tearing but is limited by the screen "
               "refresh rate.\nFIFO Relaxed allows tearing as it recovers from a slow down.\n"
@@ -284,7 +299,7 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "emulated CPU cores off them.\n"
               "Can hurt performance on CPUs with few cores. Skipped on CPUs with fewer than 6 "
               "physical performance cores.\n"
-              "Windows only. Takes effect when a game starts."));
+              "Windows and Linux only. Takes effect when a game starts."));
 
     INSERT(Settings, use_vulkan_driver_pipeline_cache, tr("Use Vulkan pipeline cache"),
            tr("Enables GPU vendor-specific pipeline cache.\nThis option can improve shader loading "
@@ -565,6 +580,11 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(AntiAliasing, None, tr("None")),
                               PAIR(AntiAliasing, Fxaa, tr("FXAA")),
                               PAIR(AntiAliasing, Smaa, tr("SMAA")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::OotAntiAliasing>::Index(),
+                          {
+                              PAIR(OotAntiAliasing, Game, tr("Game")),
+                              PAIR(OotAntiAliasing, NoSharpening, tr("No sharpening")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::AspectRatio>::Index(),
                           {

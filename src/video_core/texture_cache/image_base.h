@@ -122,7 +122,9 @@ struct ImageBase {
     u64 clear_frame = ~u64{0};
     u64 previous_clear_frame = ~u64{0};
 
+    /// The channel and GPU address space whose page table RegisterImage put the image in.
     size_t channel = 0;
+    size_t address_space = 0;
 
     ImageFlagBits flags = ImageFlagBits::CpuModified;
 

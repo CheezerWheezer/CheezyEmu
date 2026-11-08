@@ -64,6 +64,7 @@ SETTING(std::string, false);
 SETTING(u16, false);
 SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
+SWITCHABLE(OotAntiAliasing, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
 SWITCHABLE(AstcRecompression, true);
@@ -360,6 +361,18 @@ struct Values {
                                                   true,
                                                   true};
 
+    // Lichii: caps how often the game's own compositor presents, so the game itself is paced to
+    // this rate instead of only the display. 0 keeps the game's vblank and swap interval.
+    SwitchableSetting<u32, true> fps_limit{linkage,
+                                           0,
+                                           0,
+                                           480,
+                                           "fps_limit",
+                                           Category::Renderer,
+                                           Specialization::Countable,
+                                           true,
+                                           true};
+
     SwitchableSetting<ScalingFilter> scaling_filter{linkage,
                                                     ScalingFilter::ScaleForce,
                                                     "scaling_filter",
@@ -402,6 +415,10 @@ struct Values {
                                                   Specialization::Default,
                                                   true,
                                                   true};
+    // The Legend of Zelda: Ocarina of Time's own anti-aliasing network and its sharpening output
+    // pass, or the tonemapped image as the game renders it (video_core/oot_network.h).
+    SwitchableSetting<OotAntiAliasing> oot_anti_aliasing{linkage, OotAntiAliasing::Game,
+                                                         "oot_anti_aliasing", Category::Renderer};
 
     SwitchableSetting<std::string> post_shader_chain{linkage,
                                                      std::string(),
