@@ -138,6 +138,7 @@ struct Values {
                                       true,
                                       true};
 
+    Setting<bool> check_for_updates{linkage, true, "check_for_updates", Category::UiGeneral};
     // Release tag the user chose to skip, and the epoch second before which updates stay quiet.
     Setting<std::string> skipped_update_tag{linkage, {}, "skipped_update_tag", Category::Ui};
     Setting<unsigned long long> update_remind_at{linkage, 0, "update_remind_at", Category::Ui};

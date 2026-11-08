@@ -447,6 +447,15 @@ MainWindow::MainWindow(bool has_broken_vulkan)
 
     show();
 
+#ifdef ENABLE_UPDATE_CHECKER
+    if (UISettings::values.check_for_updates) {
+        update_future = QtConcurrent::run([]() { return UpdateChecker::Check(); });
+        update_watcher.connect(&update_watcher, &QFutureWatcher<QString>::finished, this,
+                               &MainWindow::OnEmulatorUpdateAvailable);
+        update_watcher.setFuture(update_future);
+    }
+#endif
+
     // Setup content providers.
     QtCommon::SetupContentProviders();
 
