@@ -121,3 +121,18 @@ Skip leaves the HUD's item labels and D-pad icon missing for good (their images 
 the pipeline built); Transient keeps them. What is left is mostly IR translation on the GPU thread
 (1.5-1.7 s per 10 s while ~700 new pipelines appear; 500 distinct stage shaders in 847 uses, so
 reusing translations would save at most ~40%) and draws into persistent images, which must wait.
+
+## Default is now Skip (2026-11-08, after merging zortos/nx2)
+
+Frame freezes bother more than missing frames, so `native_async_draws` defaults to `Skip`. Same
+Hyrule Field save, cold Lichii shader cache, `perf.py --walk 2`, RX 9070 XT, merged build:
+
+| Mode | Hitches over 50 ms | Hitch time | Worst |
+|---|---|---|---|
+| Transient (draws into persistent targets wait on the driver build) | 23 | 11.4-12.2 s | 1.19-1.22 s |
+| Skip | 8 | 0.74 s | 0.18 s |
+
+The pre-merge binary measured the same as the merged one, so the freezes are the held draws, not the merge.
+The HUD (hearts, items, map) is intact in the Skip screenshot after the walk; the earlier report of
+labels missing for good is not reproduced here. `native_async_draws=Transient` or
+`EDEN_NX2_NATIVE_ASYNC=transient` restores the old behaviour.

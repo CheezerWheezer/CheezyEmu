@@ -103,7 +103,14 @@ def read_png(path):
 
 def screen():
     path = os.path.join(OUT, "_probe.png")
-    call("screenshot", out=path, timeout=30)
+    for attempt in range(12):  # a cold shader cache can stall presents for many seconds
+        try:
+            call("screenshot", out=path, timeout=30)
+            break
+        except RuntimeError as e:
+            if "no frame was presented" not in str(e) or attempt == 11:
+                raise
+            time.sleep(2)
     w, h, ch, rows = read_png(path)
     return lambda x, y: tuple(rows[y * h // 720][(x * w // 1280) * ch:(x * w // 1280) * ch + 3])
 
