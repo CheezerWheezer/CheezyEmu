@@ -144,6 +144,10 @@ public:
 private:
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipelineSlowPath();
 
+    /// FixedPipelineState::Refresh of graphics_key, keeping only the vertex attribute types the
+    /// bound programs read (see VideoCommon::KeyedAttributeTypes).
+    void RefreshGraphicsKey();
+
     /// A native graphics pipeline translated and built on a worker (asynchronous translation).
     struct PendingTranslation {
         std::array<VideoCommon::GraphicsEnvironment, Maxwell::MaxShaderProgram> envs;
@@ -236,6 +240,7 @@ private:
     EmissionBudget emission_budget;
 
     GraphicsPipelineCacheKey graphics_key{};
+    u64 vertex_attribute_types{}; ///< graphics_key's attribute types before the programs' mask
     GraphicsPipeline* current_pipeline{};
 
     /// Destroys graphics pipelines unused for a while, once the GPU is done with them.
