@@ -9,6 +9,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <filesystem>
@@ -143,6 +144,26 @@ public:
 private:
     [[nodiscard]] GraphicsPipeline* CurrentGraphicsPipelineSlowPath();
 
+    /// A native graphics pipeline translated and built on a worker (asynchronous translation).
+    struct PendingTranslation {
+        std::array<VideoCommon::GraphicsEnvironment, Maxwell::MaxShaderProgram> envs;
+        std::array<bool, Maxwell::MaxShaderProgram> used{};
+        std::mutex mutex;
+        std::condition_variable done_cv;
+        bool done{};
+        std::unique_ptr<GraphicsPipeline> pipeline;
+    };
+
+    /// Whether the current native draw's pipeline may be translated on a worker while the draw
+    /// is skipped: asynchronous shaders, native_async_draws Transient, render targets redrawn
+    /// every frame, no transform feedback.
+    [[nodiscard]] bool CanTranslateAsync();
+    /// Translates and builds the current key's pipeline on a worker.
+    void StartAsyncTranslation();
+    /// Moves a finished translation into the cache when its answers still hold. False when the
+    /// pipeline is to be made on this thread instead.
+    bool AdoptTranslation(PendingTranslation& job);
+
     /// Returns `pipeline` when it is built or its draw must wait for it, nullptr when the draw
     /// may be skipped while it builds (asynchronous shaders, CanDiscardPendingDraw).
     [[nodiscard]] GraphicsPipeline* BuiltPipeline(GraphicsPipeline* pipeline) noexcept;
@@ -155,6 +176,11 @@ public:
     void CountTransientSkip() noexcept;
     /// Counts a native draw that waits for its pipeline, by reason (see the runtime pipeline log).
     void CountUnbuiltHeld(int reason) noexcept;
+    /// Whether the last lookup's null pipeline means the draw is skipped while its pipeline is
+    /// translated on a worker; clears it.
+    [[nodiscard]] bool TakeTranslationSkip() noexcept {
+        return std::exchange(translation_skip, false);
+    }
 
 private:
 
@@ -220,6 +246,11 @@ private:
     /// them (tick, pipeline)
     std::deque<std::pair<u64, std::unique_ptr<ComputePipeline>>> retired_compute_pipelines;
     ::Common::unordered_map<GraphicsPipelineCacheKey, std::unique_ptr<GraphicsPipeline>> graphics_cache;
+    std::unordered_map<GraphicsPipelineCacheKey, std::shared_ptr<PendingTranslation>>
+        pending_translations;
+    /// The last lookup returned no pipeline because its draw is skipped while a worker
+    /// translates the pipeline (TakeTranslationSkip).
+    bool translation_skip{};
 
     ShaderPools main_pools;
     std::mutex spare_pools_mutex;

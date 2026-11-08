@@ -228,7 +228,7 @@ def run(a):
         summary_scene = load_save(a.slot)
     time.sleep(a.settle)
     walk_stats = walk(a.walk) if a.walk else None
-    samples = [round(call("status", {"fps_window_ms": 5000}, timeout=30)["fps"], 2) for _ in range(a.measure)]
+    samples = [round(call("status", {"fps_window_ms": 5000}, timeout=30)["fps"], 2) for _ in range(a.measure)] or [0.0]
     if a.frametimes:
         ft = call("frame_times", {"seconds": a.frametimes}, timeout=a.frametimes + 30)
         frame_stats = {k: round(ft[k], 2) for k in ("fps", "p50_ms", "p90_ms", "p99_ms", "max_ms")}

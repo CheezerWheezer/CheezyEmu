@@ -435,6 +435,12 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_in
         return pipeline_cache.CurrentGraphicsPipeline();
     }()};
     if (!pipeline) {
+        if (pipeline_cache.TakeTranslationSkip()) {
+            // Translated on a worker; its draws into redrawn targets are skipped meanwhile.
+            pipeline_cache.CountTransientSkip();
+            submitted = true;
+            return;
+        }
         report_failure("no pipeline");
         TraceRenderState(is_indexed, "no-pipeline", nullptr);
         return;

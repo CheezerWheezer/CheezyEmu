@@ -926,7 +926,94 @@ GraphicsEnvironment::GraphicsEnvironment(Tegra::Engines::Maxwell3D& maxwell3d_,
         maxwell3d->engine_state == Tegra::Engines::Maxwell3D::EngineHint::OnHLEMacro;
 }
 
+struct GraphicsEnvironment::DetachedState {
+    std::array<std::vector<u8>, Tegra::Engines::Maxwell3D::Regs::MaxConstBuffers> cbufs;
+    std::array<bool, Tegra::Engines::Maxwell3D::Regs::MaxConstBuffers> enabled{};
+    GPUVAddr tex_header{};
+    u32 tex_limit{};
+    bool via_header_index{};
+    u32 viewport_transform{};
+    ::Common::unordered_map<u64, Tegra::Engines::Maxwell3D::HLEReplacementAttributeType> replace;
+};
+
+void GraphicsEnvironment::Detach() {
+    auto state = std::make_shared<DetachedState>();
+    const auto& stage = maxwell3d->state.shader_stages[stage_index];
+    for (size_t index = 0; index < stage.const_buffers.size(); ++index) {
+        const auto& cbuf = stage.const_buffers[index];
+        state->enabled[index] = cbuf.enabled;
+        if (!cbuf.enabled || cbuf.size == 0) {
+            continue;
+        }
+        state->cbufs[index].resize((std::min<u32>)(cbuf.size, 0x10000));
+        gpu_memory->ReadBlockUnsafe(cbuf.address, state->cbufs[index].data(),
+                                    state->cbufs[index].size());
+    }
+    const auto& regs{maxwell3d->regs};
+    state->tex_header = regs.tex_header.Address();
+    state->tex_limit = regs.tex_header.limit;
+    state->via_header_index = regs.sampler_binding == Maxwell::SamplerBinding::ViaHeaderBinding;
+    state->viewport_transform = regs.viewport_scale_offset_enabled;
+    if (has_hle_engine_state) {
+        state->replace = maxwell3d->replace_table;
+    }
+    detached = std::move(state);
+}
+
+bool GraphicsEnvironment::MatchesEngineState() {
+    const auto& regs{maxwell3d->regs};
+    const bool via_header_index{regs.sampler_binding == Maxwell::SamplerBinding::ViaHeaderBinding};
+    const auto entry = [&](u32 handle) {
+        return ReadTextureInfo(regs.tex_header.Address(), regs.tex_header.limit, via_header_index,
+                               handle);
+    };
+    for (const auto& [handle, type] : texture_types) {
+        if (ConvertTextureType(entry(handle)) != type) {
+            return false;
+        }
+    }
+    for (const auto& [handle, format] : texture_pixel_formats) {
+        if (ConvertTexturePixelFormat(entry(handle)) != format) {
+            return false;
+        }
+    }
+    const auto mapped_pointer = [&](u64 address) {
+        return address != 0 && gpu_memory->IsWithinGPUAddressRange(address) &&
+               gpu_memory->IsFullyMappedRange(address, 1);
+    };
+    for (const auto& [key, answer] : storage_pointer_types) {
+        const u32 index = static_cast<u32>((key >> 32) & 0xff);
+        const u32 offset = static_cast<u32>(key);
+        const auto low = cbuf_values.find(MakeCbufKey(index, offset));
+        const auto high = cbuf_values.find(MakeCbufKey(index, offset + 4));
+        if (low == cbuf_values.end() || high == cbuf_values.end()) {
+            continue;
+        }
+        const u64 pointer = u64{low->second} | (u64{high->second} << 32);
+        bool mapped = mapped_pointer(pointer);
+        if ((key >> 63) != 0 && mapped) {
+            const u32 indirect = static_cast<u32>((key >> 40) & 0x3fffff);
+            mapped = gpu_memory->IsFullyMappedRange(pointer + indirect, sizeof(u64)) &&
+                     mapped_pointer(gpu_memory->Read<u64>(pointer + indirect));
+        }
+        if (mapped != (answer != 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 u32 GraphicsEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {
+    if (detached) {
+        u32 value{};
+        const auto& data = detached->cbufs[cbuf_index];
+        ASSERT(detached->enabled[cbuf_index]);
+        if (static_cast<size_t>(cbuf_offset) + sizeof(u32) <= data.size()) {
+            std::memcpy(&value, data.data() + cbuf_offset, sizeof(value));
+        }
+        cbuf_values.emplace(MakeCbufKey(cbuf_index, cbuf_offset), value);
+        return value;
+    }
     const auto& cbuf{maxwell3d->state.shader_stages[stage_index].const_buffers[cbuf_index]};
     ASSERT(cbuf.enabled);
     u32 value{};
@@ -943,8 +1030,9 @@ std::optional<Shader::ReplaceConstant> GraphicsEnvironment::GetReplaceConstBuffe
         return std::nullopt;
     }
     const u64 key = (static_cast<u64>(bank) << 32) | static_cast<u64>(offset);
-    auto it = maxwell3d->replace_table.find(key);
-    if (it == maxwell3d->replace_table.end()) {
+    const auto& table = detached ? detached->replace : maxwell3d->replace_table;
+    auto it = table.find(key);
+    if (it == table.end()) {
         return std::nullopt;
     }
     const auto converted_value = [](Tegra::Engines::Maxwell3D::HLEReplacementAttributeType name) {
@@ -965,9 +1053,12 @@ std::optional<Shader::ReplaceConstant> GraphicsEnvironment::GetReplaceConstBuffe
 
 Shader::TextureType GraphicsEnvironment::ReadTextureType(u32 handle) {
     const auto& regs{maxwell3d->regs};
-    const bool via_header_index{regs.sampler_binding == Maxwell::SamplerBinding::ViaHeaderBinding};
-    auto entry =
-        ReadTextureInfo(regs.tex_header.Address(), regs.tex_header.limit, via_header_index, handle);
+    const bool via_header_index{detached ? detached->via_header_index
+                                         : regs.sampler_binding ==
+                                               Maxwell::SamplerBinding::ViaHeaderBinding};
+    auto entry = ReadTextureInfo(detached ? detached->tex_header : regs.tex_header.Address(),
+                                 detached ? detached->tex_limit : regs.tex_header.limit,
+                                 via_header_index, handle);
     const Shader::TextureType result{ConvertTextureType(entry)};
     texture_types.emplace(handle, result);
     return result;
@@ -975,9 +1066,12 @@ Shader::TextureType GraphicsEnvironment::ReadTextureType(u32 handle) {
 
 Shader::TexturePixelFormat GraphicsEnvironment::ReadTexturePixelFormat(u32 handle) {
     const auto& regs{maxwell3d->regs};
-    const bool via_header_index{regs.sampler_binding == Maxwell::SamplerBinding::ViaHeaderBinding};
-    auto entry =
-        ReadTextureInfo(regs.tex_header.Address(), regs.tex_header.limit, via_header_index, handle);
+    const bool via_header_index{detached ? detached->via_header_index
+                                         : regs.sampler_binding ==
+                                               Maxwell::SamplerBinding::ViaHeaderBinding};
+    auto entry = ReadTextureInfo(detached ? detached->tex_header : regs.tex_header.Address(),
+                                 detached ? detached->tex_limit : regs.tex_header.limit,
+                                 via_header_index, handle);
     const Shader::TexturePixelFormat result(ConvertTexturePixelFormat(entry));
     texture_pixel_formats.emplace(handle, result);
     return result;
@@ -990,7 +1084,8 @@ bool GraphicsEnvironment::IsTexturePixelFormatInteger(u32 handle) {
 
 u32 GraphicsEnvironment::ReadViewportTransformState() {
     const auto& regs{maxwell3d->regs};
-    viewport_transform_state = regs.viewport_scale_offset_enabled;
+    viewport_transform_state =
+        detached ? detached->viewport_transform : regs.viewport_scale_offset_enabled;
     return viewport_transform_state;
 }
 

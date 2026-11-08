@@ -797,6 +797,7 @@ void PipelineCache::SaveUsedPipelines() {
 }
 
 GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline() {
+    translation_skip = false;
 
     if (!RefreshStages(graphics_key.unique_hashes)) {
         current_pipeline = nullptr;
@@ -1253,7 +1254,142 @@ void ReportNewPipelineKey(const GraphicsPipelineCacheKey& key) {
 }
 } // Anonymous namespace
 
+namespace {
+/// Asynchronous translations: started, adopted, redone on the GPU thread, and adopted pipelines
+/// that write storage (their draws skipped while translating could have written memory).
+std::atomic<u64> g_async_started{};
+std::atomic<u64> g_async_adopted{};
+std::atomic<u64> g_async_redone{};
+std::atomic<u64> g_async_storage{};
+
+/// EDEN_NX2_ASYNC_TRANSLATE=0 keeps translation on the GPU thread (for comparisons).
+bool AsyncTranslationEnabled() {
+    static const bool enabled = [] {
+        const char* value = std::getenv("EDEN_NX2_ASYNC_TRANSLATE");
+        return value == nullptr || value[0] != '0';
+    }();
+    return enabled;
+}
+} // Anonymous namespace
+
+bool PipelineCache::CanTranslateAsync() {
+    if (!AsyncTranslationEnabled() || !SkipsUnbuiltTransientDraws() ||
+        maxwell3d->regs.transform_feedback_enabled != 0) {
+        return false;
+    }
+    std::scoped_lock lock{texture_cache.mutex};
+    texture_cache.UpdateRenderTargets(false);
+    return texture_cache.RenderTargetsRedrawnReason() == 0;
+}
+
+void PipelineCache::StartAsyncTranslation() {
+    auto job = std::make_shared<PendingTranslation>();
+    {
+        GraphicsEnvironments environments;
+        GetGraphicsEnvironments(environments, graphics_key.unique_hashes);
+        for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {
+            if (graphics_key.unique_hashes[index] == 0) {
+                continue;
+            }
+            job->envs[index] = std::move(environments.envs[index]);
+            job->envs[index].Detach();
+            job->used[index] = true;
+        }
+    }
+    pending_translations.emplace(graphics_key, job);
+    g_async_started.fetch_add(1, std::memory_order_relaxed);
+    workers.QueueWork([this, key = graphics_key, job] {
+        std::unique_ptr<GraphicsPipeline> pipeline;
+        try {
+            ShaderPools pools;
+            boost::container::static_vector<Shader::Environment*, Maxwell::MaxShaderProgram>
+                env_ptrs;
+            for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {
+                if (job->used[index]) {
+                    env_ptrs.push_back(&job->envs[index]);
+                }
+            }
+            pipeline = CreateGraphicsPipeline(pools, key, MakeSpan(env_ptrs), nullptr, false);
+            if (pipeline && pipeline->Failed()) {
+                pipeline.reset();
+            }
+        } catch (const std::exception& exception) {
+            LOG_ERROR(Render_Vulkan, "Asynchronous pipeline translation failed: {}",
+                      exception.what());
+        } catch (...) {
+            LOG_ERROR(Render_Vulkan, "Asynchronous pipeline translation failed");
+        }
+        std::scoped_lock lock{job->mutex};
+        job->pipeline = std::move(pipeline);
+        job->done = true;
+        job->done_cv.notify_all();
+    });
+}
+
+bool PipelineCache::AdoptTranslation(PendingTranslation& job) {
+    bool valid = job.pipeline != nullptr;
+    for (size_t index = 0; valid && index < Maxwell::MaxShaderProgram; ++index) {
+        valid = !job.used[index] || job.envs[index].MatchesEngineState();
+    }
+    if (!valid) {
+        g_async_redone.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    g_async_adopted.fetch_add(1, std::memory_order_relaxed);
+    if (job.pipeline->WritesStorage()) {
+        g_async_storage.fetch_add(1, std::memory_order_relaxed);
+    }
+    graphics_cache[graphics_key] = std::move(job.pipeline);
+    if (!pipeline_cache_filename.empty() && disk_pipelines.insert(graphics_key.Hash()).second) {
+        auto envs = std::make_shared<std::array<VideoCommon::GraphicsEnvironment, Maxwell::MaxShaderProgram>>(
+            std::move(job.envs));
+        serialization_thread.QueueWork([this, key = graphics_key, envs, used = job.used] {
+            boost::container::static_vector<const GenericEnvironment*, Maxwell::MaxShaderProgram>
+                env_ptrs;
+            for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {
+                if (used[index]) {
+                    env_ptrs.push_back(&(*envs)[index]);
+                }
+            }
+            SerializePipeline(key, env_ptrs, pipeline_cache_filename, CACHE_VERSION);
+        });
+        QueueVulkanPipelineCacheFlush();
+    }
+    return true;
+}
+
 GraphicsPipeline* PipelineCache::CurrentGraphicsPipelineSlowPath() {
+    // Asynchronous translation (native draws, Transient): a new pipeline whose draw writes only
+    // render targets redrawn every frame is translated and built on a worker while its draws are
+    // skipped, instead of translating on this thread (~7 ms per pipeline, hundreds a second when
+    // Ocarina enters an area). A draw that can't be skipped waits for the worker. The worker
+    // reads constant buffers from a copy taken here; texture descriptors and pointer mappings it
+    // read are checked again before the pipeline is used, and translated here when they differ.
+    if (const auto it = pending_translations.find(graphics_key); it != pending_translations.end()) {
+        const std::shared_ptr<PendingTranslation> job = it->second;
+        std::unique_lock lock{job->mutex};
+        if (!job->done) {
+            lock.unlock();
+            if (CanTranslateAsync()) {
+                translation_skip = true;
+                return nullptr;
+            }
+            lock.lock();
+            job->done_cv.wait(lock, [&] { return job->done; });
+        }
+        lock.unlock();
+        pending_translations.erase(graphics_key);
+        AdoptTranslation(*job);
+    } else if (!graphics_cache.contains(graphics_key) && CanTranslateAsync()) {
+        if (auto prebuilt = background_pipelines.Take(graphics_key)) {
+            graphics_cache[graphics_key] = std::move(prebuilt);
+        } else {
+            ReportNewPipelineKey(graphics_key);
+            StartAsyncTranslation();
+            translation_skip = true;
+            return nullptr;
+        }
+    }
     const auto [pair, is_new]{graphics_cache.try_emplace(graphics_key)};
     auto& pipeline{pair->second};
     if (is_new) {
@@ -1712,12 +1848,15 @@ void ReportRuntimePipeline(const char* kind, std::chrono::steady_clock::time_poi
                  "({:.1f} ms of it graphics SPIR-V), {:.1f} ms graphics SPIR-V on workers, "
                  "{:.1f} ms of draws held for unbuilt pipelines, {} draws skipped into "
                  "redrawn targets, held: {} without targets, {} not cleared this frame, {} "
-                 "cleared this frame only, {} writing memory",
+                 "cleared this frame only, {} writing memory; asynchronous translations {} "
+                 "started, {} adopted, {} redone here, {} adopted that write storage",
                  count, ms(total), ms(take(runtime_spirv_ns[0])), ms(take(runtime_spirv_ns[1])),
                  ms(GraphicsPipeline::TakeHoldTime()),
                  g_transient_skips.exchange(0, std::memory_order_relaxed),
                  g_unbuilt_held[1].exchange(0), g_unbuilt_held[2].exchange(0),
-                 g_unbuilt_held[3].exchange(0), g_unbuilt_held[4].exchange(0));
+                 g_unbuilt_held[3].exchange(0), g_unbuilt_held[4].exchange(0),
+                 g_async_started.exchange(0), g_async_adopted.exchange(0),
+                 g_async_redone.exchange(0), g_async_storage.exchange(0));
         total = {};
         count = 0;
         window = now;

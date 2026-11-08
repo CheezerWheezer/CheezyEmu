@@ -1051,6 +1051,25 @@ int TextureCache<P>::RenderTargetsRedrawnReason() {
         const int own = image.clear_frame != frame_tick                     ? 2
                         : image.previous_clear_frame + 1 != frame_tick ? 3
                                                                         : 0;
+        // TEMP: held draws by target, logged every 600 frames.
+        static std::map<std::string, u64> held;
+        static u64 last_log = 0;
+        if (own != 0) {
+            ++held[fmt::format("{}x{} fmt {} r{} last-clear {}", image.info.size.width,
+                               image.info.size.height, static_cast<int>(image.info.format), own,
+                               image.clear_frame == ~u64{0} ? -1 : static_cast<s64>(frame_tick - image.clear_frame))];
+        }
+        if (frame_tick - last_log >= 600 && !held.empty()) {
+            last_log = frame_tick;
+            std::vector<std::pair<u64, std::string>> top;
+            for (const auto& [k, v] : held) top.emplace_back(v, k);
+            std::ranges::sort(top, std::greater{});
+            std::string text;
+            for (size_t i = 0; i < std::min<size_t>(top.size(), 25); ++i) text += fmt::format("
+  {} {}", top[i].first, top[i].second);
+            LOG_INFO(HW_GPU, "TEMP held targets at frame {}:{}", frame_tick, text);
+            held.clear();
+        }
         reason = reason == 1 ? own : (std::max)(reason, own);
     };
     for (const ImageViewId id : render_targets.color_buffer_ids) {

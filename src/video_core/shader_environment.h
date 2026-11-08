@@ -177,9 +177,21 @@ public:
 
     std::optional<Shader::ReplaceConstant> GetReplaceConstBuffer(u32 bank, u32 offset) override;
 
+    /// From now on answers without the engine: the stage's bound constant buffers are copied and
+    /// the register state read now, so a worker can translate with this environment while the
+    /// GPU thread goes on (texture descriptors and pointer mappings are still read from memory).
+    void Detach();
+
+    /// Whether the texture descriptors and storage buffer pointers this environment answered read
+    /// the same with the engine's current state: a translation made detached still applies.
+    [[nodiscard]] bool MatchesEngineState();
+
 private:
+    struct DetachedState;
+
     Tegra::Engines::Maxwell3D* maxwell3d{};
     size_t stage_index{};
+    std::shared_ptr<const DetachedState> detached;
 };
 
 class ComputeEnvironment final : public GenericEnvironment {
