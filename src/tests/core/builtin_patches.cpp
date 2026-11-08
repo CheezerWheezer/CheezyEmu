@@ -44,7 +44,7 @@ constexpr size_t DynamicCallOffset = sizeof(Loader::NSOHeader) + 0x6E6CC4;
 constexpr size_t DynamicRoutineOffset = sizeof(Loader::NSOHeader) + 0x3C46200;
 constexpr size_t DynamicStateOffset = sizeof(Loader::NSOHeader) + 0x4E9FE00;
 constexpr size_t DynamicRoutineSize = 120;
-constexpr size_t UnlockRoutineSize = 128;
+constexpr size_t UnlockRoutineSize = 172;
 constexpr u32 DynamicCallInstruction = 0x94D57D4F;
 constexpr u32 DynamicOriginalInstruction = 0x1E201828;
 
@@ -273,8 +273,10 @@ TEST_CASE("Built-in FPS Unlock defaults on and replaces Dynamic FPS", "[patch_ma
     auto patched = manager.PatchNSO(nso, "main");
     REQUIRE(WordAt(patched, DynamicCallOffset) == DynamicCallInstruction);
     REQUIRE(routine(patched, UnlockRoutineSize) ==
-            std::string{RoutineHead} + "E300001C4268231EC300001C4278231E4840201EC0035FD6"
-                                       "1F2003D50AD7A33C0000C040");
+            std::string{RoutineHead} + "0302001C0309231E4020231EEC00005402000014C0035FD6"
+                                       "6301001C0309231E4020231E8AFFFF540301001C4268231E"
+                                       "E300001C4278231E4840201EC0035FD60AD7833FEC51783F"
+                                       "0AD7A33C0000C040");
     REQUIRE(WordAt(patched) == BranchInstruction);
 
     // Unchecking only Dynamic FPS keeps FPS Unlock.
