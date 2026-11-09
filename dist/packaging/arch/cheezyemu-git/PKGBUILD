@@ -43,7 +43,7 @@ optdepends=(
 )
 provides=('cheezyemu')
 conflicts=('cheezyemu')
-source=("cheezyemu::git+https://github.com/CheezerWheezer/CheezyEmu.git#branch=amd-superior")
+source=("cheezyemu::git+https://github.com/CheezerWheezer/CheezyEmu.git#branch=main")
 sha256sums=('SKIP')
 
 pkgver() {
