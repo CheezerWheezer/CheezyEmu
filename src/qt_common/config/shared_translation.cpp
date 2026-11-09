@@ -197,17 +197,16 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "Native: the game's own size, 1440x810.\n"
               "Quality: 1280x720.\nBalanced: 1125x633.\nPerformance: 960x540.\n"
               "Ultra Performance: 640x360 (fastest, softest).\n"
-              "Docked (4K output) the sizes double: Native AA 3840x2160, Quality 2560x1440 (the "
-              "game's own), Balanced 2250x1266, Performance 1920x1080, Ultra Performance 1280x720.\n"
+              "Docked the sizes are a fraction of 2560x1440: Native AA 2560x1440, Quality about "
+              "1710x961, Balanced 1500x844, Performance 1280x720, Ultra Performance 855x480; FSR "
+              "then writes 4K or 1440p (Ocarina of Time docked output).\n"
               "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
               "Resolution's fixed size. Takes effect when the game starts."));
     INSERT(Settings, oot_docked_output, tr("Ocarina of Time docked output:"),
            tr("Docked only. 4K: FSR upscales the 3D scene to 3840x2160 (sharpest, heaviest).\n"
               "1440p: FSR writes the game's own 2560x1440 image instead and no 4K image is made, "
-              "which is lighter on the GPU. FSR presets then size the scene against 1440p: Native "
-              "AA about 2550x1434, Quality 1710x961, Balanced 1500x843, Performance and Ultra "
-              "Performance 1280x720 (the smallest the game draws docked).\nTakes effect when the "
-              "game starts."));
+              "which is lighter on the GPU. The FSR preset's scene sizes stay the same (a fraction "
+              "of 2560x1440).\nTakes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),

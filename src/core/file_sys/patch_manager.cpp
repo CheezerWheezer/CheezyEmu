@@ -139,8 +139,8 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
                     build_id, ocarina_build);
         return;
     }
-    // The scale is a fraction of the output: handheld 1920x1080, docked 3840x2160 (the game's own
-    // docked scene is 2560x1440, FSR brings it to 4K). The same values give AMD's ratios for both.
+    // The scale is a fraction of the game's base size: handheld 1920x1080, docked 2560x1440 (FSR
+    // brings docked to 4K, or keeps 1440p). The same values give AMD's ratios for both.
     // The upper half of an f32 whose lower half is zero (movz w9, #imm16, lsl #16).
     u16 scale_bits = 0x3F80;
     const char* preset_name = "";
@@ -172,20 +172,11 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     default:
         return;
     }
-    // Docked with 1440p output: the scene is that fraction of 1440p instead of 4K (two thirds of
-    // the scale; the game's docked base is 3840 wide). Native AA becomes the game's own 2560x1440,
-    // inside its clamp. The game draws no less than 1280x720 docked, so Ultra Performance stays
-    // at 1280x720 like Performance.
+    // Docked the scene is that fraction of 2560x1440 either way (Performance draws 1280x720); the
+    // docked output setting only decides whether FSR then writes 4K or the 1440p image.
     const bool docked_1440p =
         Settings::IsDockedMode() &&
         Settings::values.oot_docked_output.GetValue() == Settings::OotDockedOutput::Output1440p;
-    if (docked_1440p) {
-        const f32 scale = std::bit_cast<f32>(u32{scale_bits} << 16) * (2.0f / 3.0f);
-        // Rounded down: rounded up, Native AA drew 2565x1443, more than the 1440p image FSR
-        // writes, and the FSR path turned it down.
-        scale_bits = static_cast<u16>(std::bit_cast<u32>(scale) >> 16);
-        skip_clamp = false;
-    }
     const size_t header = sizeof(Loader::NSOHeader);
     const size_t branch_at = header + MAX_RESOLUTION_RECORDS[0].module_offset;
     const size_t scale_at = header + OCARINA_SCALE_OFFSET;

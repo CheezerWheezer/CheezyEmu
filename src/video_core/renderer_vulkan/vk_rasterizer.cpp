@@ -2680,6 +2680,9 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         u32 target_w{}, target_h{}, drawn_w{}, drawn_h{};
     };
     static CameraDiagnostics diag;
+    if (render_trace_frame < diag.window) {
+        diag = {}; // a new game: its frame counter starts again
+    }
     if (render_trace_frame >= diag.window + 600) {
         if (diag.matched == 0 && diag.draws > 0) {
             LOG_INFO(Render_Vulkan,
@@ -2733,9 +2736,24 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         device_memory.ReadBlockUnsafe(binding.device_addr, camera.data(), sizeof(camera));
         constexpr size_t extent_offset = 0x120 / sizeof(f32);
         constexpr size_t projection_wz = 0xa8 / sizeof(f32);
-        if (camera[extent_offset] != static_cast<f32>(color.size.width) ||
-            camera[extent_offset + 1] != static_cast<f32>(color.size.height) ||
-            camera[projection_wz] != -1.0f || camera[projection_wz + 1] != 0.0f) {
+        // With an FSR preset the game draws the scene at its own size into a target rounded up
+        // (Quality docked: a 1710x961 scene in a 1744x981 target), and the camera holds the scene
+        // size. Requiring the target size there turned every Quality, Balanced and Ultra
+        // Performance frame down; Performance and Native fit exactly and worked.
+        const auto& scene_viewport = maxwell3d->regs.viewport_transform[0];
+        const f32 scene_w = std::abs(scene_viewport.scale_x) * 2.0f;
+        const f32 scene_h = std::abs(scene_viewport.scale_y) * 2.0f;
+        const bool camera_is_target = camera[extent_offset] == static_cast<f32>(color.size.width) &&
+                                      camera[extent_offset + 1] ==
+                                          static_cast<f32>(color.size.height);
+        const bool camera_is_drawn_scene =
+            Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native &&
+            camera[extent_offset] <= static_cast<f32>(color.size.width) &&
+            camera[extent_offset + 1] <= static_cast<f32>(color.size.height) &&
+            std::abs(camera[extent_offset] - scene_w) <= 2.0f &&
+            std::abs(camera[extent_offset + 1] - scene_h) <= 2.0f;
+        if ((!camera_is_target && !camera_is_drawn_scene) || camera[projection_wz] != -1.0f ||
+            camera[projection_wz + 1] != 0.0f) {
             ++diag.mismatched;
             diag.camera_w = camera[extent_offset];
             diag.camera_h = camera[extent_offset + 1];
