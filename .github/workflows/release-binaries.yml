@@ -176,7 +176,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 https://apt.llvm.org/llvm-snapshot.gpg.key |
+          curl -fsSL --retry 12 --retry-all-errors --retry-delay 30 --retry-max-time 900 https://apt.llvm.org/llvm-snapshot.gpg.key |
             sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$PGO_LLVM_VERSION main" |
             sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
@@ -440,9 +440,9 @@ jobs:
           tools="$RUNNER_TEMP/linuxdeploy"
           mkdir -p "$tools"
           arch=$(uname -m)   # aarch64 or x86_64
-          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$tools/linuxdeploy-$arch.AppImage" \
+          curl -fsSL --retry 12 --retry-all-errors --retry-delay 30 --retry-max-time 900 -o "$tools/linuxdeploy-$arch.AppImage" \
           https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage
-          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o "$tools/linuxdeploy-plugin-qt-$arch.AppImage" \
+          curl -fsSL --retry 12 --retry-all-errors --retry-delay 30 --retry-max-time 900 -o "$tools/linuxdeploy-plugin-qt-$arch.AppImage" \
           https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$arch.AppImage
           chmod +x "$tools"/*.AppImage
           # The desktop file names its icon io.github.zortos293.lichii.
