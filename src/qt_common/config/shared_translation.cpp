@@ -194,8 +194,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("The Legend of Zelda: Ocarina of Time renders its 3D scene smaller and AMD FSR "
               "upscales it (at 1080p):\n"
               "Native: the game's own size, 1440x810.\n"
-              "Quality: 1260x708.\nBalanced: 1080x608.\nPerformance: 990x557.\n"
-              "Ultra Performance: 720x405 (fastest, softest).\n"
+              "Quality: 1280x720.\nBalanced: 1125x633.\nPerformance: 960x540.\n"
+              "Ultra Performance: 640x360 (fastest, softest).\n"
               "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
               "Resolution's fixed size. Takes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());

@@ -137,22 +137,22 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     u16 scale_bits = 0x3F80;
     const char* preset_name = "";
     switch (preset) {
-    // The scene is 480 + 960 * scale wide (270 + 540 * scale high): 0.5 drew 960x540 and 1.0
-    // 1440x810, the game's own size.
+    // The scene is 1920 * scale wide (1080 * scale high), kept between 640x360 and the game's own
+    // 1440x810: 0.25 drew 640x360, 0.5 960x540. AMD's ratios to 1080p:
     case Settings::OotFsrPreset::Quality:
-        scale_bits = 0x3F50; // 0.8125: 1260x709
+        scale_bits = 0x3F2B; // 0.668: 1282x721 (1.5x)
         preset_name = "Quality";
         break;
     case Settings::OotFsrPreset::Balanced:
-        scale_bits = 0x3F20; // 0.625: 1080x608
+        scale_bits = 0x3F16; // 0.586: 1125x633 (1.7x)
         preset_name = "Balanced";
         break;
     case Settings::OotFsrPreset::Performance:
-        scale_bits = 0x3F08; // 0.53125: 990x557
+        scale_bits = 0x3F00; // 0.5: 960x540 (2x)
         preset_name = "Performance";
         break;
     case Settings::OotFsrPreset::UltraPerformance:
-        scale_bits = 0x3E80; // 0.25: 720x405
+        scale_bits = 0x3EAB; // 0.334: 640x360 (3x, the game's minimum)
         preset_name = "Ultra Performance";
         break;
     default:

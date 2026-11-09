@@ -323,6 +323,9 @@ private:
         u32 depth_tic{};
         VkExtent2D extent{};
         VkExtent2D render_extent{}; ///< the drawn top-left part (an FSR preset), else extent
+        /// The scene draw's depth buffer and its frame (an FSR preset takes depth from there).
+        VideoCommon::ImageViewId depth_target{};
+        u64 depth_target_frame{};
         std::array<f32, 16> current{};
         std::array<f32, 16> previous{};
     } oot_motion;

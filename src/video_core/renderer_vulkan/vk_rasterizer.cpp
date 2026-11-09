@@ -2686,6 +2686,8 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         oot_camera_sample_frame = render_trace_frame;
         oot_motion.camera_channel = gpu_memory;
         oot_motion.extent = {color.size.width, color.size.height};
+        oot_motion.depth_target = targets.depth_buffer_id;
+        oot_motion.depth_target_frame = render_trace_frame;
         oot_motion.render_extent = scaled_scene ? VkExtent2D{std::min(drawn_width, color.size.width),
                                                              std::min(drawn_height, color.size.height)}
                                                 : oot_motion.extent;
@@ -3206,25 +3208,39 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     if (oot_camera_sample_frame != render_trace_frame) {
         return fail("no scene camera this frame");
     }
-    if (oot_motion.depth_frame != render_trace_frame) {
-        return fail("no scene depth this frame");
-    }
-    if (oot_motion.camera_channel != gpu_memory || oot_motion.depth_channel != gpu_memory) {
-        return fail("camera and depth from another channel");
-    }
-    const auto tic = read_tic(oot_motion.depth_tic);
-    if (!tic || tic->Address() != oot_motion.depth_address ||
-        tic->Width() != oot_motion.extent.width || tic->Height() != oot_motion.extent.height) {
-        return fail("scene depth descriptor changed");
-    }
+    // An FSR preset: the game's depth reader pass doesn't run the same way at its other sizes, so
+    // the depth comes from the scene draw's own depth buffer (the camera draw, this frame).
+    VideoCommon::ImageViewId depth_id{};
+    if (OcarinaFsrPresetActive() && oot_motion.depth_target_frame == render_trace_frame &&
+        oot_motion.depth_target && oot_motion.camera_channel == gpu_memory) {
+        depth_id = oot_motion.depth_target;
+        const auto& view = texture_cache.GetImageView(depth_id);
+        if (view.size.width != oot_motion.extent.width ||
+            view.size.height != oot_motion.extent.height) {
+            return fail("scene depth buffer size");
+        }
+    } else {
+        if (oot_motion.depth_frame != render_trace_frame) {
+            return fail("no scene depth this frame");
+        }
+        if (oot_motion.camera_channel != gpu_memory || oot_motion.depth_channel != gpu_memory) {
+            return fail("camera and depth from another channel");
+        }
+        const auto tic = read_tic(oot_motion.depth_tic);
+        if (!tic || tic->Address() != oot_motion.depth_address ||
+            tic->Width() != oot_motion.extent.width || tic->Height() != oot_motion.extent.height) {
+            return fail("scene depth descriptor changed");
+        }
 
-    texture_cache.SynchronizeDescriptors(true);
-    std::array images{VideoCommon::ImageViewInOut{.index = oot_motion.depth_tic}};
-    texture_cache.FillImageViews(images, true);
-    if (!images[0].id) {
-        return fail("no scene depth image");
+        texture_cache.SynchronizeDescriptors(true);
+        std::array images{VideoCommon::ImageViewInOut{.index = oot_motion.depth_tic}};
+        texture_cache.FillImageViews(images, true);
+        if (!images[0].id) {
+            return fail("no scene depth image");
+        }
+        depth_id = images[0].id;
     }
-    auto& depth = texture_cache.GetImageView(images[0].id);
+    auto& depth = texture_cache.GetImageView(depth_id);
     const auto* backing = depth.BackingImage();
     if (!backing || depth.IsRescaled() || depth.format != VideoCore::Surface::PixelFormat::D32_FLOAT ||
         depth.range != VideoCommon::SubresourceRange{} || backing->info.num_samples != 1) {
