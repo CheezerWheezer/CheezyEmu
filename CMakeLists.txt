@@ -772,6 +772,9 @@ if(ENABLE_QT AND UNIX AND NOT APPLE)
     install(FILES "dist/cheezyemu.png"
         DESTINATION "share/icons/hicolor/256x256/apps"
         RENAME "io.github.cheezerwheezer.cheezyemu.png")
+    install(FILES "dist/branding/cheezyemu_icon.svg"
+        DESTINATION "share/icons/hicolor/scalable/apps"
+        RENAME "io.github.cheezerwheezer.cheezyemu.svg")
 
     install(FILES "dist/io.github.cheezerwheezer.cheezyemu.xml"
         DESTINATION "share/mime/packages")
