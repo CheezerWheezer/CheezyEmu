@@ -4,6 +4,10 @@
 // SPDX-FileCopyrightText: 2015 Citra Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <filesystem>
+#include <utility>
+#include <vector>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QBuffer>

@@ -3,6 +3,8 @@
 
 #include "yuzu/util/icon_search.h"
 
+#include <cstdlib>
+#include <iterator>
 #include <algorithm>
 #include <atomic>
 #include <chrono>

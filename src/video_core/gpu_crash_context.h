@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <functional>
+#include <string_view>
 #include <map>
 #include <mutex>
 #include <string>
