@@ -57,7 +57,10 @@ constexpr VkDeviceSize HEALTH_STRIDE = 16;
 constexpr VkDeviceSize HEALTH_OUTPUT_OFFSET = HEALTH_SAMPLES * HEALTH_STRIDE;
 constexpr VkDeviceSize HEALTH_SIZE = 2 * HEALTH_OUTPUT_OFFSET;
 constexpr u32 HEALTH_INTERVAL = 30;   ///< Frames between samples.
-constexpr u32 HEALTH_BLACK_LIMIT = 8; ///< Black samples in a row (about 4 to 8 s) to switch.
+constexpr u32 HEALTH_BLACK_LIMIT = 4; ///< Black samples in a row (a few seconds) to switch.
+/// A sample counts as black when this many of its 64 pixels are black or NaN: the RX 9070 XT's
+/// broken FSR 4 output is black with scattered white dots, which an all-64 test kept missing.
+constexpr u32 HEALTH_BLACK_PIXELS = 56;
 constexpr u32 HEALTH_GOOD_LIMIT = 4;  ///< Good samples to stop checking.
 
 VkDeviceContext DeviceContext(const Device& device) {
@@ -398,10 +401,22 @@ bool Fsr4Upscaler::CheckOutputHealth() {
             ++bad_outputs;
         }
     }
-    if (distinct_inputs < HEALTH_SAMPLES / 4) {
+    // A dark scene (a cave, a fade) is black in FSR's input too: only a bright input judges it.
+    // The input is RGBA16F as well (the Ocarina colour copy).
+    u32 dark_inputs = 0;
+    for (u32 i = 0; i < HEALTH_SAMPLES; ++i) {
+        std::array<u16, 4> texel;
+        std::memcpy(texel.data(), &data[i * HEALTH_STRIDE], sizeof(texel));
+        // Below 1/64 in every colour channel (half-float exponent under 9).
+        if ((texel[0] & 0x7fff) < 0x2400 && (texel[1] & 0x7fff) < 0x2400 &&
+            (texel[2] & 0x7fff) < 0x2400) {
+            ++dark_inputs;
+        }
+    }
+    if (distinct_inputs < HEALTH_SAMPLES / 4 || dark_inputs > HEALTH_SAMPLES / 4) {
         return false; // nothing to judge by
     }
-    if (bad_outputs < HEALTH_SAMPLES) {
+    if (bad_outputs < HEALTH_BLACK_PIXELS) {
         black_checks = 0;
         if (++good_checks >= HEALTH_GOOD_LIMIT) {
             health_done = true;
