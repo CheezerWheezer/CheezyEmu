@@ -3702,6 +3702,15 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     const bool output_1440p = Settings::values.oot_docked_output.GetValue() ==
                               Settings::OotDockedOutput::Output1440p;
     const bool scene_fits = extent.width <= target.size.width && extent.height <= target.size.height;
+    // With 1440p output a preset's own upscale pass may already have run FSR this frame and
+    // written the 1440p image; the 1440p pass then reads that image, not the scene. Running FSR
+    // again on it (wrong sizes, an image it also writes) is a likely cause of a tester's freeze
+    // (docked, 1440p, Quality), so FSR runs once a frame here, on the scene only.
+    if (upscale_4k && output_1440p &&
+        (oot_dlss_frame == render_trace_frame || color.size.width != extent.width ||
+         color.size.height != extent.height)) {
+        return false;
+    }
     const bool preset_scene_4k = upscale_4k && !output_1440p && OcarinaFsrPresetActive() &&
                                  target_1440p && scene_fits && !same_size;
     const bool four_k =
