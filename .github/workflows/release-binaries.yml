@@ -7,6 +7,10 @@ on:
         description: Publish the binaries as a GitHub release
         type: boolean
         default: true
+      build_number:
+        description: Build number for the release name and tag (empty = this run's number)
+        type: string
+        default: ""
   push:
     branches:
       - nx2-experimental
@@ -34,6 +38,9 @@ permissions:
 # eglantine.profdata; bump it when a refreshed profile needs a newer LLVM.
 env:
   PGO_LLVM_VERSION: "23"
+  # The release's build number: the run number unless the run was given one (a rerun of a
+  # failed release keeps its name).
+  BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
 
 # A running build is never cancelled: it finishes and publishes. A push meanwhile queues one build;
 # a later push replaces it, so the newest commit builds as soon as the running one is done.
@@ -55,7 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="build-${GITHUB_RUN_NUMBER}"
+          tag="build-${BUILD_NUMBER}"
           if tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null); then
             if [ "$tag_sha" != "$GITHUB_SHA" ]; then
               echo "Release tag $tag points to $tag_sha instead of $GITHUB_SHA"
@@ -273,7 +280,7 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON
             -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
             -DENABLE_UPDATE_CHECKER=ON
-            -DLICHII_BUILD_TAG=build-${{ github.run_number }}
+            -DLICHII_BUILD_TAG=build-${{ env.BUILD_NUMBER }}
             -DLICHII_BUILD_PLATFORM=${{ matrix.platform }}
             -DUSE_DISCORD_PRESENCE=OFF
             -DYUZU_USE_BUNDLED_SIRIT=OFF
@@ -317,7 +324,7 @@ jobs:
             -DYUZU_USE_BUNDLED_QT=OFF \
             -DYUZU_USE_BUNDLED_SDL3=ON \
             -DENABLE_UPDATE_CHECKER=ON \
-            -DLICHII_BUILD_TAG=build-${{ github.run_number }} \
+            -DLICHII_BUILD_TAG=build-${{ env.BUILD_NUMBER }} \
             -DLICHII_BUILD_PLATFORM=${{ matrix.platform }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
@@ -348,7 +355,7 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON \
             -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=ON \
-            -DLICHII_BUILD_TAG=build-${{ github.run_number }} \
+            -DLICHII_BUILD_TAG=build-${{ env.BUILD_NUMBER }} \
             -DLICHII_BUILD_PLATFORM=${{ matrix.platform }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
@@ -427,7 +434,7 @@ jobs:
           export EXTRA_QT_MODULES=waylandcompositor
           export EXTRA_PLATFORM_PLUGINS='libqwayland-egl.so;libqwayland-generic.so'
           # Embedded in the AppImage metadata; matches the release tag (build-N) plus the commit.
-          export LDAI_VERSION="build-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+          export LDAI_VERSION="build-${BUILD_NUMBER}-${GITHUB_SHA::7}"
           export LDAI_OUTPUT="lichii-${GITHUB_SHA}-${{ matrix.platform }}.AppImage"
           export OUTPUT="$LDAI_OUTPUT"
           export ARCH="$arch"
@@ -600,12 +607,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-${GITHUB_RUN_NUMBER}" --jq '.object.sha')
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-${BUILD_NUMBER}" --jq '.object.sha')
           if [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "Release tag build-${GITHUB_RUN_NUMBER} points to $tag_sha instead of $GITHUB_SHA"
+            echo "Release tag build-${BUILD_NUMBER} points to $tag_sha instead of $GITHUB_SHA"
             exit 1
           fi
-          tag="build-${GITHUB_RUN_NUMBER}"
+          tag="build-${BUILD_NUMBER}"
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
 
           link() { [[ -e "dist/$2" ]] && echo "[$1](${base}/$2)" || true; }
@@ -670,7 +677,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
             --prerelease \
-            --title "Lichii ${GITHUB_REF_NAME} build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
+            --title "Lichii ${GITHUB_REF_NAME} build ${BUILD_NUMBER} (${GITHUB_SHA::7})" \
             --notes-file notes.md
 
       # LICHII_BUILD_TAG is baked into every binary as build-<run number>, and the update checker
@@ -682,10 +689,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          expected="build-${GITHUB_RUN_NUMBER}"
+          expected="build-${BUILD_NUMBER}"
           published_tag=$(gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName')
           published_title=$(gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json name --jq '.name')
-          if [ "$published_tag" != "$expected" ] || [[ "$published_title" != *" build ${GITHUB_RUN_NUMBER} ("* ]]; then
-            echo "Release is tagged '$published_tag' and titled '$published_title', expected tag $expected and a title naming build ${GITHUB_RUN_NUMBER}"
+          if [ "$published_tag" != "$expected" ] || [[ "$published_title" != *" build ${BUILD_NUMBER} ("* ]]; then
+            echo "Release is tagged '$published_tag' and titled '$published_title', expected tag $expected and a title naming build ${BUILD_NUMBER}"
             exit 1
           fi
