@@ -3828,6 +3828,11 @@ std::optional<FramebufferTextureInfo> RasterizerVulkan::AccelerateDisplay(
         !oot_live_dlss->EvaluationFailed() && !frame_dump.Capturing()) {
         try {
             oot_live_dlss->Composite4k(info.image_view, render_trace_frame);
+            if (AmdFrameGen::Requested()) {
+                // The HUD mask for AMD frame generation in the 4K mode: the next frame's motion is
+                // cleared where the HUD sits, so the HUD doesn't move in generated frames.
+                oot_live_dlss->MakeHudMask4k(info.image_view);
+            }
             info.image = oot_live_dlss->CompositedImage();
             info.image_view = oot_live_dlss->CompositedView();
             info.scaled_width = 3840;

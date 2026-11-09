@@ -22,6 +22,8 @@
 >   older Radeons, NVIDIA, Intel): Ocarina falls back to AMD's FSR 3.1 instead of turning both off.
 > - New **AMD Frame Generation Version** setting: *Auto* (FSR 4 frame generation on Radeon
 >   RX 9000) or *FSR 3.1 (faster)*.
+> - The HUD stays still with frame generation in Docked (4K) mode too.
+> - Running out of video memory no longer crashes AMD drivers (zortos293/Lichii#880).
 > - The player guide is now **README.txt** (opens in Notepad), next to `lichii.exe` and linked at
 >   the top of every release.
 

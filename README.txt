@@ -119,6 +119,19 @@ The log (%APPDATA%\eden\log\eden_log.txt) says which one runs:
     resolution under load, the game's own upscaler takes those frames.
   - If you see a problem only with it, turn the option off to compare.
 
+Low frame rate? (FSR 4 on RX 6000 / RX 7000)
+  FSR 4's network is heavy on Radeon RX 6000 and RX 7000 (they don't have the RX 9000's AI
+  hardware). If your frame rate is low with it on:
+  1. Turn "Use AMD FSR 4 in place of a game's DLSS" OFF. You get FSR 3.1, which costs far less.
+     AMD frame generation keeps working.
+  2. If your PC isn't strong, turn the "Max Resolution (built-in)" add-on OFF (right-click the
+     game > Properties > Add-Ons). It keeps the game at its highest resolution; without it the
+     game lowers its resolution when the GPU falls behind.
+  3. Advanced, at your own risk: OptiScaler (github.com/optiscaler/OptiScaler) can replace
+     AMD's FSR DLLs next to lichii.exe with its own, including a lighter FSR 4 model for
+     RDNA 2. It isn't part of Lichii; if anything breaks, delete what it added and put back
+     the three amd_fidelityfx_*.dll files from the Lichii zip.
+
 
 4. AMD FRAME GENERATION
 -----------------------

@@ -20,6 +20,7 @@
 #include "video_core/host_shaders/ocarina_dlss_4k_composite_comp_spv.h"
 #include "video_core/host_shaders/ocarina_dlss_4k_reference_comp_spv.h"
 #include "video_core/host_shaders/ocarina_hudless_comp_spv.h"
+#include "video_core/host_shaders/ocarina_hud_mask_4k_comp_spv.h"
 #include "video_core/host_shaders/ocarina_hud_mask_comp_spv.h"
 #include "video_core/host_shaders/ocarina_hud_motion_comp_spv.h"
 #include "video_core/host_shaders/ocarina_hud_depth_comp_spv.h"
@@ -922,6 +923,7 @@ struct OcarinaLiveDlss::Impl {
     VkExtent2D hud_mask_extent{};
     bool hud_mask_ready{};
     std::unique_ptr<OcarinaImagePass<2>> hud_mask_pass;
+    std::unique_ptr<OcarinaImagePass<2>> hud_mask_4k_pass;
     std::unique_ptr<OcarinaImagePass<1>> hud_motion_pass;
     std::unique_ptr<OcarinaImagePass<2>> hud_depth_pass;
     VkImageView hud_before{};
@@ -1021,9 +1023,30 @@ void OcarinaLiveDlss::SetHudInputs(VkImageView before_hud, VkImageView after_hud
     impl->hud_after = after_hud;
 }
 
+void OcarinaLiveDlss::MakeHudMask4k(VkImageView native_composite) {
+    auto& state = *impl;
+    if (!state.native_scene_view || !native_composite) {
+        return;
+    }
+    MakeHudMaskWith(true, *state.native_scene_view, native_composite, {2560, 1440});
+}
+
 void OcarinaLiveDlss::MakeHudMask(VkImageView before_hud, VkImageView after_hud,
                                   VkExtent2D extent) {
+    MakeHudMaskWith(false, before_hud, after_hud, extent);
+}
+
+void OcarinaLiveDlss::MakeHudMaskWith(bool four_k, VkImageView before_hud, VkImageView after_hud,
+                                      VkExtent2D extent) {
     auto& state = *impl;
+    auto& pass_slot = four_k ? state.hud_mask_4k_pass : state.hud_mask_pass;
+    if (!pass_slot) {
+        pass_slot = std::make_unique<OcarinaImagePass<2>>(
+            state.device, state.scheduler, state.pool,
+            four_k ? std::span<const u32>{OCARINA_HUD_MASK_4K_COMP_SPV}
+                   : std::span<const u32>{OCARINA_HUD_MASK_COMP_SPV});
+    }
+    auto& pass = *pass_slot;
     if (!state.hud_mask || state.hud_mask_extent.width != extent.width ||
         state.hud_mask_extent.height != extent.height) {
         state.scheduler.Finish();
@@ -1033,17 +1056,12 @@ void OcarinaLiveDlss::MakeHudMask(VkImageView before_hud, VkImageView after_hud,
         state.hud_mask_extent = extent;
         state.hud_mask_ready = false;
     }
-    if (!state.hud_mask_pass) {
-        state.hud_mask_pass = std::make_unique<OcarinaImagePass<2>>(
-            state.device, state.scheduler, state.pool, OCARINA_HUD_MASK_COMP_SPV);
-    }
     state.scheduler.RequestOutsideRenderPassOperationContext();
     state.queue.Acquire(state.scheduler, 3);
     state.queue.AddSampledImage(before_hud, state.upscaler->PointSampler());
     state.queue.AddSampledImage(after_hud, state.upscaler->PointSampler());
     state.queue.AddImage(*state.hud_mask_view);
-    state.hud_mask_pass->Record(state.scheduler, state.queue.UpdateData(), *state.hud_mask, extent,
-                                false);
+    pass.Record(state.scheduler, state.queue.UpdateData(), *state.hud_mask, extent, false);
     state.scheduler.InvalidateState();
     if (!std::exchange(state.hud_mask_ready, true)) {
         LOG_INFO(Render_Vulkan, "AMD frame generation: the HUD is masked per pixel ({}x{})",

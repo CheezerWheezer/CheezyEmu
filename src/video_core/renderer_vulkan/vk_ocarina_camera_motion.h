@@ -65,6 +65,9 @@ public:
     /// game drew its HUD and the same image at the final pass; the next frame's motion for AMD is
     /// cleared there.
     void MakeHudMask(VkImageView before_hud, VkImageView after_hud, VkExtent2D extent);
+    /// The same for the 4K mode (1440p scene, HUD composited over the 4K output): the 1440p scene
+    /// saved before the HUD against the game's 1440p composite, which differ slightly everywhere.
+    void MakeHudMask4k(VkImageView native_composite);
     /// The next Record builds the HUD mask from these (the last frame's FSR 4 output before its
     /// HUD, and the same image as the final pass left it), before it overwrites the second.
     void SetHudInputs(VkImageView before_hud, VkImageView after_hud);
@@ -79,6 +82,8 @@ public:
                 VkImage depth_image, u64 frame);
 
 private:
+    void MakeHudMaskWith(bool four_k, VkImageView before_hud, VkImageView after_hud,
+                         VkExtent2D extent);
     struct Impl;
     std::unique_ptr<Impl> impl;
 };

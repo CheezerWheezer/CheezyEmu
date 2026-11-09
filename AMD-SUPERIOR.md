@@ -19,8 +19,16 @@ How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` 
   `EDEN_NX2_FSR_VERSION=3` forces FSR 3.1 to compare.
 - **AMD Frame Generation Version** setting: *Auto* (FSR 4 frame generation on Radeon RX 9000,
   FSR 3.1 elsewhere) or *FSR 3.1 (faster)*, for RX 9000 owners who want the lighter one.
+- **The HUD stays still in Docked (4K) mode.** With Docked mode and the Max Resolution add-on,
+  Ocarina draws at 1440p and FSR outputs 4K; frame generation there had no HUD mask, so the HUD
+  moved with the camera in generated frames. The 4K mode now gets its own mask.
+- **Running out of video memory no longer crashes AMD drivers** (port of zortos293/Lichii#880,
+  via Frizti/Fritchii): a texture that doesn't fit is left out until memory is freed, instead of
+  becoming an empty image the game draws into.
 - **Frame generation with FSR 4 turned off** no longer runs AMD's FSR 3.1 without the GPU's
   float16 feature it needs.
+- **README.txt** also has tips for a low frame rate with FSR 4 on RX 6000/7000 (FSR 3.1, the Max
+  Resolution add-on, OptiScaler) and for crashes on PCs with 16 GB of RAM.
 - **README.txt** replaces HOW-TO-USE.md: plain text that opens in Notepad, next to `lichii.exe`,
   and named at the top of every release's notes. It now also covers which FSR you get, shader
   precaching and low-memory crashes.
