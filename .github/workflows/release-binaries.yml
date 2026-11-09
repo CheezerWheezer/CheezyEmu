@@ -451,6 +451,11 @@ jobs:
           https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage
           curl -fsSL --retry 12 --retry-all-errors --retry-delay 30 --retry-max-time 900 -o "$tools/linuxdeploy-plugin-qt-$arch.AppImage" \
           https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-$arch.AppImage
+          # appimagetool downloads its runtime itself, without retrying (a 504 there failed the
+          # aarch64 package): fetch it here and hand it over.
+          curl -fsSL --retry 12 --retry-all-errors --retry-delay 30 --retry-max-time 900 -o "$tools/runtime-$arch" \
+          https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-$arch
+          export LDAI_RUNTIME_FILE="$tools/runtime-$arch"
           chmod +x "$tools"/*.AppImage
           # The desktop file names its icon io.github.zortos293.lichii.
           icon="$RUNNER_TEMP/io.github.zortos293.lichii.png"
