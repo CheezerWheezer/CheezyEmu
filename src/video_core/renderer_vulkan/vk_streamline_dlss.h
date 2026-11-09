@@ -41,6 +41,11 @@ public:
         bool reset;
         bool depth_inverted = true;
         bool hdr = true; ///< Linear HDR colour. False for tonemapped, perceptually encoded colour.
+        /// The camera's planes and vertical field of view (radians): FSR turns depth into distance
+        /// with them to find newly uncovered pixels.
+        f32 camera_near = 0.1f;
+        f32 camera_far = 10000.0f;
+        f32 camera_fov = 1.0f;
     };
 
     /// Throws vk::Exception when Streamline has no DLSS for this device.

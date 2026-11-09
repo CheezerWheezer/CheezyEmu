@@ -5227,11 +5227,17 @@ void MainWindow::UpdateStatusBar() {
     upscale_running = upscaler.upscaled_frames > upscale_frames;
     upscale_frames = upscaler.upscaled_frames;
     upscale_name = QString::fromStdString(upscaler.name);
-    upscale_sizes = tr("%1x%2 to %3x%4")
+    // "1280x720 > 2560x1440 (2.0)": the render size, the output size and the upscale ratio.
+    upscale_sizes = QStringLiteral("%1x%2 > %3x%4 (%5)")
                         .arg(upscaler.render_width)
                         .arg(upscaler.render_height)
                         .arg(upscaler.output_width)
-                        .arg(upscaler.output_height);
+                        .arg(upscaler.output_height)
+                        .arg(upscaler.render_width != 0
+                                 ? static_cast<double>(upscaler.output_width) /
+                                       static_cast<double>(upscaler.render_width)
+                                 : 0.0,
+                             0, 'f', 1);
     upscale_idle_tag = QString::fromStdString(upscaler.idle_tag);
     upscale_idle_reason = QString::fromStdString(upscaler.idle_reason);
     UpdateUpscaleButton();
@@ -5323,9 +5329,10 @@ void MainWindow::UpdateUpscaleButton() {
     }
     if (upscale_running) {
         upscale_status_button->setChecked(true);
-        upscale_status_button->setText(upscale_name);
+        upscale_status_button->setText(upscale_name + QLatin1Char(' ') + upscale_sizes);
         upscale_status_button->setToolTip(
-            tr("%1 is upscaling the game from %2.").arg(upscale_name, upscale_sizes));
+            tr("%1 is upscaling the game: render size > output size (upscale ratio).")
+                .arg(upscale_name));
         return;
     }
     upscale_status_button->setChecked(false);

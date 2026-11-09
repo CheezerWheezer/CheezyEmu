@@ -30,6 +30,9 @@ struct Api {
 
 /// Whether AMD's frame generation DLL is still in the process (nothing has unloaded it).
 [[nodiscard]] bool FrameGenerationLoaded();
+
+/// AMD's own errors and warnings about what a context was given, into the log (ffxApiMessage).
+void LogMessage(uint32_t type, const wchar_t* message);
 #endif
 
 } // namespace Vulkan::FfxRuntime

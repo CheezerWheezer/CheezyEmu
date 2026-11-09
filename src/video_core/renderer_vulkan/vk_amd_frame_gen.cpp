@@ -747,6 +747,11 @@ VkResult Present(VkQueue queue, const VkPresentInfoKHR& info, const PresentTarge
     return state.functions.pOutQueuePresentKHR(queue, &info);
 }
 
+CameraPlanes ExtractCameraPlanes(const std::array<f32, 16>& view_projection) {
+    const Camera camera = ExtractCamera(view_projection);
+    return {camera.near_plane, camera.far_plane, camera.fov};
+}
+
 void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
     if (!Requested()) {
         return;
@@ -875,6 +880,10 @@ VkResult AcquireNextImage(const Device&, VkSwapchainKHR, VkSemaphore, u32*) {
 VkResult Present(VkQueue, const VkPresentInfoKHR&, const PresentTarget&) {
     return VK_ERROR_FEATURE_NOT_PRESENT;
 }
+CameraPlanes ExtractCameraPlanes(const std::array<f32, 16>&) {
+    return {};
+}
+
 void Prepare(Scheduler&, const PrepareInputs&) {}
 u64 TakePreparedFrame() {
     return 0;

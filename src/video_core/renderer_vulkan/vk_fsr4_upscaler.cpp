@@ -3,12 +3,17 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include <fmt/format.h>
+
+#include "common/fs/path_util.h"
 #include "common/logging.h"
 #include "common/settings.h"
 #include "video_core/gpu_crash_context.h"
@@ -68,7 +73,10 @@ constexpr u32 HEALTH_SAMPLES = HEALTH_GRID * HEALTH_GRID;
 constexpr VkDeviceSize HEALTH_STRIDE = 16;
 constexpr VkDeviceSize HEALTH_OUTPUT_OFFSET = HEALTH_SAMPLES * HEALTH_STRIDE;
 constexpr VkDeviceSize HEALTH_SIZE = 2 * HEALTH_OUTPUT_OFFSET;
-constexpr u32 HEALTH_INTERVAL = 30;   ///< Frames between samples.
+constexpr u32 HEALTH_INTERVAL = 30;   ///< Frames between samples once one was good.
+/// Frames between samples until the first good one: a black FSR 4 (AMD driver 2.0.406 on RX
+/// 9000) is found in about a quarter of a second instead of several seconds of black screen.
+constexpr u32 HEALTH_FAST_INTERVAL = 4;
 constexpr u32 HEALTH_BLACK_LIMIT = 4; ///< Black samples in a row (a few seconds) to switch.
 /// A sample counts as black when this many of its 64 pixels are black or NaN: the RX 9070 XT's
 /// broken FSR 4 output is black with scattered white dots, which an all-64 test kept missing.
@@ -81,6 +89,29 @@ VkDeviceContext DeviceContext(const Device& device) {
         .vkPhysicalDevice = static_cast<VkPhysicalDevice>(device.GetPhysical()),
         .vkDeviceProcAddr = device.GetDispatchLoader().vkGetDeviceProcAddr,
     };
+}
+
+/// EDEN_NX2_FSR4_CHECK=0 (Tools > Switch 2 Switches): keep FSR 4 whatever its output looks like.
+bool OutputCheckEnabled() {
+    static const bool check = [] {
+        const char* const value = std::getenv("EDEN_NX2_FSR4_CHECK");
+        const bool on = !(value && value[0] == '0');
+        if (!on) {
+            LOG_INFO(Render_Vulkan, "AMD FSR: the FSR 4 output check is off (EDEN_NX2_FSR4_CHECK=0)");
+        }
+        return on;
+    }();
+    return check;
+}
+
+/// Where a black FSR 4 is remembered, and the GPU and driver it was seen on: the next start goes
+/// straight to FSR 3.1 instead of showing black again, until the driver changes.
+std::filesystem::path BlackMarkerPath() {
+    return Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "fsr4_black.txt";
+}
+std::string DriverTag(const Device& device) {
+    return fmt::format("{}:{}:{}", static_cast<u32>(device.GetDriverID()),
+                       device.GetDriverVersion(), device.GetModelName());
 }
 
 // The upscaler provider the DLL offers this device: its version id and name.
@@ -98,6 +129,21 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
         const char* const value = std::getenv("EDEN_NX2_FSR_VERSION");
         return value && value[0] == '3';
     }();
+    static std::once_flag remembered;
+    std::call_once(remembered, [&device] {
+        if (!OutputCheckEnabled()) {
+            return;
+        }
+        std::ifstream file{BlackMarkerPath()};
+        std::string line;
+        if (std::getline(file, line) && line == DriverTag(device)) {
+            fsr4_output_black = true;
+            LOG_WARNING(Render_Vulkan,
+                        "AMD FSR 4 drew a black picture on this GPU and driver in an earlier "
+                        "session: using FSR 3.1. Updating the graphics driver brings FSR 4 back "
+                        "(or untick the check in Tools > Switch 2 Switches to try it again).");
+        }
+    });
     const bool black = fsr4_output_black.load();
     const bool want_fsr4 = Settings::values.amd_fsr4.GetValue() && !force_fsr3 && !black;
     VkDeviceContext vk_context = DeviceContext(device);
@@ -292,7 +338,7 @@ bool Fsr4Upscaler::CreateContext(VkExtent2D render_size, VkExtent2D upscale_size
                         : FFX_UPSCALE_ENABLE_NON_LINEAR_COLORSPACE);
     create.maxRenderSize = {render_size.width, render_size.height};
     create.maxUpscaleSize = {upscale_size.width, upscale_size.height};
-    create.fpMessage = nullptr;
+    create.fpMessage = &FfxRuntime::LogMessage; // AMD's warnings about its inputs, in the log
     // Chain: upscale <- version <- override <- backend.
     create.header.pNext = &api_version.header;
     api_version.header.pNext = &version_override.header;
@@ -386,17 +432,9 @@ void Fsr4Upscaler::CreateOutput(VkExtent2D upscale_size) {
 }
 
 bool Fsr4Upscaler::CheckOutputHealth() {
-    // EDEN_NX2_FSR4_CHECK=0 (Tools > Switch 2 Switches): keep FSR 4 whatever this check sees, for
-    // a player sure their picture is fine (the check reads a handful of pixels and could be wrong).
-    static const bool check = [] {
-        const char* const value = std::getenv("EDEN_NX2_FSR4_CHECK");
-        const bool on = !(value && value[0] == '0');
-        if (!on) {
-            LOG_INFO(Render_Vulkan, "AMD FSR: the FSR 4 output check is off (EDEN_NX2_FSR4_CHECK=0)");
-        }
-        return on;
-    }();
-    if (!check) {
+    // Off: keep FSR 4 whatever this check sees, for a player sure their picture is fine (the
+    // check reads a handful of pixels and could be wrong).
+    if (!OutputCheckEnabled()) {
         health_pending = false;
         health_done = true;
         return false;
@@ -462,6 +500,12 @@ bool Fsr4Upscaler::CheckOutputHealth() {
 
 bool Fsr4Upscaler::SwitchToFsr3() {
     fsr4_output_black = true;
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(BlackMarkerPath().parent_path(), ec);
+        std::ofstream file{BlackMarkerPath(), std::ios::trunc};
+        file << DriverTag(device) << '\n';
+    }
     scheduler.Finish();
     DestroyContext();
     health_buffer = vk::Buffer{};
@@ -513,7 +557,7 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
     // FSR 4 only: check its output now and then until it has drawn a picture.
     VkBuffer health = VK_NULL_HANDLE;
     if (!health_done && !health_pending && context->provider.name.starts_with('4') &&
-        ++health_frame % HEALTH_INTERVAL == 0) {
+        ++health_frame % (good_checks == 0 ? HEALTH_FAST_INTERVAL : HEALTH_INTERVAL) == 0) {
         if (!health_buffer) {
             health_buffer = memory_allocator.CreateBuffer(
                 VkBufferCreateInfo{
@@ -587,10 +631,10 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
         dispatch.frameTimeDelta = in.frame_time_ms;
         dispatch.preExposure = 1.0f;
         dispatch.reset = reset;
-        // Only frame generation reads the camera; FSR 4 upscaling ignores these.
-        dispatch.cameraNear = 0.1f;
-        dispatch.cameraFar = 1000.0f;
-        dispatch.cameraFovAngleVertical = 1.0f;
+        // FSR 3.1 turns depth into distance with these (its depth clip and disocclusion).
+        dispatch.cameraNear = in.camera_near;
+        dispatch.cameraFar = in.camera_far;
+        dispatch.cameraFovAngleVertical = in.camera_fov;
         dispatch.viewSpaceToMetersFactor = 1.0f;
         dispatch.flags = 0;
         const ffxReturnCode_t result = context->api->dispatch(&context->handle, &dispatch.header);

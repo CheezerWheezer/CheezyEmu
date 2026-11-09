@@ -4,6 +4,7 @@
 
 #ifdef _WIN32
 
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -81,6 +82,24 @@ std::shared_ptr<const Api> Acquire() {
     std::shared_ptr<const Loaded> shared{loaded, [](const Loaded* l) { Unload(l); }};
     current = shared;
     return shared;
+}
+
+void LogMessage(uint32_t type, const wchar_t* message) {
+    // The first 48, then every 500th: a bad input repeats every frame.
+    static std::atomic<u32> count{};
+    const u32 n = count.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n > 48 && n % 500 != 0) {
+        return;
+    }
+    std::string text;
+    for (const wchar_t* c = message; c != nullptr && *c != 0; ++c) {
+        text.push_back(*c < 128 ? static_cast<char>(*c) : '?');
+    }
+    if (type == FFX_API_MESSAGE_TYPE_ERROR) {
+        LOG_ERROR(Render_Vulkan, "AMD FidelityFX runtime: {} (message {})", text, n);
+    } else {
+        LOG_WARNING(Render_Vulkan, "AMD FidelityFX runtime: {} (message {})", text, n);
+    }
 }
 
 bool FrameGenerationLoaded() {

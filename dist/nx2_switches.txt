@@ -46,6 +46,10 @@ EDEN_NX2_FENCE_BATCH=1
 # the # to try it; put it back if the picture shakes.
 #EDEN_NX2_OOT_JITTER=1
 
+# FSR 3.1 instead of FSR 4 for the upscaler: much lighter on RX 6000/7000 (FSR 4 is built for RX
+# 9000), a little softer and ghosts more. Remove the # to use it.
+#EDEN_NX2_FSR_VERSION=3
+
 # FSR 4 output check: when FSR 4 draws black (AMD driver 2.0.406 on RX 9000), CheezyEmu switches to
 # FSR 3.1. =0 keeps FSR 4 regardless (if it switched while your picture looked fine).
 #EDEN_NX2_FSR4_CHECK=0

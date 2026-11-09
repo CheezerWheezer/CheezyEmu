@@ -70,6 +70,16 @@ struct PresentTarget {
 [[nodiscard]] VkResult Present(VkQueue queue, const VkPresentInfoKHR& info,
                                const PresentTarget& target);
 
+/// The near and far plane and vertical field of view (radians) of a view-projection matrix.
+struct CameraPlanes {
+    f32 near_plane = 0.1f;
+    f32 far_plane = 10000.0f;
+    f32 fov = 1.0f;
+};
+/// Row-major, [-1,1] clip depth, as the game's camera buffer holds it. Defaults when the matrix
+/// can't be taken apart (and on platforms without AMD's runtime).
+[[nodiscard]] CameraPlanes ExtractCameraPlanes(const std::array<f32, 16>& view_projection);
+
 struct PrepareImage {
     VkImage image;
     VkFormat format;

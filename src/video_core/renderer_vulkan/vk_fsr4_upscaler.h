@@ -50,6 +50,9 @@ public:
         f32 sharpness; ///< 0 to 1 as FSR takes it.
         bool depth_inverted = true;
         bool hdr = true; ///< Linear HDR colour. False for tonemapped, perceptually encoded colour.
+        f32 camera_near = 0.1f;
+        f32 camera_far = 10000.0f;
+        f32 camera_fov = 1.0f; ///< Vertical, radians
     };
 
     /// Whether AMD's DLLs are present and offer FSR 4, or else FSR 3.1, for this device (FSR 4

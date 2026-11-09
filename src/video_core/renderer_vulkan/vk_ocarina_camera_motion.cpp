@@ -494,6 +494,9 @@ public:
             .sharpness = 1.0f - static_cast<f32>(slider) / 200.0f,
             .depth_inverted = in.depth_inverted,
             .hdr = in.hdr,
+            .camera_near = in.camera_near,
+            .camera_far = in.camera_far,
+            .camera_fov = in.camera_fov,
         });
     }
 
@@ -1300,6 +1303,10 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
     state.queue.AddImage(*resources.color_view);
     state.color_pass.Record(state.scheduler, state.queue.UpdateData(), *resources.color, extent);
 
+    // The game's real camera (near 0.1, far about 25,000, 50 degrees in Ocarina). FSR got made-up
+    // planes (far 1000, 57 degrees) and judged distances wrong where it looks for newly
+    // uncovered pixels: ghosting on distant scenery, most with FSR 3.1.
+    const AmdFrameGen::CameraPlanes planes = AmdFrameGen::ExtractCameraPlanes(current);
     const bool reset = !state.last_frame || frame != *state.last_frame + 1 ||
                        !std::ranges::equal(previous, state.last_view_projection,
                                            [](f32 a, f32 b) { return std::abs(a - b) < 0.001f; });
@@ -1317,6 +1324,9 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
             .reset = reset,
             .depth_inverted = false,
             .hdr = false,
+            .camera_near = planes.near_plane,
+            .camera_far = planes.far_plane,
+            .camera_fov = planes.fov,
         })) {
         state.scheduler.InvalidateState();
         return false;

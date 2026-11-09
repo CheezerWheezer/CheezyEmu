@@ -70,6 +70,13 @@ constexpr std::array switches{
                              "most on Performance and below). New: turn it off again if the "
                              "picture shakes or the HUD jitters, and tell us."),
            false, "1", "0"},
+    Switch{"EDEN_NX2_FSR_VERSION",
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Use FSR 3.1 instead of FSR 4 (faster)"),
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
+                             "FSR 4 looks best but is heavy on anything except the RX 9000 series: "
+                             "on RX 6000 and 7000 it can cost more than it saves. FSR 3.1 is much "
+                             "lighter, a little softer and ghosts more."),
+           false, "3", "4"},
     Switch{"EDEN_NX2_FSR4_CHECK",
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Fall back to FSR 3.1 when FSR 4 draws black"),
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
@@ -168,7 +175,7 @@ bool IsOn(const Switch& entry, const std::map<std::string, std::string>& user) {
     if (value.empty()) {
         return entry.default_on;
     }
-    return entry.default_on ? value[0] != '0' : value[0] == '1';
+    return entry.default_on ? value[0] != '0' : value[0] == entry.on_value[0];
 }
 
 } // Anonymous namespace
