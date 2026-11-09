@@ -549,6 +549,8 @@ private:
     QPushButton* post_shader_status_button = nullptr;
     QPushButton* frame_gen_status_button = nullptr;
     VideoCore::FrameGenState frame_gen_state{};
+    QString frame_gen_idle_tag;
+    QString frame_gen_idle_reason;
     u64 frame_gen_frames = 0;
     bool frame_gen_generating = false;
     VolumeButton* volume_button = nullptr;

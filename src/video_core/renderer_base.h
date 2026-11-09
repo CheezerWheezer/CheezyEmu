@@ -43,6 +43,8 @@ enum class FrameGenState : u8 {
 struct FrameGenStatus {
     FrameGenState state{FrameGenState::UnsupportedRenderer};
     u64 generated_frames{};
+    std::string idle_tag;    ///< AMD FSR frame generation not generating: a short reason for the bar
+    std::string idle_reason; ///< and the full one for its tooltip.
 };
 
 struct RendererSettings {

@@ -359,7 +359,7 @@ jobs:
             "-DCMAKE_C_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
             "-DCMAKE_CXX_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
             "-DCMAKE_LINKER=$LLVM_ROOT/bin/lld-link.exe" \
-            "-DCMAKE_AR=$LLVM_ROOT/bin/llvm-lib.exe" \
+            "-DCMAKE_AR=$LLVM_ROOT/bin/llvm-lib.exe"             "-DCMAKE_EXE_LINKER_FLAGS=/machine:x64 /MAP" \
             "-DCMAKE_C_FLAGS=$flags" \
             "-DCMAKE_CXX_FLAGS=-EHsc $flags"
 
@@ -494,6 +494,11 @@ jobs:
           windeployqt --release --no-translations build/release/bin/lichii.exe
           # The player guide and the release notes, next to lichii.exe.
           Copy-Item README.txt, AMD-SUPERIOR.md build/release/bin/
+          # Link maps (from /MAP) go in their own artifact and release asset, not the player zip:
+          # with them a player's crash dump can be matched to functions.
+          New-Item -ItemType Directory -Force build/release/maps | Out-Null
+          Get-ChildItem build/release/bin -Filter *.map | Move-Item -Destination build/release/maps
+          Get-ChildItem build/release/maps
 
       # A self-contained app bundle: macdeployqt copies Qt and every other Homebrew library both
       # programs load into the bundle, then the leftover Homebrew search paths are removed so a
@@ -563,6 +568,15 @@ jobs:
           name: lichii-${{ matrix.platform }}-${{ github.sha }}
           path: build/release/bin/
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows link maps
+        if: startsWith(matrix.platform, 'windows')
+        uses: actions/upload-artifact@v7
+        with:
+          name: lichii-${{ matrix.platform }}-map-${{ github.sha }}
+          path: build/release/maps/
+          if-no-files-found: warn
           retention-days: 7
 
       # Both Linux files go in one artifact: the tar.gz and the AppImage.

@@ -32,6 +32,9 @@ namespace AmdFrameGen {
 /// generating), for the frame rate shown with the game's.
 [[nodiscard]] u64 GeneratedFrames();
 
+/// Whether AMD's frame generation swapchain is in use (it is set up when Lichii starts).
+[[nodiscard]] bool SwapchainActive();
+
 /// Creates AMD's frame generation swapchain in place of vkCreateSwapchainKHR. Returns
 /// VK_NULL_HANDLE when it can't (missing DLL, no spare present queue, creation failed); the caller
 /// then creates a normal swapchain.

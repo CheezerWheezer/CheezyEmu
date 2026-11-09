@@ -2566,6 +2566,42 @@ void RasterizerVulkan::TracePendingCpuWrites(bool compute, std::span<const u64> 
 }
 
 #ifdef EGLANTINE_STREAMLINE
+std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() const {
+#ifndef _WIN32
+    return {"WINDOWS ONLY", "AMD frame generation runs on Windows only. On Linux and macOS, pick "
+                            "another Frame Generation Type."};
+#else
+    if (!AmdFrameGen::SwapchainActive()) {
+        return {"RESTART", "AMD frame generation starts with Lichii: close and reopen Lichii after "
+                           "changing the Frame Generation Type. If it still shows this, AMD's "
+                           "swapchain couldn't start (see the log)."};
+    }
+#ifdef EGLANTINE_STREAMLINE
+    constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
+    if (program_id != ocarina_program) {
+        return {"OOT ONLY", "AMD frame generation works in The Legend of Zelda: Ocarina of Time "
+                            "only."};
+    }
+    if (Settings::values.resolution_setup.GetValue() != Settings::ResolutionSetup::Res1X) {
+        return {"RES 1X", "Set Resolution to 1X: AMD frame generation and FSR only run at the "
+                          "game's own resolution."};
+    }
+    if (!OcarinaDlssEnabled()) {
+        return {"NO FSR", "Ocarina's AMD FSR path couldn't start, and frame generation takes its "
+                          "motion from it. See the log for \"AMD FSR\"."};
+    }
+    const char* const reason = oot_idle_reason.load(std::memory_order_relaxed);
+    if (reason != nullptr && std::string_view{reason} == "unexpected upscale images") {
+        return {"RES 1X", "The game's images aren't at its own resolution: set Resolution to 1X."};
+    }
+    return {"WAITING", "Waiting for gameplay: menus, cutscenes and loading screens have no motion "
+                       "data to generate frames from."};
+#else
+    return {"UNAVAILABLE", "This build has no Ocarina motion data for AMD frame generation."};
+#endif
+#endif
+}
+
 bool RasterizerVulkan::OcarinaDlssEnabled() const {
     constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
     return program_id == ocarina_program && !oot_live_failed &&
@@ -3110,6 +3146,7 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         }
         if (reason != oot_fallback_reason) {
             oot_fallback_reason = reason;
+            oot_idle_reason.store(reason, std::memory_order_relaxed);
             oot_fallback_repeats = 0;
         }
         return false;
@@ -3237,6 +3274,7 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
                 {target.size.width, target.size.height});
         }
         oot_fallback_reason = nullptr;
+        oot_idle_reason.store(nullptr, std::memory_order_relaxed);
         return true;
     } catch (const vk::Exception& error) {
         LOG_WARNING(Render_Vulkan, "Ocarina DLSS unavailable: {}", error.what());

@@ -93,6 +93,9 @@ Fewer stutters while playing
   In Emulation > Configure > Graphics > Advanced, turn on "Enable asynchronous shader
   compilation". An object whose shader is still being built is skipped for a frame instead of
   the game freezing.
+  Keep "Switch 2 draws with unbuilt pipelines" on "Skip only redrawn targets" (the default since
+  build 9). "Skip" can drop something the game draws only once, such as the lighting of an area,
+  which then stays wrong (white, overexposed) until you reset the game.
 
 
 3. AMD FSR UPSCALING
@@ -115,6 +118,8 @@ The log (%APPDATA%\eden\log\eden_log.txt) says which one runs:
     AMD FSR: upscaler 3.1.x running   (FSR 3.1)
 
   - Windows only.
+  - Resolution must be 1X (Graphics > Resolution). At 0.75X, 2X and so on, FSR and AMD frame
+    generation turn off and the game's own upscaler is used.
   - At the game's native resolution it works as anti-aliasing; when the game lowers its
     resolution under load, the game's own upscaler takes those frames.
   - If you see a problem only with it, turn the option off to compare.
@@ -138,7 +143,8 @@ Low frame rate? (FSR 4 on RX 6000 / RX 7000)
 
 Frame generation shows one extra, generated frame after each real one: 30 FPS on screen
 becomes 60. It is AMD's FSR frame generation, the same as in PC games. It works on any GPU on
-Windows: FSR 4 frame generation on Radeon RX 9000, FSR 3.1 frame generation on the others.
+Windows: FSR 4 frame generation where AMD's driver offers it (Radeon RX 9000, and RX 7000 with a
+recent driver), FSR 3.1 frame generation on the others. Not on Linux or macOS.
 
 Turning it on
   1. Emulation > Configure > Graphics: turn on "Enable Frame Generation".
@@ -148,21 +154,39 @@ Turning it on
   When it runs, the bottom bar shows "FG AMD FSR 2X" and the frame rate as
   "Game: 60 FPS (30 + FG)": the real frames plus the generated ones.
 
+  When it's on but not generating, the bar says why, for example:
+    (RES 1X)        set Resolution to 1X
+    (RESTART)       close and reopen Lichii after changing the Frame Generation Type
+    (OOT ONLY)      it works in Ocarina of Time only
+    (WAITING)       menus, cutscenes and loading screens have no motion data (normal)
+    (WINDOWS ONLY)  AMD frame generation doesn't run on Linux or macOS
+  Hover over it for the full reason. Check "Frame Generation Type" too: "Optical Flow
+  Interpolation (built-in)" is a different frame generator, not AMD's.
+
+The FPS counter and a locked 60
+  The number on screen is always the real frame rate x 2. With "FPS Unlock (built-in)" (or
+  another FPS mod) on, the game runs above 30, so you see more than 60 (for example 45 real =
+  90). FPS Limit and Target Frame Rate cap the game's own frames, not AMD's generated ones.
+  For a steady 60 on screen:
+    1. Turn the "FPS Unlock (built-in)" add-on OFF (the game runs at its normal 30).
+    2. Set "Frame rate limit (Switch 2)" to 60 Hz.
+    3. Set VSync Mode to FIFO.
+
 FSR 4 or FSR 3.1 frame generation
   "AMD Frame Generation Version" (under the frame generation options, restart Lichii after
   changing it):
-  - Auto: the newest AMD offers for your GPU. FSR 4 frame generation on Radeon RX 9000
-    (best looking), FSR 3.1 on every other GPU.
-  - FSR 3.1 (faster): lighter on the GPU. Pick it on an RX 9000 if FSR 4 frame generation
-    costs too much performance. On other GPUs it changes nothing.
+  - Auto: the newest AMD offers for your GPU. FSR 4 frame generation where the driver offers
+    it (RX 9000, RX 7000 with a recent driver), FSR 3.1 on the others.
+  - FSR 3.1 (faster): lighter on the GPU. Pick it if FSR 4 frame generation costs too much
+    performance. Where FSR 4 isn't offered it changes nothing.
 
 Good to know
   - Ocarina of Time only for now. It needs the game's motion data, which Lichii reads from
     Ocarina. In other games the frame generator pauses (nothing generated).
   - The HUD is kept still (hearts, items, minimap), so it doesn't smear when you turn the
     camera.
-  - Leave the frame rate limit at 60. Capping the game at 30 makes the generated frames land
-    at the wrong time and it looks like 30.
+  - Don't cap the game at 30 with FPS Limit: the generated frames then land at the wrong time
+    and it looks like 30. Turn FPS Unlock off instead (see above).
   - Fast movement can look soft. The generator guesses the in-between frame; the higher the
     real frame rate, the better it looks. Below about 30 real FPS, fast motion (Link running,
     swaying grass) smears a little.
@@ -185,10 +209,23 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   - Frame generation or FSR doesn't seem to work: look in the log for "AMD FSR: upscaler ...
     running" and "AMD frame generation: generating frames". Send the log
     (%APPDATA%\eden\log\eden_log.txt) with your report.
-  - Crash soon after starting, with 16 GB of RAM or less (the log ends with "error 1455" or
-    images "over the memory budget"): the PC ran out of memory. Set Graphics > Advanced >
-    VRAM Usage Mode to Conservative, let Windows manage the page file size (or make it at least
-    32 GB, on an SSD), and close browsers, Discord and recording software while playing.
+  - Crash soon after starting or while loading a save, with 16 GB of RAM or less (the log
+    shows "error 1455" or images "over the memory budget"): the PC ran out of memory. Build 9
+    uses much less of it at boot. If it still happens: make the page file bigger (System >
+    About > Advanced system settings > Performance > Advanced > Virtual memory: 32768 MB
+    initial, 49152 MB maximum, on an SSD), set VRAM Usage Mode to Conservative, and close
+    browsers, Discord and recording software while playing. ("Available VRAM: 7.00 GiB" in the
+    log is just Conservative mode's cap, not other programs.)
+  - After a crash, if the next launch misbehaves: check Task Manager for a leftover lichii.exe
+    and end it.
+  - Picture white / overexposed (fog and sky blown out) until you reset the game: keep
+    "Switch 2 draws with unbuilt pipelines" on "Skip only redrawn targets" (section 2), and
+    remove mods that turn off occlusion queries (such as "OcclusionOff..."): the game uses those
+    queries to decide how bright the sun and fog are.
+  - Black picture with only a few bright dots while FSR 4 is on (RX 9000): fixed in build 9.
+    On older builds, turn FSR 4 off or use EDEN_NX2_FSR_VERSION=3 (below).
+  - HUD (hearts, minimap) jitters with frame generation when the game runs below its full
+    resolution (without the Max Resolution add-on): fixed in build 9.
   - Objects flash black for a moment: Graphics > ASTC decoding method is "CPU Asynchronous"
     (textures draw black until they are decoded). Use GPU (fastest) or CPU.
   - Stutter when entering a new area: set ASTC decoding to GPU, and turn on "Enable
@@ -208,3 +245,6 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   EDEN_NX2_PRELOAD_ALL_PIPELINES=1  Builds every saved shader at boot (see section 2)
   EDEN_NX2_AMD_FG_DEBUG=2           AMD frame generation's debug view
   EDEN_NX2_FSR_VERSION=3            Uses FSR 3.1 even where FSR 4 is offered (for comparing)
+  EDEN_NX2_SEC_RESERVE=0            Commits all of the console's memory at boot again (the
+                                    build 8 behaviour), if build 9's lower memory use causes
+                                    trouble

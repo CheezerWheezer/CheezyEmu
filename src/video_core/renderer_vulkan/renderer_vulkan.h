@@ -65,9 +65,12 @@ public:
         if (Settings::values.frame_gen.GetValue() &&
             Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
             const u64 generated = AmdFrameGen::GeneratedFrames();
+            const auto [tag, reason] = rasterizer.AmdFrameGenIdleReason();
             return {.state = generated != 0 ? VideoCore::FrameGenState::Running
                                             : VideoCore::FrameGenState::Pending,
-                    .generated_frames = generated};
+                    .generated_frames = generated,
+                    .idle_tag = tag,
+                    .idle_reason = reason};
         }
 #ifdef HAS_LSFG
         return frame_gen.CurrentStatus();

@@ -8,9 +8,32 @@ It runs and behaves like normal Lichii on every other GPU. Built on
 [zortos293/Lichii](https://github.com/zortos293/Lichii) **build 117** (`89440b2`), which also fixes
 the RDNA2 driver crash from cooperative matrices (zortos293/Lichii#657).
 
-## New in build 8
+## New in build 9
 
 How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` in every download.
+
+- **FSR 4 black picture on Radeon RX 9000 fixed.** RDNA 4 runs FSR 4's FP8 network, which needs
+  `VK_EXT_shader_float8`; Lichii never enabled it, so the scene came out black with a few bright
+  dots. It's enabled now when the driver offers it.
+- **HUD jitter with frame generation fixed** when the game renders below its output size (without
+  the Max Resolution add-on, e.g. 1440x810 upscaled to 1080p, or 1080p to 1440p): the HUD mask was
+  built but never applied there.
+- **Much less memory at boot** (port of Frizti/Fritchii's reserved guest memory): the console's
+  ~14 GB of memory is committed as the game uses it instead of all at boot, for PCs with 16 GB of
+  RAM that ran out (error 1455) loading a save. `EDEN_NX2_SEC_RESERVE=0` turns it off.
+- **No more lighting stuck white until a reset**: "Switch 2 draws with unbuilt pipelines" now
+  defaults to *Skip only redrawn targets*, so a draw the game makes only once (an area's lighting)
+  waits for its shader instead of being dropped for good (as in Fritchii v5).
+- **The bar says why AMD frame generation is idle**: `(RES 1X)`, `(RESTART)`, `(OOT ONLY)`,
+  `(WAITING)` in menus and cutscenes, `(WINDOWS ONLY)`; hover for the full reason.
+- **Crash dumps can be read**: Windows releases include `lichii-windows-x86_64[-pgo]-map.zip`, the
+  link maps that match a player's `lichii.exe.*.dmp` to functions.
+- **Release builds retry their downloads** (GitHub's 504s failed several build 8 runs).
+- README.txt: Resolution 1X, the FPS counter (real x 2) and how to lock 60, white overexposure
+  and occlusion-off mods, low-RAM crashes; "Available VRAM: 7.00 GiB" in the log now says it is
+  Conservative mode's cap.
+
+## New in build 8
 
 - **Frame generation and upscaling without FSR 4.** When AMD's runtime doesn't offer FSR 4 for a
   GPU (RX 6000/7000 on an older driver, older Radeons, NVIDIA, Intel), Ocarina now uses AMD's

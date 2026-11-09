@@ -665,8 +665,11 @@ struct Values {
         linkage, true, "use_vulkan_driver_pipeline_cache", Category::RendererAdvanced,
         Specialization::Default};
 
+    // Transient (skip only draws into targets redrawn every frame) by default: Skip dropped
+    // render-once draws for good while their pipeline built (Ocarina's lighting stayed white until
+    // a reset; Fritchii v5 made the same change).
     SwitchableSetting<NativeAsyncDraws> native_async_draws{linkage,
-                                                           NativeAsyncDraws::Skip,
+                                                           NativeAsyncDraws::Transient,
                                                            "native_async_draws",
                                                            Category::RendererAdvanced,
                                                            Specialization::Default,

@@ -171,7 +171,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "instead of FSR 3.1, on GPUs AMD's FSR runtime supports: Radeon RX 9000, and RX 7000 "
               "and RX 6000 with a recent driver. Other GPUs keep FSR 3.1.\nIn Ocarina of Time, AMD "
               "frame generation uses AMD's FSR 3.1 when FSR 4 is off or not offered, so it works on "
-              "any GPU.\nWindows only. NVIDIA DLSS, when it is on and available, is used first."
+              "any GPU.\nNeeds Resolution 1X: at other resolutions the game's own upscaler is used."
+              "\nWindows only. NVIDIA DLSS, when it is on and available, is used first."
               "\nTakes effect when the game starts."));
     INSERT(Settings, nvidia_dlss, tr("Use NVIDIA DLSS in place of a game's DLSS (experimental)"),
            tr("Uses NVIDIA DLSS on GeForce RTX cards in place of a Switch 2 game's own DLSS, "
@@ -247,14 +248,21 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, bg_blue, QString(), QString());
 
     INSERT(Settings, frame_gen, tr("Enable Frame Generation"), QString());
-    INSERT(Settings, frame_gen_type, tr("Frame Generation Type"), QString());
+    INSERT(Settings, frame_gen_type, tr("Frame Generation Type"),
+           tr("AMD FSR Frame Generation: AMD's frame generation for Ocarina of Time (Windows, "
+              "Resolution 1X; restart Lichii after picking it).\nOptical Flow Interpolation and "
+              "Lossless Scaling are Lichii's other frame generators, for any game."));
     INSERT(Settings, amd_frame_gen_version, tr("AMD Frame Generation Version"),
            tr("Which AMD FSR frame generation runs (with the AMD FSR frame generation type).\n"
-              "Auto: the newest AMD offers for this GPU (FSR 4 frame generation on Radeon RX 9000, "
-              "FSR 3.1 on others).\nFSR 3.1: lighter on the GPU; use it if FSR 4 frame generation "
-              "costs too much performance.\nTakes effect when Lichii restarts."));
+              "Auto: the newest AMD offers for this GPU (FSR 4 frame generation where the driver "
+              "offers it: Radeon RX 9000, RX 7000 with a recent driver; FSR 3.1 on others).\n"
+              "FSR 3.1: lighter on the GPU; use it if FSR 4 frame generation costs too much "
+              "performance.\nTakes effect when Lichii restarts."));
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
-    INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"), QString());
+    INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"),
+           tr("Lichii's own frame generators (Optical Flow, Lossless Scaling) add frames up to this "
+              "rate.\nAMD FSR frame generation always doubles the game's frame rate: for a steady "
+              "60 on screen, turn the \"FPS Unlock (built-in)\" add-on off so the game runs at 30."));
     INSERT(Settings, frame_gen_flow_scale_auto, tr("Auto Flow Scale"), QString());
     INSERT(Settings, frame_gen_flow_scale, tr("Flow Scale"), QString());
     INSERT(Settings, frame_gen_queue_target, tr("Queue Target"), QString());

@@ -5089,6 +5089,8 @@ void MainWindow::UpdateStatusBar() {
 
     emu_frametime_label->setText(tr("Frame: %1 ms").arg(results.frametime * 1000.0, 0, 'f', 2));
     frame_gen_state = frame_gen.state;
+    frame_gen_idle_tag = QString::fromStdString(frame_gen.idle_tag);
+    frame_gen_idle_reason = QString::fromStdString(frame_gen.idle_reason);
     UpdateFrameGenButton();
 
     res_scale_label->setVisible(true);
@@ -5226,6 +5228,13 @@ void MainWindow::UpdateFrameGenButton() {
         return;
     }
 
+    if (amd && !frame_gen_idle_tag.isEmpty()) {
+        // Why AMD's frame generation isn't generating (wrong resolution, restart, menus...).
+        frame_gen_status_button->setText(tr("%1 (%2)").arg(mode, frame_gen_idle_tag));
+        frame_gen_status_button->setToolTip(
+            tr("AMD frame generation is on but not generating. %1").arg(frame_gen_idle_reason));
+        return;
+    }
     const QString target_met =
         target_rate == 0
             ? QString()

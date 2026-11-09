@@ -812,6 +812,12 @@ void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
     });
 }
 
+bool SwapchainActive() {
+    State& state = GetState();
+    std::scoped_lock lock{state.mutex};
+    return state.swapchain != VK_NULL_HANDLE;
+}
+
 u64 TakePreparedFrame() {
     const u64 latest = prepared_frame.exchange(0);
     // EDEN_NX2_AMD_FG_LAG=1 pairs each present with the frame prepared before the latest, for a
@@ -846,6 +852,9 @@ VkResult Present(VkQueue, const VkPresentInfoKHR&, const PresentTarget&) {
 void Prepare(Scheduler&, const PrepareInputs&) {}
 u64 TakePreparedFrame() {
     return 0;
+}
+bool SwapchainActive() {
+    return false;
 }
 
 #endif // _WIN32

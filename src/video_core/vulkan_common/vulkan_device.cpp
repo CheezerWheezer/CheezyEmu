@@ -786,6 +786,14 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
         features.shader_float16_int8.shaderFloat16 = VK_TRUE;
         LOG_INFO(Render_Vulkan, "VK_KHR_cooperative_matrix enabled for guest tensor operations");
     }
+    // VK_EXT_shader_float8: AMD's FSR 4 runs an FP8 network on RDNA 4 (fsr4_model_*_fp8) through
+    // cooperative matrices; without the feature on the device its output was black. Lichii's own
+    // shaders don't use it. Enabled as the driver reports it (the struct is passed as queried).
+    if (extensions.shader_float8) {
+        LOG_INFO(Render_Vulkan, "VK_EXT_shader_float8 enabled (float8 {}, float8 matrices {}) for AMD FSR 4",
+                 features.shader_float8.shaderFloat8 != VK_FALSE,
+                 features.shader_float8.shaderFloat8CooperativeMatrix != VK_FALSE);
+    }
 
     // The Ampere workaround above only concerns guest shaders: enable float16 on the device so
     // host-only shaders (frame generation) may use it. The AMD and Intel workarounds turn it off
