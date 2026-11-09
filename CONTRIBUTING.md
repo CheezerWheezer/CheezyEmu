@@ -1,6 +1,6 @@
 # Contributing
 
-Lichii is developed in this fork. Open issues and pull requests on
+CheezyEmu is developed in this fork. Open issues and pull requests on
 [zortos293/eglantine](https://github.com/zortos293/eglantine).
 
 See the [build guide](docs/Build.md) for your platform and the

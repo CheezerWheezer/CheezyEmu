@@ -3,7 +3,7 @@
 
 #version 450
 
-// Ocarina of Time's 4K mode: the game draws its HUD on its own 1440p image, which Lichii lays over
+// Ocarina of Time's 4K mode: the game draws its HUD on its own 1440p image, which CheezyEmu lays over
 // FSR's 4K output. A pixel whose 1440p composite differs from the 1440p scene saved before the HUD
 // is HUD. The game's final pass shifts colours slightly everywhere, so small differences are not
 // HUD: the same lower edge the 4K composite uses (ocarina_dlss_4k_composite.comp).

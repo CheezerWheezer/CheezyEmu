@@ -1,6 +1,6 @@
 # symbolize.py <exe> <samples.txt.raw> [--out <dir>] [--top N]
 #
-# Names the "lichii.exe+0x..." frames the sampler writes to <out>.raw (EDEN_NX2_SAMPLE or the
+# Names the "cheezyemu.exe+0x..." frames the sampler writes to <out>.raw (EDEN_NX2_SAMPLE or the
 # debug server's `sample`) with llvm-symbolizer, which reads the PDB of a MinGW build that dbghelp
 # can't (compile with -gcodeview -gline-tables-only, link with -Wl,--pdb=). Prints self and
 # inclusive counts per thread and function, and writes <raw>.sym.folded for flame graphs.

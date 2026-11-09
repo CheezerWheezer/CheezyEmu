@@ -389,7 +389,7 @@ VkSwapchainKHR CreateSwapchain(const Device& device, std::mutex& submit_mutex,
     if (state.used_by_earlier_game) {
         static bool logged = false;
         if (!std::exchange(logged, true)) {
-            LOG_WARNING(Render_Vulkan, "AMD frame generation: off for this game; restart Lichii "
+            LOG_WARNING(Render_Vulkan, "AMD frame generation: off for this game; restart CheezyEmu "
                                        "to use it again after stopping a game");
         }
         return VK_NULL_HANDLE;
@@ -594,7 +594,7 @@ void DestroySwapchain(const Device& device, VkSwapchainKHR swapchain) {
 }
 
 /// Forgets one game's frames: the next game's first present asked AMD to generate from the last
-/// frame the previous game prepared, in a context that never saw it (Lichii closed on the next
+/// frame the previous game prepared, in a context that never saw it (CheezyEmu closed on the next
 /// boot without being restarted).
 void ResetFrames(State& state) {
     prepared_frame.store(0);

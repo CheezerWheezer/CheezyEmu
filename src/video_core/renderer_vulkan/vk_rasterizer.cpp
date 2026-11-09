@@ -2572,7 +2572,7 @@ std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() co
                             "another Frame Generation Type."};
 #else
     if (!AmdFrameGen::SwapchainActive()) {
-        return {"RESTART", "AMD frame generation starts with Lichii: close and reopen Lichii after "
+        return {"RESTART", "AMD frame generation starts with CheezyEmu: close and reopen CheezyEmu after "
                            "changing the Frame Generation Type. If it still shows this, AMD's "
                            "swapchain couldn't start (see the log)."};
     }

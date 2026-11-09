@@ -1957,7 +1957,7 @@ bool TextureCacheRuntime::UpscaleWithFsr4(Framebuffer* dst_framebuffer, ImageVie
         return false;
     }
     if (!fsr4_upscaler) {
-        // Only FSR 4 here: without it, Lichii's own FSR 3.1 stays (AMD's FSR 3.1 is for Ocarina,
+        // Only FSR 4 here: without it, CheezyEmu's own FSR 3.1 stays (AMD's FSR 3.1 is for Ocarina,
         // whose frame generation needs it).
         if (!Fsr4Upscaler::IsFsr4(device)) {
             fsr4_unsupported = true;

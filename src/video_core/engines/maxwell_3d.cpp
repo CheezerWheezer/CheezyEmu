@@ -1702,7 +1702,7 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
             VideoCommon::DrainSite::MacroDmaFlush);
     }
     // A read of a page reports were sent to writes out the reports the query cache still holds,
-    // waiting for their host results (Lichii #215), or the guest reads stale occlusion counts.
+    // waiting for their host results (zortos293/Lichii#215), or the guest reads stale occlusion counts.
     const bool reads_reports = [&] {
         if (!shadow_words.empty() || words == 0) {
             return false;

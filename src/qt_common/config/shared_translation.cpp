@@ -155,7 +155,7 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Runs a Switch 2 game's own DLSS (its upscaling network, translated for this GPU) "
               "instead of AMD FSR 3.1 in its place.\nAMD FSR 3.1 still draws while the network is "
               "checked, when it can't run on this GPU, with resolution scaling, and for the rest "
-              "of the session if its output fails Lichii's checks.\nTakes effect when a game "
+              "of the session if its output fails CheezyEmu's checks.\nTakes effect when a game "
               "starts."));
     INSERT(Settings, frame_rate_limit, tr("Frame rate limit (Switch 2):"),
            tr("Rate of the Switch 2 VSync event that games start their frames on (default 60 Hz)."
@@ -177,7 +177,7 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, nvidia_dlss, tr("Use NVIDIA DLSS in place of a game's DLSS (experimental)"),
            tr("Uses NVIDIA DLSS on GeForce RTX cards in place of a Switch 2 game's own DLSS, "
               "instead of AMD FSR 3.1.\nNeeds NVIDIA's Streamline loader, and NVIDIA DLSS unless "
-              "the NVIDIA app has downloaded it; Lichii does not ship NVIDIA's files. Use the "
+              "the NVIDIA app has downloaded it; CheezyEmu does not ship NVIDIA's files. Use the "
               "download button below.\nFire Emblem: Fortune's Weave also needs "
               "EDEN_NX2_DLSS_REPLACEMENT=dlss. Without that override, its spatial workaround "
               "remains active.\nIn The Legend of Zelda: Ocarina of Time it replaces the game's "
@@ -250,17 +250,17 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, frame_gen, tr("Enable Frame Generation"), QString());
     INSERT(Settings, frame_gen_type, tr("Frame Generation Type"),
            tr("AMD FSR Frame Generation: AMD's frame generation for Ocarina of Time (Windows, "
-              "Resolution 1X; restart Lichii after picking it).\nOptical Flow Interpolation and "
-              "Lossless Scaling are Lichii's other frame generators, for any game."));
+              "Resolution 1X; restart CheezyEmu after picking it).\nOptical Flow Interpolation and "
+              "Lossless Scaling are CheezyEmu's other frame generators, for any game."));
     INSERT(Settings, amd_frame_gen_version, tr("AMD Frame Generation Version"),
            tr("Which AMD FSR frame generation runs (with the AMD FSR frame generation type).\n"
               "Auto: the newest AMD offers for this GPU (FSR 4 frame generation where the driver "
               "offers it: Radeon RX 9000, RX 7000 with a recent driver; FSR 3.1 on others).\n"
               "FSR 3.1: lighter on the GPU; use it if FSR 4 frame generation costs too much "
-              "performance.\nTakes effect when Lichii restarts."));
+              "performance.\nTakes effect when CheezyEmu restarts."));
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"),
-           tr("Lichii's own frame generators (Optical Flow, Lossless Scaling) add frames up to this "
+           tr("CheezyEmu's own frame generators (Optical Flow, Lossless Scaling) add frames up to this "
               "rate.\nAMD FSR frame generation always doubles the game's frame rate: for a steady "
               "60 on screen, turn the \"FPS Unlock (built-in)\" add-on off so the game runs at 30."));
     INSERT(Settings, frame_gen_flow_scale_auto, tr("Auto Flow Scale"), QString());

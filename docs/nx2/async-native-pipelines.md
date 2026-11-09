@@ -100,7 +100,7 @@ warmed-cache second run.
 ## Skipping draws into redrawn targets (native_async_draws Transient)
 
 With asynchronous shaders on, a native draw whose pipeline is still building waits for it unless
-`native_async_draws` (port of Lichii #465: Wait, Bounded, Skip) says otherwise. The default is now
+`native_async_draws` (port of zortos293/Lichii#465: Wait, Bounded, Skip) says otherwise. The default is now
 `Transient`: `RasterizerVulkan::PrepareDraw` skips the draw only when the pipeline writes no storage,
 transform feedback is off, and every bound color and depth image was fully cleared in this frame and
 in the one before (`TextureCache::NoteRenderTargetsCleared`, `RenderTargetsRedrawnReason`), so what the
@@ -108,7 +108,7 @@ draw would add is drawn again next frame. Draws into images that persist (HUD an
 impostor mip chains, history buffers) still wait. `EDEN_NX2_NATIVE_ASYNC=wait|bounded|skip|transient`
 overrides the setting for comparisons; `EDEN_NX2_ASYNC_DISCARD=1` still forces Skip.
 
-Ocarina of Time, Hyrule Field save, cold Lichii shader cache, `perf.py --walk 2` (RX 9070 XT):
+Ocarina of Time, Hyrule Field save, cold CheezyEmu shader cache, `perf.py --walk 2` (RX 9070 XT):
 
 | Mode | Hitches over 50 ms | Hitch time | Worst |
 |---|---|---|---|
@@ -125,7 +125,7 @@ reusing translations would save at most ~40%) and draws into persistent images, 
 ## Default is now Skip (2026-11-08, after merging zortos/nx2)
 
 Frame freezes bother more than missing frames, so `native_async_draws` defaults to `Skip`. Same
-Hyrule Field save, cold Lichii shader cache, `perf.py --walk 2`, RX 9070 XT, merged build:
+Hyrule Field save, cold CheezyEmu shader cache, `perf.py --walk 2`, RX 9070 XT, merged build:
 
 | Mode | Hitches over 50 ms | Hitch time | Worst |
 |---|---|---|---|

@@ -1,5 +1,5 @@
-LICHII AMD SUPERIOR - READ ME
-=============================
+CHEEZYEMU - READ ME
+===================
 
 A short guide for players:
   1. The switches file (turning options on and off)
@@ -9,7 +9,9 @@ A short guide for players:
   5. If something looks wrong
   6. Other switches
 
-What changed in each build, and who made it, is in AMD-SUPERIOR.md (open it with Notepad).
+What changed in each build, and who made it, is in CHEEZYEMU.md (open it with Notepad).
+
+Help, bug reports and new builds: the CheezyEmu Discord, https://discord.gg/vEK4ug6JD
 
 
 1. THE SWITCHES FILE (nx2_switches.txt)
@@ -17,16 +19,16 @@ What changed in each build, and who made it, is in AMD-SUPERIOR.md (open it with
 
 Some options have no button in the settings yet. They live in a small text file:
 
-  - nx2_switches.txt next to lichii.exe, or
+  - nx2_switches.txt next to cheezyemu.exe, or
   - %APPDATA%\eden\nx2_switches.txt
-    (paste that into the File Explorer address bar). This one is kept when you update Lichii
-    and wins over the one next to lichii.exe, so put your own changes here.
+    (paste that into the File Explorer address bar). This one is kept when you update CheezyEmu
+    and wins over the one next to cheezyemu.exe, so put your own changes here.
 
 Each line is one switch, NAME=VALUE. A line that starts with # is OFF (a comment).
 
-  - To turn a switch ON:  remove the # at the start of its line, save, restart Lichii.
+  - To turn a switch ON:  remove the # at the start of its line, save, restart CheezyEmu.
   - To turn a switch OFF: put a # back at the start of its line (or delete the line), save,
-                          restart Lichii.
+                          restart CheezyEmu.
 
 For example, this switch is off:
 
@@ -36,13 +38,13 @@ and this one is on:
 
     EDEN_NX2_PRELOAD_ALL_PIPELINES=1
 
-Open the file with Notepad. Lichii reads it only when it starts.
+Open the file with Notepad. CheezyEmu reads it only when it starts.
 
 
 2. SHADERS AND SHADER PACKS
 ---------------------------
 
-The first time the game shows something new, Lichii has to build a shader for it, which can
+The first time the game shows something new, CheezyEmu has to build a shader for it, which can
 stutter. Built shaders are saved, so each one is built only once. A shader pack is someone
 else's saved shaders: with it, those stutters never happen.
 
@@ -59,14 +61,14 @@ Where shaders are kept
   "fork-v54" is the cache version. A pack must have the same version as your build.
 
 Installing a shader pack
-  1. Close Lichii.
+  1. Close CheezyEmu.
   2. Back up your own vulkan.fork-v54.bin (copy it somewhere safe) in case you want it back.
   3. Copy the pack's vulkan.fork-v54.bin into the folder above, replacing yours. If the pack
      has a vulkan_used.fork-v54.bin, copy that too.
   4. Start the game. The first boot builds the pack's shaders for your GPU and saves them;
      later boots are faster.
 
-  Packs made on any GPU work, AMD or NVIDIA. Lichii also removes duplicate entries from the
+  Packs made on any GPU work, AMD or NVIDIA. CheezyEmu also removes duplicate entries from the
   cache on its own, so a big pack shrinks after the first boot.
 
 Moving or sharing your shaders
@@ -85,7 +87,7 @@ Building every shader at once (optional)
          EDEN_NX2_PRELOAD_ALL_PIPELINES=1
   2. Start the game and wait on the loading screen. With a big pack this takes a long time the
      first time (about 12 minutes for 20,000 shaders on an i5-12600K), only once.
-  3. Close Lichii. Every shader is now saved.
+  3. Close CheezyEmu. Every shader is now saved.
   4. Put the # back in front of the line to return to normal boots. Leaving it on keeps every
      shader in memory (about 10 GB of RAM for Ocarina).
 
@@ -133,9 +135,9 @@ Low frame rate? (FSR 4 on RX 6000 / RX 7000)
      game > Properties > Add-Ons). It keeps the game at its highest resolution; without it the
      game lowers its resolution when the GPU falls behind.
   3. Advanced, at your own risk: OptiScaler (github.com/optiscaler/OptiScaler) can replace
-     AMD's FSR DLLs next to lichii.exe with its own, including a lighter FSR 4 model for
-     RDNA 2. It isn't part of Lichii; if anything breaks, delete what it added and put back
-     the three amd_fidelityfx_*.dll files from the Lichii zip.
+     AMD's FSR DLLs next to cheezyemu.exe with its own, including a lighter FSR 4 model for
+     RDNA 2. It isn't part of CheezyEmu; if anything breaks, delete what it added and put back
+     the three amd_fidelityfx_*.dll files from the CheezyEmu zip.
 
 
 4. AMD FRAME GENERATION
@@ -149,14 +151,14 @@ recent driver), FSR 3.1 frame generation on the others. Not on Linux or macOS.
 Turning it on
   1. Emulation > Configure > Graphics: turn on "Enable Frame Generation".
   2. Set "Frame Generation Type" to "AMD FSR Frame Generation (Ocarina, restart)".
-  3. Close and restart Lichii, then start the game.
+  3. Close and restart CheezyEmu, then start the game.
 
   When it runs, the bottom bar shows "FG AMD FSR 2X" and the frame rate as
   "Game: 60 FPS (30 + FG)": the real frames plus the generated ones.
 
   When it's on but not generating, the bar says why, for example:
     (RES 1X)        set Resolution to 1X
-    (RESTART)       close and reopen Lichii after changing the Frame Generation Type
+    (RESTART)       close and reopen CheezyEmu after changing the Frame Generation Type
     (OOT ONLY)      it works in Ocarina of Time only
     (WAITING)       menus, cutscenes and loading screens have no motion data (normal)
     (WINDOWS ONLY)  AMD frame generation doesn't run on Linux or macOS
@@ -173,7 +175,7 @@ The FPS counter and a locked 60
     3. Set VSync Mode to FIFO.
 
 FSR 4 or FSR 3.1 frame generation
-  "AMD Frame Generation Version" (under the frame generation options, restart Lichii after
+  "AMD Frame Generation Version" (under the frame generation options, restart CheezyEmu after
   changing it):
   - Auto: the newest AMD offers for your GPU. FSR 4 frame generation where the driver offers
     it (RX 9000, RX 7000 with a recent driver), FSR 3.1 on the others.
@@ -181,7 +183,7 @@ FSR 4 or FSR 3.1 frame generation
     performance. Where FSR 4 isn't offered it changes nothing.
 
 Good to know
-  - Ocarina of Time only for now. It needs the game's motion data, which Lichii reads from
+  - Ocarina of Time only for now. It needs the game's motion data, which CheezyEmu reads from
     Ocarina. In other games the frame generator pauses (nothing generated).
   - The HUD is kept still (hearts, items, minimap), so it doesn't smear when you turn the
     camera.
@@ -190,10 +192,10 @@ Good to know
   - Fast movement can look soft. The generator guesses the in-between frame; the higher the
     real frame rate, the better it looks. Below about 30 real FPS, fast motion (Link running,
     swaying grass) smears a little.
-  - Stopping a game and starting another without closing Lichii: frame generation is reloaded
+  - Stopping a game and starting another without closing CheezyEmu: frame generation is reloaded
     for the next game. If the bar says it isn't generating after that, close and reopen
-    Lichii.
-  - To turn it off, untick "Enable Frame Generation" and restart Lichii.
+    CheezyEmu.
+  - To turn it off, untick "Enable Frame Generation" and restart CheezyEmu.
 
 Seeing what it does (for bug reports)
   Turn on EDEN_NX2_AMD_FG_DEBUG=2 in nx2_switches.txt to replace the picture with AMD's debug
@@ -216,14 +218,17 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
     initial, 49152 MB maximum, on an SSD), set VRAM Usage Mode to Conservative, and close
     browsers, Discord and recording software while playing. ("Available VRAM: 7.00 GiB" in the
     log is just Conservative mode's cap, not other programs.)
-  - After a crash, if the next launch misbehaves: check Task Manager for a leftover lichii.exe
+  - After a crash, if the next launch misbehaves: check Task Manager for a leftover cheezyemu.exe
     and end it.
   - Picture white / overexposed (fog and sky blown out) until you reset the game: keep
     "Switch 2 draws with unbuilt pipelines" on "Skip only redrawn targets" (section 2), and
     remove mods that turn off occlusion queries (such as "OcclusionOff..."): the game uses those
     queries to decide how bright the sun and fog are.
   - Black picture with only a few bright dots while FSR 4 is on (RX 9000): fixed in build 9.
-    On older builds, turn FSR 4 off or use EDEN_NX2_FSR_VERSION=3 (below).
+    If FSR 4 still draws black, build 10 notices within a few seconds and switches to FSR 3.1
+    by itself (the log says "drew a black picture"). Update your graphics driver to get FSR 4
+    back. You can also turn FSR 4 off or use EDEN_NX2_FSR_VERSION=3 (below).
+  - White fog (Hyrule Field drawbridge, Kokiri Forest): fixed in build 10.
   - HUD (hearts, minimap) jitters with frame generation when the game runs below its full
     resolution (without the Max Resolution add-on): fixed in build 9.
   - Objects flash black for a moment: Graphics > ASTC decoding method is "CPU Asynchronous"

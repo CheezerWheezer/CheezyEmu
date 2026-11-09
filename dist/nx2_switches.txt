@@ -1,4 +1,4 @@
-# Switch NX2 - read when the Lichii GUI starts.
+# Switch NX2 - read when the CheezyEmu GUI starts.
 # One NAME=VALUE per line. Lines starting with # are ignored.
 # A variable already set in the environment wins over this file.
 # Between files, the user copy (%APPDATA%\eden\nx2_switches.txt, or
@@ -43,7 +43,7 @@ EDEN_NX2_FENCE_BATCH=1
 #EDEN_NX2_SPLIT_SKIP=1
 #EDEN_NX2_AUTO_STUB=1
 
-# --- AMD Superior (see AMD-SUPERIOR.md) ---
+# --- CheezyEmu (see CHEEZYEMU.md) ---
 # Grid lines on distant terrain on AMD: remove the # below to keep ASTC textures as RGBA8 instead
 # of re-compressing them to BC3 (zortos293/Lichii#448). Uses more video memory.
 #EDEN_NX2_KEEP_ASTC=1

@@ -1,19 +1,45 @@
-# Lichii AMD Superior
+# CheezyEmu
 
-A Lichii build for **AMD graphics cards**. It combines the community's AMD performance work with a
-new feature: **compiled shaders are saved to disk**, so each shader is compiled once instead of
-every time you start the game.
+CheezyEmu is a Switch and Switch 2 emulator for **AMD graphics cards**, and runs on every other GPU
+too. It started as the "AMD Superior" fork of [zortos293/Lichii](https://github.com/zortos293/Lichii)
+build 117 (`89440b2`) and is now its own emulator. Its main additions: compiled shaders saved to disk
+(each shader is compiled once instead of every time you start the game), AMD FSR 4 and FSR 3.1
+upscaling, AMD frame generation, and the community's AMD performance work.
 
-It runs and behaves like normal Lichii on every other GPU. Built on
-[zortos293/Lichii](https://github.com/zortos293/Lichii) **build 117** (`89440b2`), which also fixes
-the RDNA2 driver crash from cooperative matrices (zortos293/Lichii#657).
+## New in build 10
+
+How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.
+
+- **Now its own emulator: CheezyEmu.** New name, new cheese icon, `cheezyemu.exe`. Saves, settings
+  and shader caches stay where they were. In-app updates from build 9 can't find build 10 (the
+  files have new names): download it once from the releases page.
+- **White fog fixed** (Hyrule Field drawbridge solid white, lines in Kokiri Forest's fog): reverts
+  the perspective-correct interpolation of zortos293/Lichii#820, as Fritchii v5.1 did. It was also
+  suspected in an RX 6600 crash at boot. The faint red line in the Royal Family's Tomb may return.
+- **No more stale vertices** (glowing or misplaced geometry in Hyrule Field and the graveyard):
+  reverts the 32-byte rounding half of zortos293/Lichii#700, as Fritchii v5.1 did.
+- **FSR 4 that draws black switches to FSR 3.1 by itself.** For a few seconds after a game starts,
+  CheezyEmu checks FSR 4's output against the game's picture; if FSR 4 keeps drawing black (seen on
+  an RX 9070 XT with driver 2.0.406), it changes to FSR 3.1 for the session and says so in the log.
+  Updating the graphics driver should bring FSR 4 back.
+- **Crash fix while shaders compile**: a data race in the SPIR-V emitter (zortos293/Lichii#902).
+- **Less memory while shaders precache**: a compute shader's IR is freed before the driver compiles
+  it (zortos293/Lichii#878).
+- **Faster NUP loading**: NUP archives are decoded only as far as the game reads
+  (zortos293/Lichii#885).
+- **Microphone**: a microphone that can't open no longer breaks the game; it hears silence
+  (zortos293/Lichii#881).
+- **In-app updates retry** a download up to three times on a GitHub server error (from Fritchii).
+- The "Available VRAM" log line names Conservative mode's cap only when it lowered the figure.
+- The game list no longer offers "Submit compatibility report" (that website is the upstream
+  project's).
 
 ## New in build 9
 
-How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` in every download.
+How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.
 
 - **FSR 4 black picture on Radeon RX 9000 fixed.** RDNA 4 runs FSR 4's FP8 network, which needs
-  `VK_EXT_shader_float8`; Lichii never enabled it, so the scene came out black with a few bright
+  `VK_EXT_shader_float8`; CheezyEmu never enabled it, so the scene came out black with a few bright
   dots. It's enabled now when the driver offers it.
 - **HUD jitter with frame generation fixed** when the game renders below its output size (without
   the Max Resolution add-on, e.g. 1440x810 upscaled to 1080p, or 1080p to 1440p): the HUD mask was
@@ -26,8 +52,8 @@ How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` 
   waits for its shader instead of being dropped for good (as in Fritchii v5).
 - **The bar says why AMD frame generation is idle**: `(RES 1X)`, `(RESTART)`, `(OOT ONLY)`,
   `(WAITING)` in menus and cutscenes, `(WINDOWS ONLY)`; hover for the full reason.
-- **Crash dumps can be read**: Windows releases include `lichii-windows-x86_64[-pgo]-map.zip`, the
-  link maps that match a player's `lichii.exe.*.dmp` to functions.
+- **Crash dumps can be read**: Windows releases include `cheezyemu-windows-x86_64[-pgo]-map.zip`, the
+  link maps that match a player's `cheezyemu.exe.*.dmp` to functions.
 - **Release builds retry their downloads** (GitHub's 504s failed several build 8 runs).
 - README.txt: Resolution 1X, the FPS counter (real x 2) and how to lock 60, white overexposure
   and occlusion-off mods, low-RAM crashes; "Available VRAM: 7.00 GiB" in the log now says it is
@@ -52,7 +78,7 @@ How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` 
   float16 feature it needs.
 - **README.txt** also has tips for a low frame rate with FSR 4 on RX 6000/7000 (FSR 3.1, the Max
   Resolution add-on, OptiScaler) and for crashes on PCs with 16 GB of RAM.
-- **README.txt** replaces HOW-TO-USE.md: plain text that opens in Notepad, next to `lichii.exe`,
+- **README.txt** replaces HOW-TO-USE.md: plain text that opens in Notepad, next to `cheezyemu.exe`,
   and named at the top of every release's notes. It now also covers which FSR you get, shader
   precaching and low-memory crashes.
 
@@ -85,12 +111,12 @@ How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` 
 - **Ocarina's freeze fix and RX 580 shader threads** from Spikol02/Nyamu, and upstream #817
   (no upload for a texture a copy overwrites whole); see "Also merged" below.
 
-## What's different from Lichii (builds 95 / 115 / 117)
+## What's different from CheezyEmu (builds 95 / 115 / 117)
 
 ### New in build 6
 
 - **Compiled shaders are saved (`VK_KHR_pipeline_binary`).** AMD's Windows driver does not keep
-  compiled shaders between sessions, so plain Lichii recompiles every cached shader on every
+  compiled shaders between sessions, so plain CheezyEmu recompiles every cached shader on every
   boot and stutters while doing it. This build stores what the driver compiles and hands it
   back on later runs.
   - Measured on an RX 6750 XT (driver 26.10.1), Ocarina of Time: boot to the title screen went
@@ -103,7 +129,7 @@ How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` 
     NVIDIA (its driver already caches) and on drivers without `VK_KHR_pipeline_binary`.
   - After a driver update the old file is replaced, not kept. Removing the game's pipeline
     cache from the game list (right-click > Remove) deletes it too.
-- **Shader packs made on any GPU now work.** Lichii skipped every cached pipeline built on a
+- **Shader packs made on any GPU now work.** CheezyEmu skipped every cached pipeline built on a
   different driver, so a pack made on NVIDIA showed only a fraction of its shaders on AMD.
   Those pipelines are now accepted and compiled for your GPU.
 
@@ -119,7 +145,7 @@ the main changes are:
 - Uniform banks no longer break render passes; precise split-front macro DMA reads (#345,
   Celmax); Ocarina's CPU reads of GPU-written pages are preflushed; faster software HMMA (#174,
   mja00).
-- About 30 open Lichii PRs merged, including #415 (daniel-lynch), #434 (jpkto), **#463 stale
+- About 30 open CheezyEmu PRs merged, including #415 (daniel-lynch), #434 (jpkto), **#463 stale
   texture uploads (madebyjordan)**, #376 (Moraeszz2), #446 (ne1i), #481 / #478 / #488
   (mstampfli), **#448 AMD terrain lines (persluffy-cl)**, #250 / #264 / #288 (tibzejoker,
   Kajcsi), #296 (SmileyTatsu), #300, #245, #333, #427, #436, #440, #495, #437.
@@ -130,12 +156,12 @@ the main changes are:
 - AMD fixes from mja00's and chuppatricky's branches: depth-only sampler comparison and blend
   state rebuilds (sharkiix), a null texture for handles past the pool (chuppatricky), a fresh
   start when the driver rejects the pipeline cache (Erick).
-- Lichii #337 is reverted (cost ~9 fps in Castle Town).
+- zortos293/Lichii#337 is reverted (cost ~9 fps in Castle Town).
 
 ### Also merged
 
 - **Updates come from this fork**: the built-in updater checks the repository that built the
-  release, so it offers AMD Superior updates instead of replacing it with upstream Lichii.
+  release, so it offers CheezyEmu updates instead of replacing it with upstream CheezyEmu.
 - Linux build fix for `vk_flash_watch` (X11 `Success` macro clash).
 
 - [zortos293/Lichii#555](https://github.com/zortos293/Lichii/pull/555) by ne1i: shaders built by
@@ -155,20 +181,20 @@ the main changes are:
 ### Build
 
 - Windows release is compiled like the official one: clang-cl 22.1.8, ThinLTO and
-  profile-guided optimization with the Ocarina of Time profile (`lichii-windows.profdata`).
+  profile-guided optimization with the Ocarina of Time profile (`cheezyemu-windows.profdata`).
 - sirit is built from source with conongnang's atomic-float-add patch
   (`YUZU_USE_BUNDLED_SIRIT=OFF`), which also lets GitHub Actions build Linux.
 
 ## Setup
 
-1. Extract the whole archive and run `lichii.exe` (keys, firmware and games are not included).
+1. Extract the whole archive and run `cheezyemu.exe` (keys, firmware and games are not included).
 2. Your existing saves, settings and caches in `%APPDATA%\eden` are used as they are.
 
 ### Shader packs
 
 Shader packs work the same way as before; now they work no matter which GPU they were made on.
 
-1. Close Lichii.
+1. Close CheezyEmu.
 2. Copy the pack's files into the game's shader folder, for Ocarina of Time:
    `%APPDATA%\eden\cache\shader\0400486024dec000\`
    - `vulkan.fork-v54.bin` (the shaders)
@@ -182,14 +208,14 @@ The pack's shaders must match the build's cache version (`fork-v54` here).
 By default the game builds the shaders it used recently at boot and the rest the first time they
 appear. To build **all** of a pack's shaders once, so nothing ever compiles while you play:
 
-1. Open `nx2_switches.txt` next to `lichii.exe` in Notepad.
+1. Open `nx2_switches.txt` next to `cheezyemu.exe` in Notepad.
 2. Add this line and save:
    ```
    EDEN_NX2_PRELOAD_ALL_PIPELINES=1
    ```
 3. Start the game and wait on the loading screen until the game starts (about 12 minutes for
    Ocarina's 20,000 shaders on an i5-12600K; it only has to happen once).
-4. Close Lichii. Every shader is now saved.
+4. Close CheezyEmu. Every shader is now saved.
 5. Keep the line to build everything at every boot (about 30 seconds once saved, but it keeps
    every shader in memory: about 10 GB of RAM for Ocarina), or put `#` in front of it to go back
    to building only the recent ones.
@@ -200,18 +226,18 @@ Some AMD cards draw thin dark lines in a grid on far-away ground and grass. Turn
 texture re-compression fixes it (found in zortos293/Lichii#448 by persluffy-cl). It uses more
 video memory, so it is off by default:
 
-1. Open `nx2_switches.txt` next to `lichii.exe` in Notepad.
+1. Open `nx2_switches.txt` next to `cheezyemu.exe` in Notepad.
 2. Find this line and remove the `#` in front of it (or add the line):
    ```
    EDEN_NX2_KEEP_ASTC=1
    ```
-3. Save and restart Lichii.
+3. Save and restart CheezyEmu.
 
 ### Optional: steadier frame rate on AMD
 
 Sending GPU work in larger batches suits AMD's driver. On an RX 6750 XT in Hyrule Field it gave
 about +1 fps and a steadier frame rate (31-33 fps instead of 27-33). Add this line to
-`nx2_switches.txt` next to `lichii.exe`:
+`nx2_switches.txt` next to `cheezyemu.exe`:
 
 ```
 EDEN_NX2_FLUSH_DRAWS=512
@@ -226,5 +252,5 @@ FSR 4 and FSR frame generation are AMD's
 shader cache repair is zortos293/Lichii#815 by zortos293 and jpkto; the Ocarina freeze fix and
 the RX 580 thread limit are from [Spikol02/Nyamu](https://github.com/Spikol02/Nyamu); turning
 off the stale upload skip follows [Frizti/Fritchii](https://github.com/Frizti/Fritchii).
-Lichii is by [zortos293](https://github.com/zortos293/Lichii), built on Eglantine, Eden, yuzu and
-Sudachi.
+CheezyEmu started from [Lichii](https://github.com/zortos293/Lichii) by zortos293 and contributors,
+itself built on Eglantine, Eden, yuzu and Sudachi.
