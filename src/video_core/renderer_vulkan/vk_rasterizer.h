@@ -270,6 +270,7 @@ private:
     bool OcarinaDlssEnabled() const;
     void TrackOcarinaCamera();
     void TrackOcarinaActor(u64 shader_hash, bool is_indexed, bool is_indirect);
+    [[nodiscard]] bool OcarinaFsrPresetActive() const;
     bool TryOcarinaDlss(const ComputePipeline& pipeline, bool replace);
     void ReadOcarinaActors(std::vector<struct OcarinaActorMesh>& meshes);
     void LogOcarinaSkinnedLayout();

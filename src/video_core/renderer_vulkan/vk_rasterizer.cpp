@@ -1856,7 +1856,10 @@ void RasterizerVulkan::DispatchCompute() {
     };
     const auto indirect_address = kepler_compute->GetIndirectComputeAddress();
 #ifdef EGLANTINE_STREAMLINE
-    const bool can_replace = OcarinaDlssEnabled() && pipeline->CanReplaceOcarinaUpscale() &&
+    // With an FSR preset the game upscales by another ratio with another shader: any pass may be
+    // it, and TryOcarinaDlss tells by its images (one scene-size input, one larger output).
+    const bool can_replace = OcarinaDlssEnabled() &&
+                             (pipeline->CanReplaceOcarinaUpscale() || OcarinaFsrPresetActive()) &&
                              !indirect_address && !frame_dump.Capturing();
 #else
     constexpr bool can_replace = false;
@@ -3117,11 +3120,43 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
 }
 
 /// Track the scene depth on its reader dispatch, or try to replace a recognized upscale dispatch.
+bool RasterizerVulkan::OcarinaFsrPresetActive() const {
+    return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native;
+}
+
 bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool replace) {
     constexpr u64 depth_reader = 0x1fc7a0423116281fULL;
     const bool upscale_4k = replace && pipeline.ShaderHash() == ComputePipeline::Ocarina1440pShader;
     if ((!replace && pipeline.ShaderHash() != depth_reader) || !OcarinaDlssEnabled()) {
         return false;
+    }
+    // A pass that isn't one of the game's known upscales (an FSR preset's): only the one that
+    // reads this frame's scene colour and writes a larger B10G11R11 image goes on, silently.
+    if (replace && !pipeline.CanReplaceOcarinaUpscale()) {
+        if (oot_camera_sample_frame != render_trace_frame) {
+            return false;
+        }
+        const auto sampled = pipeline.SampledImages();
+        const auto written = pipeline.WrittenImages();
+        if (sampled.size() != 1 || written.size() != 1 || !sampled[0].id || !written[0]) {
+            return false;
+        }
+        const auto& in = texture_cache.GetImageView(sampled[0].id);
+        const auto& out = texture_cache.GetImageView(written[0]);
+        using VideoCore::Surface::PixelFormat;
+        if (in.format != PixelFormat::E5B9G9R9_FLOAT || out.format != PixelFormat::B10G11R11_FLOAT ||
+            in.size.width != oot_motion.extent.width || in.size.height != oot_motion.extent.height ||
+            out.size.width <= in.size.width || out.size.height <= in.size.height) {
+            return false;
+        }
+        static u64 logged_shader = 0;
+        if (logged_shader != pipeline.ShaderHash()) {
+            logged_shader = pipeline.ShaderHash();
+            LOG_INFO(Render_Vulkan,
+                     "Ocarina of Time: FSR preset upscale pass {:016x}, {}x{} -> {}x{}",
+                     pipeline.ShaderHash(), in.size.width, in.size.height, out.size.width,
+                     out.size.height);
+        }
     }
     const auto read_tic = [this](u32 index) -> std::optional<Tegra::Texture::TICEntry> {
         const auto& table = kepler_compute->regs.tic;
@@ -3212,8 +3247,11 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     const bool four_k = upscale_4k && same_size && extent.width == 2560 && extent.height == 1440;
     const bool valid_extents = upscale_4k
         ? same_size
-        : target.size.width == extent.width * 4 / 3 &&
-            target.size.height == extent.height * 4 / 3;
+        : (target.size.width == extent.width * 4 / 3 &&
+           target.size.height == extent.height * 4 / 3) ||
+              // An FSR preset: a smaller scene, upscaled by another ratio.
+              (OcarinaFsrPresetActive() && target.size.width > extent.width &&
+               target.size.height > extent.height);
     if (!valid_extents || !color.BackingImage() || !target.BackingImage() ||
         color.IsRescaled() || target.IsRescaled() ||
         color.Samples() != VK_SAMPLE_COUNT_1_BIT || target.Samples() != VK_SAMPLE_COUNT_1_BIT ||
