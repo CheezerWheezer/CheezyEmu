@@ -6,6 +6,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <QFutureWatcher>
@@ -44,6 +45,13 @@ struct GamePictureLookup {
     std::vector<u8> png;        ///< 256x256 PNG, empty when none was found.
     bool nothing_found = false; ///< The sources answered and had nothing (not a network error).
 };
+
+/// CheezyEmu's title ID -> picture link list (dist/game_pictures.json in the update repository),
+/// downloaded at most once a day. Empty when it can't be had. Blocks; run it off the UI thread.
+std::unordered_map<u64, std::string> LoadGamePictureList(const std::atomic_bool& cancel);
+
+/// Downloads a picture from the list as a 256x256 PNG. Empty on failure. Blocks.
+std::vector<u8> DownloadGamePicture(const std::string& url, const std::atomic_bool& cancel);
 
 /// Finds a game picture without asking anything: SteamGridDB's first icon when api_key is set,
 /// else switchiconshowdown.com. Blocks; run it off the UI thread.

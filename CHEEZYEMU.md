@@ -16,12 +16,13 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **New look**: the CheezyEmu theme (warm charcoal and cheese yellow, rounded buttons, yellow
   headers, menu and status bar lines) is the default. Players on the old default theme move to it
   once; any theme picked in Configure > General > UI sticks.
-- **Game pictures from SteamGridDB**: games without a picture (most NUP files) get one
-  automatically once a free SteamGridDB API key is entered (right-click a game > Game Picture >
-  Find Picture Online asks for it). The closest name wins, and the newest release among equal
-  names, so Switch 2 versions beat older games. Right-click > Game Picture can also pick another
-  online picture, use your own image or reset it. Pictures are saved in the cache folder; game
-  files aren't changed.
+- **Game pictures for every Switch 2 game, automatically**: CheezyEmu downloads a picture list
+  (dist/game_pictures.json, one SteamGridDB picture per Switch 2 title ID) and shows each game's
+  picture with nothing to set up. Matching is by title ID, so it's the right game. The list is
+  rebuilt every Monday by the game-pictures workflow from switchbrew's title list; a wrong
+  picture is fixed in tools/game_pictures/overrides.json. A player's own SteamGridDB key (right-click
+  a game > Game Picture > Find Picture Online) also finds pictures for games the list lacks.
+  Right-click > Game Picture picks another picture, uses your own image or resets it.
 - **Updates install themselves from now on**: when a newer build is out, CheezyEmu offers it at
   startup, downloads it, closes, installs and restarts (Windows zip and Linux AppImage).
 - **White fog fixed** (Hyrule Field drawbridge solid white, lines in Kokiri Forest's fog): reverts

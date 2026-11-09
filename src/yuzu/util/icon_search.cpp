@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -35,6 +36,7 @@
 #include <QtConcurrent/QtConcurrentRun>
 
 #include "common/httplib.h"
+#include "common/scm_rev.h"
 #include "common/logging.h"
 #include "common/string_util.h"
 #include "qt_common/config/uisettings.h"
@@ -164,7 +166,7 @@ constexpr std::string_view SgdbApiBase = "https://www.steamgriddb.com/api/v2";
 
 bool IsAllowedIconHost(std::string_view host) {
     return host == "switchiconshowdown.com" || host == "steamgriddb.com" ||
-           host.ends_with(".steamgriddb.com");
+           host.ends_with(".steamgriddb.com") || host == "raw.githubusercontent.com";
 }
 
 enum class HttpStatus { Ok, NetworkError, Timeout, Cancelled, Unauthorized };
@@ -579,6 +581,68 @@ IconSearchResult RunPreferredSearch(const std::string& name, u64 tid, const std:
 }
 
 } // namespace
+
+std::unordered_map<u64, std::string> LoadGamePictureList(const std::atomic_bool& cancel) {
+    using namespace std::chrono;
+    namespace fs = std::filesystem;
+    const fs::path cached = QtCommon::GamePictures::Folder() / "list.json";
+    std::string body;
+    std::error_code ec;
+    const auto written = fs::last_write_time(cached, ec);
+    const bool fresh = !ec && fs::file_time_type::clock::now() - written < hours{24};
+    const auto read_cache = [&] {
+        std::ifstream file(cached, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    };
+    if (fresh) {
+        body = read_cache();
+    }
+    if (body.empty()) {
+        // The list lives in the repository the updates come from.
+        const auto res = HttpGet(fmt::format("https://raw.githubusercontent.com/{}/HEAD/dist/"
+                                             "game_pictures.json",
+                                             Common::g_build_auto_update_repo),
+                                 steady_clock::now() + seconds{20}, cancel);
+        if (res.status == HttpStatus::Ok) {
+            body = res.body;
+            fs::create_directories(cached.parent_path(), ec);
+            std::ofstream(cached, std::ios::binary | std::ios::trunc) << body;
+        } else {
+            LOG_INFO(Frontend, "Game pictures: the picture list could not be downloaded ({})",
+                     res.detail);
+            body = read_cache(); // an old list beats none
+        }
+    }
+    std::unordered_map<u64, std::string> list;
+    const auto json = nlohmann::json::parse(body, nullptr, false);
+    if (json.is_discarded() || !json.is_object() || !json.contains("pictures") ||
+        !json["pictures"].is_object()) {
+        return list;
+    }
+    for (const auto& [id, entry] : json["pictures"].items()) {
+        if (!entry.is_object() || !entry.contains("url") || !entry["url"].is_string()) {
+            continue;
+        }
+        const u64 title_id = std::strtoull(id.c_str(), nullptr, 16);
+        if (title_id != 0) {
+            list.emplace(title_id, entry["url"].get<std::string>());
+        }
+    }
+    return list;
+}
+
+std::vector<u8> DownloadGamePicture(const std::string& url, const std::atomic_bool& cancel) {
+    const auto res = HttpGet(url, std::chrono::steady_clock::now() + SearchDeadline, cancel);
+    if (res.status != HttpStatus::Ok) {
+        return {};
+    }
+    QImage image;
+    if (!image.loadFromData(reinterpret_cast<const uchar*>(res.body.data()),
+                            static_cast<int>(res.body.size()))) {
+        return {};
+    }
+    return EncodeSquareIcon(image);
+}
 
 GamePictureLookup FindGamePictureAutomatically(const std::string& name, u64 title_id,
                                                const std::string& api_key,

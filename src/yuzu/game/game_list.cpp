@@ -137,8 +137,7 @@ void GameList::ForEachGameItem(const std::function<void(GameListItemPath&)>& vis
 }
 
 void GameList::StartPictureSearch() {
-    if (picture_search_running || !UISettings::values.auto_game_pictures.GetValue() ||
-        UISettings::values.steamgriddb_api_key.GetValue().empty()) {
+    if (picture_search_running || !UISettings::values.auto_game_pictures.GetValue()) {
         return;
     }
     std::vector<std::pair<u64, std::string>> wanted;
@@ -164,11 +163,25 @@ void GameList::StartPictureSearch() {
     (void)QtConcurrent::run([self, wanted = std::move(wanted),
                              api_key = UISettings::values.steamgriddb_api_key.GetValue(),
                              cancel = picture_cancel] {
+        // CheezyEmu's list matches by title ID and needs no key; a player's own SteamGridDB key
+        // also searches by name for games the list doesn't have.
+        const auto list = LoadGamePictureList(*cancel);
         for (const auto& [program_id, name] : wanted) {
             if (cancel->load()) {
                 break;
             }
-            const auto found = FindGamePictureAutomatically(name, program_id, api_key, *cancel);
+            GamePictureLookup found;
+            auto entry = list.find(program_id);
+            if (entry == list.end()) {
+                entry = list.find(program_id & ~u64{0xFFF}); // the base game of an update or DLC
+            }
+            if (entry != list.end()) {
+                found.png = DownloadGamePicture(entry->second, *cancel);
+            } else if (!api_key.empty()) {
+                found = FindGamePictureAutomatically(name, program_id, api_key, *cancel);
+            } else {
+                found.nothing_found = !list.empty();
+            }
             if (!found.png.empty()) {
                 QtCommon::GamePictures::Save(program_id, found.png);
                 LOG_INFO(Frontend, "Game pictures: found one for {:016X} ({})", program_id, name);

@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright 2026 CheezyEmu contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Refreshes dist/game_pictures.json, the title ID -> picture list CheezyEmu reads so players get
+# game pictures without a SteamGridDB key of their own. Needs the repository secret SGDB_API_KEY
+# (Settings > Secrets and variables > Actions).
+
+name: game-pictures
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays
+
+permissions:
+  contents: write
+
+concurrency:
+  group: game-pictures
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the picture list
+        env:
+          SGDB_API_KEY: ${{ secrets.SGDB_API_KEY }}
+        run: |
+          if [ -z "$SGDB_API_KEY" ]; then
+            echo "::error::Add the repository secret SGDB_API_KEY (a SteamGridDB API key) first"
+            exit 1
+          fi
+          python tools/game_pictures/build_list.py
+
+      - name: Commit it if it changed
+        run: |
+          # The generated time alone is no change.
+          if git diff --quiet -I '"generated"' -- dist/game_pictures.json && \
+             git ls-files --error-unmatch dist/game_pictures.json >/dev/null 2>&1; then
+            echo "No picture changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/game_pictures.json
+          git commit -m "game pictures: refresh the SteamGridDB list"
+          git push

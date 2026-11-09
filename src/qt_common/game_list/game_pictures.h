@@ -3,7 +3,7 @@
 
 // Game list pictures CheezyEmu found online or the player picked, one PNG per title ID in
 // <cache>/game_pictures. They win over the icon inside the game file. A title the search found
-// nothing for gets a .none marker, so it isn't searched for again for a week.
+// nothing for gets a .none marker, so it isn't searched for again for a day.
 
 #pragma once
 
@@ -80,14 +80,14 @@ inline void MarkMissing(u64 program_id) {
     std::ofstream file(MissPath(program_id), std::ios::trunc);
 }
 
-/// Whether the automatic search should skip this title: found nothing within the last week.
+/// Whether the automatic search should skip this title: found nothing within the last day.
 inline bool RecentlyMissing(u64 program_id) {
     std::error_code ec;
     const auto written = std::filesystem::last_write_time(MissPath(program_id), ec);
     if (ec) {
         return false;
     }
-    return std::filesystem::file_time_type::clock::now() - written < std::chrono::hours{24 * 7};
+    return std::filesystem::file_time_type::clock::now() - written < std::chrono::hours{24};
 }
 
 } // namespace QtCommon::GamePictures
