@@ -17,6 +17,8 @@
 > download) explains shader packs, the switches file, FSR and frame generation; [AMD-SUPERIOR.md](AMD-SUPERIOR.md) lists the changes and
 > credits.
 >
+> 💬 **Join the AMD Superior Discord:** https://discord.gg/vEK4ug6JD (help, bug reports, new builds)
+>
 > **New in build 9**
 > - FSR 4 no longer gives a black picture on Radeon RX 9000.
 > - The HUD stays still with frame generation when the game renders below full resolution.
