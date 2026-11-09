@@ -23,6 +23,7 @@ frame generation. It runs on NVIDIA and Intel GPUs too.
 > change and its credits.
 >
 > **New in build 10**
+> - FSR presets for Ocarina: Native AA, Quality, Balanced, Performance, Ultra Performance.
 > - Fog no longer turns solid white (Hyrule Field drawbridge, Kokiri Forest).
 > - No more stale or glowing geometry from old vertex data (Hyrule Field, the graveyard).
 > - FSR 4 that draws a black picture switches itself to FSR 3.1 instead.

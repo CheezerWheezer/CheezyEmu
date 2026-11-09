@@ -36,6 +36,14 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   FSR version and sizes, frame generation), and on Linux how to capture the hang (RADV_DEBUG=hang).
 - **Updates install themselves from now on**: when a newer build is out, CheezyEmu offers it at
   startup, downloads it, closes, installs and restarts (Windows zip and Linux AppImage).
+- **FSR presets for Ocarina of Time** (Properties > Graphics > AMD FSR & Frame Generation): Native
+  AA (the 3D scene at 1920x1080, FSR as anti-aliasing), Native (the game's 1440x810), Quality
+  1280x720, Balanced 1125x633, Performance 960x540 and Ultra Performance 640x360, at 1080p. The
+  game itself renders at that size (its own resolution code, patched at load), FSR upscales it and
+  frame generation works on every preset. The HUD stays sharp and saved shaders still apply.
+- **First start of build 10 takes longer once**: the white-fog fix changes about 2,500 of
+  Ocarina's shaders, which are compiled again and saved (around 15 minutes on an RX 6750 XT).
+  Later starts are as fast as before.
 - **White fog fixed** (Hyrule Field drawbridge solid white, lines in Kokiri Forest's fog): reverts
   the perspective-correct interpolation of zortos293/Lichii#820, as Fritchii v5.1 did. It was also
   suspected in an RX 6600 crash at boot. The faint red line in the Royal Family's Tomb may return.
