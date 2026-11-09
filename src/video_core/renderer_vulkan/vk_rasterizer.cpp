@@ -2621,14 +2621,49 @@ void RasterizerVulkan::TrackOcarinaCamera() {
     if (!OcarinaDlssEnabled()) {
         return;
     }
+    // Why no scene camera was found, logged every 600 frames without one: FSR and AMD frame
+    // generation need it, and without this a player's log said nothing.
+    struct CameraDiagnostics {
+        u64 window{};
+        u32 draws{}, no_depth{}, not_scene{}, matched{}, mismatched{}, dynamic{};
+        u32 largest_w{}, largest_h{};
+        f32 camera_w{}, camera_h{}, camera_wz{}, camera_wz1{};
+        u32 target_w{}, target_h{}, drawn_w{}, drawn_h{};
+    };
+    static CameraDiagnostics diag;
+    if (render_trace_frame >= diag.window + 600) {
+        if (diag.matched == 0 && diag.draws > 0) {
+            LOG_INFO(Render_Vulkan,
+                     "Ocarina FSR: no scene camera in 600 frames ({} draws: {} without depth, {} "
+                     "below 640x360 or not B10G11R11, largest B10G11R11 target {}x{}; {} camera "
+                     "buffers didn't match (last {}x{} wz {} {} vs target {}x{}); {} dynamic "
+                     "resolution (last drawn {}x{}))",
+                     diag.draws, diag.no_depth, diag.not_scene, diag.largest_w, diag.largest_h,
+                     diag.mismatched, diag.camera_w, diag.camera_h, diag.camera_wz,
+                     diag.camera_wz1, diag.target_w, diag.target_h, diag.dynamic, diag.drawn_w,
+                     diag.drawn_h);
+        }
+        diag = {};
+        diag.window = render_trace_frame;
+        // A log copied while the game runs is at most ~10 s behind.
+        Common::Log::Stop();
+    }
+    ++diag.draws;
 
     const auto& targets = texture_cache.GetRenderTargets();
     if (!targets.color_buffer_ids[0] || !targets.depth_buffer_id) {
+        ++diag.no_depth;
         return;
     }
     const auto& color = texture_cache.GetImageView(targets.color_buffer_ids[0]);
+    if (color.format == VideoCore::Surface::PixelFormat::B10G11R11_FLOAT &&
+        u64{color.size.width} * color.size.height > u64{diag.largest_w} * diag.largest_h) {
+        diag.largest_w = color.size.width;
+        diag.largest_h = color.size.height;
+    }
     if (color.size.width < 640 || color.size.height < 360 ||
         color.format != VideoCore::Surface::PixelFormat::B10G11R11_FLOAT) {
+        ++diag.not_scene;
         return;
     }
     // Reflections and half-size passes share the camera layout; the upscale reads the largest.
@@ -2652,6 +2687,13 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         if (camera[extent_offset] != static_cast<f32>(color.size.width) ||
             camera[extent_offset + 1] != static_cast<f32>(color.size.height) ||
             camera[projection_wz] != -1.0f || camera[projection_wz + 1] != 0.0f) {
+            ++diag.mismatched;
+            diag.camera_w = camera[extent_offset];
+            diag.camera_h = camera[extent_offset + 1];
+            diag.camera_wz = camera[projection_wz];
+            diag.camera_wz1 = camera[projection_wz + 1];
+            diag.target_w = color.size.width;
+            diag.target_h = color.size.height;
             return;
         }
         // Below full speed the game lowers its resolution and draws the scene into a corner of
@@ -2673,6 +2715,9 @@ void RasterizerVulkan::TrackOcarinaCamera() {
             (drawn_width + 2 < color.size.width || drawn_height + 2 < color.size.height);
         if (!scaled_scene &&
             (drawn_width + 2 < color.size.width || drawn_height + 2 < color.size.height)) {
+            ++diag.dynamic;
+            diag.drawn_w = drawn_width;
+            diag.drawn_h = drawn_height;
             static u32 logged = 0;
             if (logged++ % 300 == 0) {
                 LOG_INFO(Render_Vulkan,
@@ -2683,6 +2728,7 @@ void RasterizerVulkan::TrackOcarinaCamera() {
             return;
         }
         const std::span values{camera};
+        ++diag.matched;
         oot_camera_sample_frame = render_trace_frame;
         oot_motion.camera_channel = gpu_memory;
         oot_motion.extent = {color.size.width, color.size.height};
@@ -3150,6 +3196,19 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
             in.size.width != oot_motion.extent.width || in.size.height != oot_motion.extent.height ||
             out.size.width < in.size.width || out.size.height < in.size.height ||
             out.ImageHandle() == in.ImageHandle()) {
+            // A scene-format input that still didn't fit: worth a line now and then.
+            if (in.format == PixelFormat::E5B9G9R9_FLOAT) {
+                static u32 logged = 0;
+                if (logged++ % 600 == 0) {
+                    LOG_INFO(Render_Vulkan,
+                             "Ocarina FSR preset: pass {:016x} not taken: in {}x{} format {}, out "
+                             "{}x{} format {}, scene {}x{}",
+                             pipeline.ShaderHash(), in.size.width, in.size.height,
+                             static_cast<int>(in.format), out.size.width, out.size.height,
+                             static_cast<int>(out.format), oot_motion.extent.width,
+                             oot_motion.extent.height);
+                }
+            }
             return false;
         }
         static u64 logged_shader = 0;
