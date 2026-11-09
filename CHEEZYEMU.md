@@ -40,6 +40,11 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **Crash reports**: a crash now writes a crash dump to `crash_dumps` in the data folder and a
   line in the log saying where it happened. In Ocarina the log also says why FSR or frame
   generation didn't turn on.
+- **AMD FSR in the status bar and the performance overlay**: an FSR button shows the version
+  running (FSR 4.1.2, FSR 3.1.6) or why it isn't (OOT ONLY, RES 1X, WAITING, WINDOWS ONLY), like
+  the frame generation one. The overlay shows both, so they're visible in fullscreen.
+- **Tools > Switch 2 Switches**: checkboxes for the nx2_switches.txt switches players use most
+  (semaphore mirror, GPU thread split, keep ASTC, build every shader at boot...).
 - **New icon** (vector, sharp at any size).
 - More fixes from Lichii build 130.
 

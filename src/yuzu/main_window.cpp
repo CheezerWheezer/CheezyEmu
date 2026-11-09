@@ -36,6 +36,7 @@
 
 #include "about_dialog.h"
 #include "data_dialog.h"
+#include "nx2_switches_dialog.h"
 #include "deps_dialog.h"
 #include "install_dialog.h"
 
@@ -1691,6 +1692,13 @@ void MainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_TAS_Record, &MainWindow::OnTasRecord);
     connect_menu(ui->action_TAS_Reset, &MainWindow::OnTasReset);
     connect_menu(ui->action_Configure_Tas, &MainWindow::OnConfigureTas);
+
+    // The nx2_switches.txt switches players turn on and off, as checkboxes.
+    ui->menu_Tools->addSeparator();
+    ui->menu_Tools->addAction(tr("Switch 2 Switches..."), this, [this] {
+        Nx2SwitchesDialog dialog(this);
+        dialog.exec();
+    });
 
     // Help
     connect_menu(ui->action_Root_Data_Folder, &MainWindow::OnOpenRootDataFolder);

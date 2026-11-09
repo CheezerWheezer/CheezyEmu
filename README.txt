@@ -17,7 +17,8 @@ Help, bug reports and new builds: the CheezyEmu Discord, https://discord.gg/vEK4
 1. THE SWITCHES FILE (nx2_switches.txt)
 ---------------------------------------
 
-Some options have no button in the settings yet. They live in a small text file:
+The most used switches have checkboxes: Tools > Switch 2 Switches (restart CheezyEmu after
+saving). It writes the file below for you. The rest live only in the text file:
 
   - nx2_switches.txt next to cheezyemu.exe, or
   - %APPDATA%\cheezyemu\nx2_switches.txt
