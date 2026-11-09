@@ -363,6 +363,7 @@ void ConfigureGraphics::Setup(const ConfigurationShared::Builder& builder) {
     // Hide rather than disable, a disabled widget would read as using the global value
     if (frame_gen_checkbox != nullptr) {
         for (const u32 id : {Settings::values.frame_gen_type.Id(),
+                             Settings::values.amd_frame_gen_version.Id(),
                              Settings::values.frame_gen_multiplier.Id(),
                              Settings::values.frame_gen_target_rate.Id(),
                              Settings::values.frame_gen_flow_scale_auto.Id(),

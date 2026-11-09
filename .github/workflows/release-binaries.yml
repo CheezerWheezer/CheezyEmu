@@ -401,9 +401,9 @@ jobs:
           test -x build/release/bin/lichii
           test -x build/release/bin/eden-cli
           strip build/release/bin/lichii build/release/bin/eden-cli
-          cp HOW-TO-USE.md AMD-SUPERIOR.md build/release/bin/
+          cp README.txt AMD-SUPERIOR.md build/release/bin/
           tar -czf "lichii-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz" \
-            -C build/release/bin lichii eden-cli nx2_switches.txt HOW-TO-USE.md \
+            -C build/release/bin lichii eden-cli nx2_switches.txt README.txt \
             AMD-SUPERIOR.md
           ls -la "lichii-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz"
 
@@ -461,7 +461,7 @@ jobs:
           }
           windeployqt --release --no-translations build/release/bin/lichii.exe
           # The player guide and the release notes, next to lichii.exe.
-          Copy-Item HOW-TO-USE.md, AMD-SUPERIOR.md build/release/bin/
+          Copy-Item README.txt, AMD-SUPERIOR.md build/release/bin/
 
       # A self-contained app bundle: macdeployqt copies Qt and every other Homebrew library both
       # programs load into the bundle, then the leftover Homebrew search paths are removed so a
@@ -642,9 +642,19 @@ jobs:
           if [[ -n "$has_pgo" ]]; then
             pgo_note="The PGO builds are the same programs compiled with profile-guided optimization. Linux uses clang with Eglantine's profile; Windows uses clang-cl and ThinLTO with a profile trained in Lichii on Ocarina of Time, so other games gain less. Prefer them when your CPU supports it."
           fi
+          # "What's new": the newest "## New in build" section of AMD-SUPERIOR.md at this commit.
+          whats_new=$(gh api -H "Accept: application/vnd.github.raw" \
+              "repos/${GITHUB_REPOSITORY}/contents/AMD-SUPERIOR.md?ref=${GITHUB_SHA}" |
+            awk '/^## /{ if (f) exit } /^## New in build/{ f=1; print "## What'"'"'s new"; next }
+                 f && !/^How to use all of this/' || true)
 
           cat > notes.md <<EOF
           Automatic build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}.
+
+          > [!IMPORTANT]
+          > **Read \`README.txt\`** (next to \`lichii.exe\` after you unzip, or [on GitHub](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/README.txt)): how to turn switches on and off, install and move shader packs, and use AMD FSR upscaling and AMD frame generation. Changes and credits: [AMD-SUPERIOR.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/AMD-SUPERIOR.md).
+
+          ${whats_new}
 
           > [!TIP]
           > **Ocarina of Time above 60 fps:** press **Ctrl+U** (the Toggle Framerate Limit hotkey) to unlock the frame rate, or set **Frame rate limit (Switch 2)** under the game's Properties > Graphics (e.g. 120; applies when the game starts) to cap it there. The **FPS Unlock (built-in)** add-on, on by default, keeps animations and physics at normal speed at any frame rate; leave it enabled.

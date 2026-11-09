@@ -8,9 +8,24 @@ It runs and behaves like normal Lichii on every other GPU. Built on
 [zortos293/Lichii](https://github.com/zortos293/Lichii) **build 117** (`89440b2`), which also fixes
 the RDNA2 driver crash from cooperative matrices (zortos293/Lichii#657).
 
-## New in build 7
+## New in build 8
 
-How to use all of this: **[HOW-TO-USE.md](HOW-TO-USE.md)**.
+How to use all of this: **[README.txt](README.txt)**, also next to `lichii.exe` in every download.
+
+- **Frame generation and upscaling without FSR 4.** When AMD's runtime doesn't offer FSR 4 for a
+  GPU (RX 6000/7000 on an older driver, older Radeons, NVIDIA, Intel), Ocarina now uses AMD's
+  FSR 3.1 instead of turning off. In build 7 both FSR and AMD frame generation stopped on those
+  GPUs. The log names the version that runs (`AMD FSR: upscaler ... running`);
+  `EDEN_NX2_FSR_VERSION=3` forces FSR 3.1 to compare.
+- **AMD Frame Generation Version** setting: *Auto* (FSR 4 frame generation on Radeon RX 9000,
+  FSR 3.1 elsewhere) or *FSR 3.1 (faster)*, for RX 9000 owners who want the lighter one.
+- **Frame generation with FSR 4 turned off** no longer runs AMD's FSR 3.1 without the GPU's
+  float16 feature it needs.
+- **README.txt** replaces HOW-TO-USE.md: plain text that opens in Notepad, next to `lichii.exe`,
+  and named at the top of every release's notes. It now also covers which FSR you get, shader
+  precaching and low-memory crashes.
+
+## New in build 7
 
 - **AMD FSR 4 in Ocarina of Time.** The game's own upscaler is replaced by AMD's FSR 4
   (machine-learning upscaling and anti-aliasing) on the GPUs AMD's FSR runtime supports. Frames

@@ -446,7 +446,7 @@ class OcarinaFsr4Upscaler final : public OcarinaUpscaler {
 public:
     OcarinaFsr4Upscaler(const Device& device, Scheduler& scheduler, MemoryAllocator& allocator)
         : upscaler{device, scheduler, allocator} {
-        LOG_INFO(Render_Vulkan, "Ocarina of Time: the game's upscaler is replaced by AMD FSR 4");
+        LOG_INFO(Render_Vulkan, "Ocarina of Time: the game's upscaler is replaced by AMD FSR");
     }
     bool Failed() const override {
         return upscaler.Failed();

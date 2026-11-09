@@ -168,9 +168,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "of the AMD FSR 1 and SGSR window adapting filters."));
     INSERT(Settings, amd_fsr4, tr("Use AMD FSR 4 in place of a game's DLSS"),
            tr("Uses AMD FSR 4 (machine-learning upscaling) in place of a Switch 2 game's own DLSS, "
-              "instead of FSR 3.1, on GPUs AMD's FSR runtime supports: Radeon RX 9000, RX 7000 and "
-              "RX 6000 with a current driver. Other GPUs keep FSR 3.1.\nWindows only. NVIDIA DLSS, "
-              "when it is on and available, is used first.\nTakes effect when the game starts."));
+              "instead of FSR 3.1, on GPUs AMD's FSR runtime supports: Radeon RX 9000, and RX 7000 "
+              "and RX 6000 with a recent driver. Other GPUs keep FSR 3.1.\nIn Ocarina of Time, AMD "
+              "frame generation uses AMD's FSR 3.1 when FSR 4 is off or not offered, so it works on "
+              "any GPU.\nWindows only. NVIDIA DLSS, when it is on and available, is used first."
+              "\nTakes effect when the game starts."));
     INSERT(Settings, nvidia_dlss, tr("Use NVIDIA DLSS in place of a game's DLSS (experimental)"),
            tr("Uses NVIDIA DLSS on GeForce RTX cards in place of a Switch 2 game's own DLSS, "
               "instead of AMD FSR 3.1.\nNeeds NVIDIA's Streamline loader, and NVIDIA DLSS unless "
@@ -246,6 +248,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
 
     INSERT(Settings, frame_gen, tr("Enable Frame Generation"), QString());
     INSERT(Settings, frame_gen_type, tr("Frame Generation Type"), QString());
+    INSERT(Settings, amd_frame_gen_version, tr("AMD Frame Generation Version"),
+           tr("Which AMD FSR frame generation runs (with the AMD FSR frame generation type).\n"
+              "Auto: the newest AMD offers for this GPU (FSR 4 frame generation on Radeon RX 9000, "
+              "FSR 3.1 on others).\nFSR 3.1: lighter on the GPU; use it if FSR 4 frame generation "
+              "costs too much performance.\nTakes effect when Lichii restarts."));
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"), QString());
     INSERT(Settings, frame_gen_flow_scale_auto, tr("Auto Flow Scale"), QString());
@@ -579,6 +586,11 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                               PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
                               PAIR(FrameGenType, Fsr3, tr("Optical Flow Interpolation (built-in)")),
                               PAIR(FrameGenType, AmdFsr, tr("AMD FSR Frame Generation (Ocarina, restart)")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::AmdFrameGenVersion>::Index(),
+                          {
+                              PAIR(AmdFrameGenVersion, Auto, tr("Auto (FSR 4 where available)")),
+                              PAIR(AmdFrameGenVersion, Fsr31, tr("FSR 3.1 (faster)")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::ScalingFilter>::Index(),
                           {

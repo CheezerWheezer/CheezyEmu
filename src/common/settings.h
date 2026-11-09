@@ -470,6 +470,17 @@ struct Values {
                                                    false,
                                                    &frame_gen};
 
+    /// AMD FSR frame generation: Auto takes the newest AMD offers for the GPU (FSR 4's on
+    /// RX 9000), Fsr31 always FSR 3.1's (lighter).
+    SwitchableSetting<AmdFrameGenVersion> amd_frame_gen_version{linkage,
+                                                                AmdFrameGenVersion::Auto,
+                                                                "amd_frame_gen_version",
+                                                                Category::Renderer,
+                                                                Specialization::Default,
+                                                                true,
+                                                                false,
+                                                                &frame_gen};
+
     SwitchableSetting<u32, true> frame_gen_multiplier{linkage,
                                                       2,
                                                       2,

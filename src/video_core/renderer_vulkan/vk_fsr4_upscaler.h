@@ -52,8 +52,11 @@ public:
         bool hdr = true; ///< Linear HDR colour. False for tonemapped, perceptually encoded colour.
     };
 
-    /// Whether AMD's DLLs are present and offer FSR 4 for this device. Checked once.
+    /// Whether AMD's DLLs are present and offer FSR 4, or else FSR 3.1, for this device (FSR 4
+    /// turned on, or AMD frame generation requested). Checked once.
     [[nodiscard]] static bool IsAvailable(const Device& device);
+    /// Whether the upscaler IsAvailable picked is FSR 4 (else FSR 3.1 from AMD's runtime).
+    [[nodiscard]] static bool IsFsr4(const Device& device);
 
     /// Throws vk::Exception when FSR 4 can't start on this device.
     explicit Fsr4Upscaler(const Device& device, Scheduler& scheduler,

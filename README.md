@@ -13,9 +13,17 @@
 # Lichii
 
 > **This is Lichii AMD Superior**: AMD performance fixes, saved compiled shaders, AMD FSR 4 and
-> AMD frame generation. **[HOW-TO-USE.md](HOW-TO-USE.md)** explains shader packs, the switches
-> file, FSR 4 and frame generation; [AMD-SUPERIOR.md](AMD-SUPERIOR.md) lists the changes and
+> AMD frame generation. **[README.txt](README.txt)** (also next to `lichii.exe` in every
+> download) explains shader packs, the switches file, FSR and frame generation; [AMD-SUPERIOR.md](AMD-SUPERIOR.md) lists the changes and
 > credits.
+>
+> **New in build 8**
+> - AMD FSR upscaling and AMD frame generation now work on GPUs without FSR 4 (older drivers,
+>   older Radeons, NVIDIA, Intel): Ocarina falls back to AMD's FSR 3.1 instead of turning both off.
+> - New **AMD Frame Generation Version** setting: *Auto* (FSR 4 frame generation on Radeon
+>   RX 9000) or *FSR 3.1 (faster)*.
+> - The player guide is now **README.txt** (opens in Notepad), next to `lichii.exe` and linked at
+>   the top of every release.
 
 Lichii is an experimental, open-source Nintendo Switch and Switch 2 emulator written in C++. It builds on Eglantine, Eden, yuzu and Sudachi, preserving their contributions while developing this fork's game compatibility and renderer fixes.
 

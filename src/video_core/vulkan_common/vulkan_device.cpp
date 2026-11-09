@@ -654,9 +654,13 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             LOG_WARNING(Render_Vulkan,
                         "AMD drivers (2026+) have broken float16 math");
             features.shader_float16_int8.shaderFloat16 = false;
-            // AMD's FSR 4 runs its own shaders inside its DLL and needs the device feature; the
+            // AMD's FSR runs its own shaders inside its DLL and needs the device feature; the
             // emulator's shaders still don't do float16 math (float16_math below stays false).
-            fsr4_float16 = Settings::values.amd_fsr4.GetValue();
+            // AMD frame generation starts AMD's FSR 3.1 even with FSR 4 off (Ocarina's motion data).
+            fsr4_float16 = Settings::values.amd_fsr4.GetValue() ||
+                           (Settings::values.frame_gen.GetValue() &&
+                            Settings::values.frame_gen_type.GetValue() ==
+                                Settings::FrameGenType::AmdFsr);
         }
     }
 

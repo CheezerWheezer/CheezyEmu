@@ -11,6 +11,7 @@
 
 #include "common/logging.h"
 #include "common/settings.h"
+#include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
 #include "video_core/renderer_vulkan/vk_fsr4_upscaler.h"
 #include "video_core/renderer_vulkan/vk_ffx_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -51,13 +52,22 @@ VkDeviceContext DeviceContext(const Device& device) {
     };
 }
 
-// The FSR 4 provider the DLL offers this device, if any: its version id and name.
+// The upscaler provider the DLL offers this device: its version id and name.
 struct Provider {
     u64 id{};
     std::string name;
 };
 
+// FSR 4 when it is wanted and AMD's runtime offers it for this GPU (RX 9000; RX 6000/7000 need
+// a recent driver), else FSR 3.1, which runs on any GPU and takes the same inputs: Ocarina's motion
+// data, HUD mask and AMD frame generation hang off this upscaler, so they keep working without
+// FSR 4. EDEN_NX2_FSR_VERSION=3 forces FSR 3.1 (to test that path on a GPU with FSR 4).
 std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
+    static const bool force_fsr3 = [] {
+        const char* const value = std::getenv("EDEN_NX2_FSR_VERSION");
+        return value && value[0] == '3';
+    }();
+    const bool want_fsr4 = Settings::values.amd_fsr4.GetValue() && !force_fsr3;
     VkDeviceContext vk_context = DeviceContext(device);
     u64 count = 0;
     ffxQueryDescGetVersions versions{};
@@ -78,16 +88,30 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
     }
     std::string offered;
     std::optional<Provider> fsr4;
+    std::optional<Provider> fsr3;
     for (u64 i = 0; i < count; ++i) {
         const std::string name = names[i] ? names[i] : "";
         offered += (offered.empty() ? "" : ", ") + name;
-        // The list is newest first; take the newest 4.x.
+        // The list is newest first; take the newest 4.x and the newest 3.1.x.
         if (!fsr4 && !name.empty() && name[0] >= '4' && name[0] <= '9') {
             fsr4 = Provider{ids[i], name};
         }
+        if (!fsr3 && name.starts_with("3.") && name.size() > 2 && name[2] >= '1') {
+            fsr3 = Provider{ids[i], name};
+        }
     }
-    LOG_INFO(Render_Vulkan, "FSR 4: upscalers offered for {}: {}", device.GetModelName(), offered);
-    return fsr4;
+    LOG_INFO(Render_Vulkan, "AMD FSR: upscalers offered for {}: {}", device.GetModelName(),
+             offered);
+    if (want_fsr4 && fsr4) {
+        return fsr4;
+    }
+    if (fsr3) {
+        LOG_INFO(Render_Vulkan, "AMD FSR: using FSR {} ({})", fsr3->name,
+                 force_fsr3                                 ? "forced by EDEN_NX2_FSR_VERSION=3"
+                 : !Settings::values.amd_fsr4.GetValue()    ? "FSR 4 is turned off"
+                                                            : "no FSR 4 for this GPU or driver");
+    }
+    return fsr3;
 }
 
 FfxApiResource ImageResource(const Fsr4Upscaler::Image& image, VkExtent2D size, u32 state,
@@ -131,17 +155,34 @@ struct Fsr4Upscaler::Context {
     Provider provider;
 };
 
-bool Fsr4Upscaler::IsAvailable(const Device& device) {
-    if (!Settings::values.amd_fsr4.GetValue()) {
-        return false;
-    }
+namespace {
+struct ProbeResult {
+    bool available{};
+    bool fsr4{};
+};
+ProbeResult Probe(const Device& device) {
     static std::once_flag once;
-    static bool available{};
+    static ProbeResult result{};
     std::call_once(once, [&device] {
         const auto runtime = FfxRuntime::Acquire();
-        available = runtime && FindFsr4(*runtime, device).has_value();
+        const auto provider = runtime ? FindFsr4(*runtime, device) : std::nullopt;
+        result.available = provider.has_value();
+        result.fsr4 = provider && !provider->name.empty() && provider->name[0] >= '4';
     });
-    return available;
+    return result;
+}
+} // Anonymous namespace
+
+bool Fsr4Upscaler::IsAvailable(const Device& device) {
+    // AMD frame generation needs this upscaler's motion data even with FSR 4 turned off.
+    if (!Settings::values.amd_fsr4.GetValue() && !AmdFrameGen::Requested()) {
+        return false;
+    }
+    return Probe(device).available;
+}
+
+bool Fsr4Upscaler::IsFsr4(const Device& device) {
+    return IsAvailable(device) && Probe(device).fsr4;
 }
 
 Fsr4Upscaler::Fsr4Upscaler(const Device& device_, Scheduler& scheduler_,
@@ -226,14 +267,15 @@ bool Fsr4Upscaler::CreateContext(VkExtent2D render_size, VkExtent2D upscale_size
     const ffxReturnCode_t result =
         context->api->create_context(&context->handle, &create.header, nullptr);
     if (result != FFX_API_RETURN_OK) {
-        LOG_ERROR(Render_Vulkan, "FSR 4: context creation failed ({}), using FSR 3.1", result);
+        LOG_ERROR(Render_Vulkan, "AMD FSR {}: context creation failed ({}), using the game's upscaler",
+                  context->provider.name, result);
         context->handle = nullptr;
         return false;
     }
     ffxQueryGetProviderVersion provider{};
     provider.header.type = FFX_API_QUERY_DESC_TYPE_GET_PROVIDER_VERSION;
     context->api->query(&context->handle, &provider.header);
-    LOG_INFO(Render_Vulkan, "FSR 4: upscaler {} running, {}x{} -> {}x{} ({})",
+    LOG_INFO(Render_Vulkan, "AMD FSR: upscaler {} running, {}x{} -> {}x{} ({})",
              provider.versionName ? provider.versionName : context->provider.name.c_str(),
              render_size.width, render_size.height, upscale_size.width, upscale_size.height,
              hdr ? "HDR" : "non-linear colour");
@@ -421,6 +463,10 @@ struct Fsr4Upscaler::Context {};
 
 bool Fsr4Upscaler::IsAvailable(const Device&) {
     return false; // AMD ships the FSR 4 runtime for Windows only
+}
+
+bool Fsr4Upscaler::IsFsr4(const Device&) {
+    return false;
 }
 
 Fsr4Upscaler::Fsr4Upscaler(const Device& device_, Scheduler& scheduler_,

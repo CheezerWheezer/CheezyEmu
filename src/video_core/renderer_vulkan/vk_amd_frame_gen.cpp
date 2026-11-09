@@ -157,6 +157,40 @@ void RetireFrameGenContext(State& state) {
     state.generating = false;
 }
 
+/// The AMD frame generation version setting asks for FSR 3.1 (lighter than FSR 4's).
+bool WantFsr31() {
+    return Settings::values.amd_frame_gen_version.GetValue() ==
+           Settings::AmdFrameGenVersion::Fsr31;
+}
+
+/// The newest 3.x version AMD's runtime offers for `create_type` on this device, if any.
+std::optional<std::pair<u64, std::string>> NewestFsr3(const Api& api, VkDeviceContext& vk_context,
+                                                      u64 create_type) {
+    u64 count = 0;
+    ffxQueryDescGetVersions versions{};
+    versions.header.type = FFX_API_QUERY_DESC_TYPE_GET_VERSIONS;
+    versions.createDescType = create_type;
+    versions.device = &vk_context;
+    versions.outputCount = &count;
+    if (api.query(nullptr, &versions.header) != FFX_API_RETURN_OK || count == 0) {
+        return std::nullopt;
+    }
+    std::vector<u64> ids(count);
+    std::vector<const char*> names(count);
+    versions.versionIds = ids.data();
+    versions.versionNames = names.data();
+    if (api.query(nullptr, &versions.header) != FFX_API_RETURN_OK) {
+        return std::nullopt;
+    }
+    for (u64 i = 0; i < count; ++i) { // newest first
+        const std::string name = names[i] ? names[i] : "";
+        if (name.starts_with("3.")) {
+            return std::pair{ids[i], name};
+        }
+    }
+    return std::nullopt;
+}
+
 bool CreateFrameGenContext(State& state, const Device& device, VkExtent2D display,
                            VkFormat format) {
     VkDeviceContext vk_context = DeviceContext(device);
@@ -172,9 +206,21 @@ bool CreateFrameGenContext(State& state, const Device& device, VkExtent2D displa
     create.displaySize = {display.width, display.height};
     create.maxRenderSize = {std::max(display.width, 3840u), std::max(display.height, 2160u)};
     create.backBufferFormat = ffxApiGetSurfaceFormatVK(format);
-    // Chain: frame generation <- version <- backend.
+    // Chain: frame generation <- version <- [override <- ] backend.
     create.header.pNext = &version.header;
     version.header.pNext = &backend.header;
+    ffxOverrideVersion override_version{};
+    override_version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
+    if (WantFsr31()) {
+        if (const auto fsr3 = NewestFsr3(*state.api, vk_context,
+                                         FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION)) {
+            override_version.versionId = fsr3->first;
+            override_version.header.pNext = &backend.header;
+            version.header.pNext = &override_version.header;
+            LOG_INFO(Render_Vulkan, "AMD frame generation: FSR {} chosen in the settings",
+                     fsr3->second);
+        }
+    }
     const ffxReturnCode_t result =
         state.api->create_context(&state.frame_gen_context, &create.header, nullptr);
     if (result != FFX_API_RETURN_OK) {
@@ -448,6 +494,18 @@ VkSwapchainKHR CreateSwapchain(const Device& device, std::mutex& submit_mutex,
     std::vector<std::optional<std::pair<u64, std::string>>> attempts{std::nullopt};
     for (const auto& entry : offered) {
         attempts.emplace_back(entry);
+    }
+    if (WantFsr31()) {
+        // FSR 3.1's swapchain, to match its frame generator (the default may be FSR 4's).
+        std::vector<std::optional<std::pair<u64, std::string>>> fsr3;
+        for (const auto& entry : offered) {
+            if (entry.second.starts_with("3.")) {
+                fsr3.emplace_back(entry);
+            }
+        }
+        if (!fsr3.empty()) {
+            attempts = std::move(fsr3);
+        }
     }
     ffxReturnCode_t result = FFX_API_RETURN_ERROR;
     for (const auto& attempt : attempts) {
