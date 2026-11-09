@@ -354,7 +354,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "does when its graphics pipeline is still building.\n"
               "Wait stalls the GPU until the pipeline is ready (no missing effects, but long "
               "stalls on new content). Skip drops the draw, which can leave an effect missing for "
-              "a few frames. Bounded waits up to the time below per frame, then skips. The "
+              "a few frames. Bounded waits up to the time below per frame, then skips. Skip only "
+              "redrawn targets (the default) drops only draws the game redoes every frame: the "
+              "safest. Draws that hold state (small targets such as Ocarina's brightness "
+              "measurement, memory writes) always wait. The "
               "EDEN_NX2_ASYNC_DISCARD=1 environment variable still forces Skip."));
     INSERT(Settings, native_pipeline_wait_ms, tr("Pipeline wait per frame (ms):"),
            tr("Used by the Bounded mode: the most time per frame that Switch 2 draws may wait in "

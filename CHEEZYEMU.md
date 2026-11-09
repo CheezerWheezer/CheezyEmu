@@ -25,6 +25,10 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **Frame generation's Auto setting picks FSR 3.1 on cards that can't run FSR 4's** (everything
   but the RX 9000 series). AMD's runtime offered FSR 4 frame generation to other cards too, where
   it never made a frame, so players had to pick FSR 3.1 by hand.
+- **No more blinding white lighting in Link's house and Kokiri Forest** with "Switch 2 draws with
+  unbuilt pipelines" on Skip or Bounded: those modes dropped the game's brightness measurement
+  while its shader built, and the exposure stayed stuck until a reset. Draws like that always
+  wait now.
 - **No more red flickering** (an upstream change build 10 had taken out is back).
 - **Fewer freezes and black screens after cutscenes**: two fixes from Lichii build 130 (GPU
   wait handling and its 32-region limit).

@@ -2066,6 +2066,19 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) noexc
             break;
         }
     }
+    // Draws Skip and Bounded never drop: tiny targets (64x64 or less) hold state the game reads
+    // back next frame, such as Ocarina's 16x16 brightness measurement for auto exposure.
+    // Dropping it while its shader built left Link's house and Kokiri Forest blinding white
+    // until a reset. Memory writes (storage, transform feedback) persist too. Transient already
+    // waits for all of these in the rasterizer.
+    if (native && mode != NativePendingMode::Wait) {
+        const auto& regs = maxwell3d->regs;
+        const bool tiny_target = regs.rt[0].Address() != 0 && regs.rt[0].width <= 64 &&
+                                 regs.rt[0].height <= 64;
+        if (tiny_target || pipeline->WritesStorage() || regs.transform_feedback_enabled != 0) {
+            mode = NativePendingMode::Wait;
+        }
+    }
     // Native draws are judged by the heuristic only when a mode other than Wait is chosen.
     const bool can_discard = CanDiscardPendingDraw(
         native, maxwell3d->regs.zeta_enable != 0, draw_state.draw_element_count,
