@@ -3541,6 +3541,20 @@ bool RasterizerVulkan::OcarinaFsrPresetActive() const {
     return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native;
 }
 
+namespace {
+/// Whether an image is the scene image the camera was found on. With an FSR preset the game sizes
+/// its scene copy and its scene target with different rounding: docked Quality reads a 1743x981
+/// copy of a 1744x981 target (an RX 6800 log), and the exact check turned every frame down.
+bool IsSceneSize(u32 width, u32 height, VkExtent2D scene, bool preset) {
+    if (!preset) {
+        return width == scene.width && height == scene.height;
+    }
+    constexpr u32 slack = 4;
+    const auto within = [](u32 a, u32 b) { return (a > b ? a - b : b - a) <= slack; };
+    return within(width, scene.width) && within(height, scene.height);
+}
+} // Anonymous namespace
+
 bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool replace) {
     constexpr u64 depth_reader = 0x1fc7a0423116281fULL;
     const bool upscale_4k = replace && pipeline.ShaderHash() == ComputePipeline::Ocarina1440pShader;
@@ -3564,7 +3578,7 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         const auto& out = texture_cache.GetImageView(written[0]);
         using VideoCore::Surface::PixelFormat;
         if (in.format != PixelFormat::E5B9G9R9_FLOAT || out.format != PixelFormat::B10G11R11_FLOAT ||
-            in.size.width != oot_motion.extent.width || in.size.height != oot_motion.extent.height ||
+            !IsSceneSize(in.size.width, in.size.height, oot_motion.extent, true) ||
             out.size.width < in.size.width || out.size.height < in.size.height ||
             out.ImageHandle() == in.ImageHandle()) {
             // A scene-format input that still didn't fit: worth a line now and then.
@@ -3707,8 +3721,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     // again on it (wrong sizes, an image it also writes) is a likely cause of a tester's freeze
     // (docked, 1440p, Quality), so FSR runs once a frame here, on the scene only.
     if (upscale_4k && output_1440p &&
-        (oot_dlss_frame == render_trace_frame || color.size.width != extent.width ||
-         color.size.height != extent.height)) {
+        (oot_dlss_frame == render_trace_frame ||
+         !IsSceneSize(color.size.width, color.size.height, extent, OcarinaFsrPresetActive()))) {
         return false;
     }
     const bool preset_scene_4k = upscale_4k && !output_1440p && OcarinaFsrPresetActive() &&
@@ -3727,7 +3741,7 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         color.Samples() != VK_SAMPLE_COUNT_1_BIT || target.Samples() != VK_SAMPLE_COUNT_1_BIT ||
         color.range != VideoCommon::SubresourceRange{} || target.range != VideoCommon::SubresourceRange{} ||
         color.format != PixelFormat::E5B9G9R9_FLOAT || target.format != PixelFormat::B10G11R11_FLOAT ||
-        color.size.width != extent.width || color.size.height != extent.height ||
+        !IsSceneSize(color.size.width, color.size.height, extent, OcarinaFsrPresetActive()) ||
         color.ImageHandle() == target.ImageHandle() || depth.ImageHandle() == target.ImageHandle()) {
         // What the game handed its upscale, logged when it changes (to widen the checks above).
         const std::string seen = fmt::format(
@@ -3776,8 +3790,10 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         }();
         // FSR reads the scene from the top-left corner at the size the game drew it (an FSR
         // preset), else the whole image.
-        const VkExtent2D render_extent =
+        const VkExtent2D camera_render =
             oot_motion.render_extent.width != 0 ? oot_motion.render_extent : extent;
+        const VkExtent2D render_extent{(std::min)(camera_render.width, color.size.width),
+                                       (std::min)(camera_render.height, color.size.height)};
         static VkExtent2D logged_render{};
         if (logged_render.width != render_extent.width ||
             logged_render.height != render_extent.height) {
