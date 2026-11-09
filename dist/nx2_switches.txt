@@ -41,6 +41,10 @@ EDEN_NX2_FENCE_BATCH=1
 # build 10, to test whether it causes a problem (for example wrong, too-bright lighting).
 #EDEN_NX2_SEM_MIRROR=0
 
+# FSR 4 output check: when FSR 4 draws black (AMD driver 2.0.406 on RX 9000), CheezyEmu switches to
+# FSR 3.1. =0 keeps FSR 4 regardless (if it switched while your picture looked fine).
+#EDEN_NX2_FSR4_CHECK=0
+
 #EDEN_NX2_MME_JIT=0
 #EDEN_NX2_PBFLUSH=0
 #EDEN_NX2_SKIP_SAME=0

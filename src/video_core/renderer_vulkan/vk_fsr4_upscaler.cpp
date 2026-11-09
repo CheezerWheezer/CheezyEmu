@@ -386,6 +386,21 @@ void Fsr4Upscaler::CreateOutput(VkExtent2D upscale_size) {
 }
 
 bool Fsr4Upscaler::CheckOutputHealth() {
+    // EDEN_NX2_FSR4_CHECK=0 (Tools > Switch 2 Switches): keep FSR 4 whatever this check sees, for
+    // a player sure their picture is fine (the check reads a handful of pixels and could be wrong).
+    static const bool check = [] {
+        const char* const value = std::getenv("EDEN_NX2_FSR4_CHECK");
+        const bool on = !(value && value[0] == '0');
+        if (!on) {
+            LOG_INFO(Render_Vulkan, "AMD FSR: the FSR 4 output check is off (EDEN_NX2_FSR4_CHECK=0)");
+        }
+        return on;
+    }();
+    if (!check) {
+        health_pending = false;
+        health_done = true;
+        return false;
+    }
     if (!health_pending || !scheduler.IsFree(health_tick)) {
         return false;
     }

@@ -62,6 +62,14 @@ constexpr std::array switches{
                              "Keeps Ocarina of Time's HUD still in generated frames instead of "
                              "smearing it with the scene."),
            true, "1", "0"},
+    Switch{"EDEN_NX2_FSR4_CHECK",
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Fall back to FSR 3.1 when FSR 4 draws black"),
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
+                             "Checks a few pixels of FSR 4's picture and switches to FSR 3.1 when "
+                             "it is black (AMD driver 2.0.406 on RX 9000 does that; update the "
+                             "driver). Turn off to keep FSR 4 if it switched with a picture that "
+                             "looked fine."),
+           true, "1", "0"},
     Switch{"EDEN_NX2_RESETFIX",
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Donkey Kong Bananza terrain fix"),
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Fixes terrain and indirect drawing in Donkey "
