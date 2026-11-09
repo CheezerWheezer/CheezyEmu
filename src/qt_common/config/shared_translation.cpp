@@ -166,6 +166,11 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
            tr("Strength of RCAS (AMD's contrast-adaptive sharpening) on the upscaler used in place "
               "of a game's DLSS (AMD FSR 3.1); 0% turns it off.\nAlso sets the sharpening "
               "of the AMD FSR 1 and SGSR window adapting filters."));
+    INSERT(Settings, amd_fsr4, tr("Use AMD FSR 4 in place of a game's DLSS"),
+           tr("Uses AMD FSR 4 (machine-learning upscaling) in place of a Switch 2 game's own DLSS, "
+              "instead of FSR 3.1, on GPUs AMD's FSR runtime supports: Radeon RX 9000, RX 7000 and "
+              "RX 6000 with a current driver. Other GPUs keep FSR 3.1.\nWindows only. NVIDIA DLSS, "
+              "when it is on and available, is used first.\nTakes effect when the game starts."));
     INSERT(Settings, nvidia_dlss, tr("Use NVIDIA DLSS in place of a game's DLSS (experimental)"),
            tr("Uses NVIDIA DLSS on GeForce RTX cards in place of a Switch 2 game's own DLSS, "
               "instead of AMD FSR 3.1.\nNeeds NVIDIA's Streamline loader, and NVIDIA DLSS unless "
@@ -573,6 +578,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           {
                               PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
                               PAIR(FrameGenType, Fsr3, tr("Optical Flow Interpolation (built-in)")),
+                              PAIR(FrameGenType, AmdFsr, tr("AMD FSR Frame Generation (Ocarina, restart)")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::ScalingFilter>::Index(),
                           {

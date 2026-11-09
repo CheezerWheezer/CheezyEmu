@@ -191,6 +191,12 @@ add_library(video_core STATIC
     renderer_vulkan/vk_compute_pass.h
     renderer_vulkan/vk_fsr3_upscaler.cpp
     renderer_vulkan/vk_fsr3_upscaler.h
+    renderer_vulkan/vk_amd_frame_gen.cpp
+    renderer_vulkan/vk_ffx_runtime.cpp
+    renderer_vulkan/vk_ffx_runtime.h
+    renderer_vulkan/vk_amd_frame_gen.h
+    renderer_vulkan/vk_fsr4_upscaler.cpp
+    renderer_vulkan/vk_fsr4_upscaler.h
     renderer_vulkan/vk_dlss_network_probe.cpp
     renderer_vulkan/vk_dlss_network_probe.h
     renderer_vulkan/vk_ocarina_camera_motion.cpp
@@ -217,6 +223,8 @@ add_library(video_core STATIC
     renderer_vulkan/vk_master_semaphore.h
     renderer_vulkan/vk_pipeline_cache.cpp
     renderer_vulkan/vk_pipeline_cache.h
+    renderer_vulkan/vk_pipeline_cache_records.cpp
+    renderer_vulkan/vk_pipeline_cache_records.h
     renderer_vulkan/vk_present_manager.cpp
     renderer_vulkan/vk_present_manager.h
     renderer_vulkan/vk_query_cache.cpp
@@ -485,6 +493,9 @@ if (YUZU_USE_EXTERNAL_FFMPEG)
 endif()
 
 target_include_directories(video_core PUBLIC ${FFmpeg_INCLUDE_DIR})
+# AMD FidelityFX SDK 2.4 API headers for the FSR 4 upscaler (vk_fsr4_upscaler.cpp).
+target_include_directories(video_core PRIVATE
+    ${CMAKE_SOURCE_DIR}/externals/FidelityFX-SDK-2.4)
 
 target_link_libraries(video_core PRIVATE ${FFmpeg_LIBRARIES})
 target_link_options(video_core PRIVATE ${FFmpeg_LDFLAGS})

@@ -15,6 +15,7 @@
 #include <tuple>
 #include <optional>
 #include <bit>
+#include <set>
 #include <string>
 #include <utility>
 #include "common/container/unordered_map.h"
@@ -219,7 +220,9 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         }
         const bool must_download = IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap);
         if ((!aggressive_mode && !evict_old_costly && True(image.flags & ImageFlagBits::CostlyLoad)) ||
-            (!high_priority_mode && must_download)) {
+            // An image the GPU wrote waits for the GPU to copy it back first (a hitch each, while
+            // turning the camera in Ocarina): only past the critical threshold.
+            (!aggressive_mode && !out_of_memory && must_download)) {
             return false;
         }
         if (must_download) {
@@ -296,6 +299,13 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
                     fill = it != block_image_bytes.end()
                                ? static_cast<double>(it->second) / static_cast<double>(block.block_size)
                                : 0.0;
+                }
+                // An image the GPU wrote is copied back before it goes, and waits for the GPU
+                // (Ocarina, turning the camera: 304 of 408 deleted in 40 waits, each a hitch).
+                // Those go after the ones that can simply be dropped.
+                const Image& image = slot_images[image_id];
+                if (IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap)) {
+                    fill += 2.0;
                 }
                 ordered.emplace_back(fill, image_id);
             }
@@ -2414,6 +2424,81 @@ void TextureCache<P>::UploadLayers(Image& image, std::span<const u32> layers) {
 }
 
 template <class P>
+void TextureCache<P>::VerifyAstcUpload(Image& image) {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_ASTC_VERIFY");
+        return value && value[0] == '1';
+    }();
+    if (!enabled || !VideoCore::Surface::IsPixelFormatASTC(image.info.format) ||
+        image.info.type != ImageType::e2D) {
+        return;
+    }
+    const auto& info = image.info;
+    static std::set<std::string> seen;
+    static u32 differing = 0;
+    const std::string shape = fmt::format(
+        "format {} {}x{} levels {} layers {} block {}x{}x{} spacing {}", static_cast<u32>(info.format),
+        info.size.width, info.size.height, info.resources.levels, info.resources.layers,
+        info.block.width, info.block.height, info.block.depth, info.tile_width_spacing);
+    if (seen.size() >= 400 || !seen.insert(shape).second) {
+        return;
+    }
+    // The CPU decoder's result, laid out as the image's level 0 / layer 0 copy says.
+    std::vector<u8> swizzled(image.guest_size_bytes);
+    gpu_memory->ReadBlockUnsafe(image.gpu_addr, swizzled.data(), swizzled.size());
+    std::vector<u8> unswizzled(image.unswizzled_size_bytes);
+    auto copies = UnswizzleImage(*gpu_memory, image.gpu_addr, info, swizzled, unswizzled);
+    std::vector<u8> converted(image.converted_size_bytes);
+    ConvertImage(unswizzled, info, converted, copies);
+    if (copies.empty()) {
+        return;
+    }
+    const BufferImageCopy level0 = copies[0];
+    const u32 width = level0.image_extent.width;
+    const u32 height = level0.image_extent.height;
+    if (static_cast<u64>(width) * height * 4 > level0.buffer_size ||
+        level0.buffer_offset + level0.buffer_size > converted.size()) {
+        return; // not RGBA8 (recompressed): nothing to compare texel by texel
+    }
+    // The GPU decoder's result.
+    std::array<BufferImageCopy, 1> download{level0};
+    download[0].buffer_offset = 0;
+    auto map = runtime.DownloadStagingBuffer(level0.buffer_size, true);
+    image.DownloadMemory(map, download);
+    runtime.Finish();
+    const u8* const gpu = map.mapped_span.data();
+    const u8* const cpu = converted.data() + level0.buffer_offset;
+    u64 wrong = 0;
+    u32 first_x = 0, first_y = 0;
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            const size_t at = (static_cast<size_t>(y) * width + x) * 4;
+            bool same = true;
+            for (u32 c = 0; c < 4; ++c) {
+                same &= std::abs(int(gpu[at + c]) - int(cpu[at + c])) <= 2;
+            }
+            if (!same && wrong++ == 0) {
+                first_x = x;
+                first_y = y;
+            }
+        }
+    }
+    if (wrong != 0) {
+        ++differing;
+        const size_t at = (static_cast<size_t>(first_y) * width + first_x) * 4;
+        LOG_WARNING(HW_GPU,
+                    "ASTC verify: GPU decode differs ({} of {} texels): {}; first at {},{}: GPU "
+                    "{} {} {} {} CPU {} {} {} {} ({} differing kinds so far)",
+                    wrong, u64{width} * height, shape, first_x, first_y, gpu[at], gpu[at + 1],
+                    gpu[at + 2], gpu[at + 3], cpu[at], cpu[at + 1], cpu[at + 2], cpu[at + 3],
+                    differing);
+    } else {
+        LOG_INFO(HW_GPU, "ASTC verify: GPU decode matches: {}", shape);
+    }
+    runtime.FreeDeferredStagingBuffer(map);
+}
+
+template <class P>
 template <typename StagingBuffer>
 void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) {
     const std::span<u8> mapped_span = staging.mapped_span;
@@ -2442,6 +2527,7 @@ void TextureCache<P>::UploadImageContents(Image& image, StagingBuffer& staging) 
                               VideoCommon::CacheType::NoTextureCache);
         const auto uploads = FullUploadSwizzles(image.info);
         runtime.AccelerateImageUpload(image, staging, uploads, 0, 0);
+        VerifyAstcUpload(image);
         return;
     }
 
@@ -3196,53 +3282,19 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         }
         return &new_image.aliased_images[alias_pointer->second];
     };
-    // Whether that copy writes every texel of the new image: a plain copy (same format) of every
-    // level and layer from its origin. Sparse and unbacked images still need RefreshContents to
-    // bind their memory.
-    const auto writes_whole_image = [&](const AliasedImage& aliased) {
-        const Image& source = slot_images[aliased.id];
-        if (new_image.info.type != ImageType::e2D || source.info.type != ImageType::e2D ||
-            source.info.format != new_image.info.format ||
-            source.info.astc_opaque != new_image.info.astc_opaque ||
-            True((source.flags | new_image.flags) & ImageFlagBits::UnwrittenSparse) ||
-            True(new_image.flags & (ImageFlagBits::SparseLayers | ImageFlagBits::SparseTiles |
-                                    ImageFlagBits::Unbacked))) {
-            return false;
-        }
-        const u32 block_width = VideoCore::Surface::DefaultBlockWidth(new_image.info.format);
-        const u32 block_height = VideoCore::Surface::DefaultBlockHeight(new_image.info.format);
-        if (can_rescale && (block_width > 1 || block_height > 1)) {
-            // CopyImage scales a rescaled copy's extent in blocks, which can round below the
-            // scaled image's size in blocks.
-            return false;
-        }
-        for (s32 level = 0; level < new_image.info.resources.levels; ++level) {
-            const Extent3D size = MipSize(new_image.info.size, level);
-            const u32 width = Common::DivCeil(size.width, block_width);
-            const u32 height = Common::DivCeil(size.height, block_height);
-            const bool covered = std::ranges::any_of(aliased.copies, [&](const ImageCopy& copy) {
-                return copy.dst_subresource.base_level == level &&
-                       copy.dst_subresource.base_layer == 0 &&
-                       copy.dst_subresource.num_layers >= new_image.info.resources.layers &&
-                       copy.dst_offset == Offset3D{} && copy.extent.width >= width &&
-                       copy.extent.height >= height;
-            });
-            if (!covered) {
-                return false;
-            }
-        }
-        return true;
-    };
     // Copies run oldest first. When one of them writes the whole image, the upload from guest
     // memory and the alias copies before it would be overwritten whole: neither is made. Ocarina
     // of Time resizes a shadow map every frame in parts of Kokiri Forest, at the same address:
     // each size is a new depth target and a new texture, both copied from older sizes, and their
-    // uploads took up to 17% of the GPU back thread there.
+    // uploads took up to 17% of the GPU back thread there. Only at 1x: a rescaled copy's extent is
+    // the scaled guest mip size, which can fall short of the host mip (a 5 px wide image at 2x:
+    // host mip 1 is 5 px, the copy 4).
     size_t first_copy = 0;
     bool copied_whole = false;
-    for (size_t index = join_copies_to_do.size(); index-- > 0;) {
+    for (size_t index = join_copies_to_do.size(); !can_rescale && index-- > 0;) {
         const AliasedImage* const aliased = alias_copy(join_copies_to_do[index]);
-        if (aliased != nullptr && writes_whole_image(*aliased)) {
+        if (aliased != nullptr &&
+            CopiesWriteWholeImage(new_image, slot_images[aliased->id], aliased->copies)) {
             first_copy = index;
             copied_whole = true;
             break;

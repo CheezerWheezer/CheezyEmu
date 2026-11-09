@@ -182,6 +182,12 @@ try
                   present_manager,
                   scheduler,
                   PresentFiltersForAppletCapture)
+    , blit_hudless(device_memory,
+                   device,
+                   memory_allocator,
+                   present_manager,
+                   scheduler,
+                   PresentFiltersForDisplay)
     , rasterizer(render_window, gpu, device_memory, device, memory_allocator, state_tracker, scheduler)
 #ifdef HAS_LSFG
     , frame_gen(memory_allocator, scheduler)
@@ -237,10 +243,33 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
                                 : std::chrono::steady_clock::time_point{};
 
     scheduler.RequestOutsideRenderPassOperationContext();
-    blit_swapchain.DrawToFrame(device, rasterizer, frame, framebuffers,
-                               render_window.GetFramebufferLayout(),
+    const auto frame_layout = render_window.GetFramebufferLayout();
+    blit_swapchain.DrawToFrame(device, rasterizer, frame, framebuffers, frame_layout,
                                present_manager.SwapchainImageCount(),
                                swapchain.GetImageViewFormat());
+    frame->frame_gen_rect = VkRect2D{
+        .offset = {static_cast<s32>(frame_layout.screen.left),
+                   static_cast<s32>(frame_layout.screen.top)},
+        .extent = {frame_layout.screen.GetWidth(), frame_layout.screen.GetHeight()},
+    };
+    // AMD frame generation tells the HUD apart by comparing the frame with the same frame drawn
+    // from the game's image before its HUD, through the same scaling and filters, so the HUD
+    // stays put in generated frames instead of smearing with the scene.
+    frame->frame_gen_hudless = VK_NULL_HANDLE;
+    if (AmdFrameGen::Requested() && rasterizer.OcarinaHudlessReady()) {
+        if (hudless_frames.size() <= frame->index) {
+            hudless_frames.resize(frame->index + 1);
+        }
+        Frame& hudless = hudless_frames[frame->index];
+        rasterizer.PresentOcarinaHudless(true);
+        blit_hudless.DrawToFrame(device, rasterizer, &hudless, framebuffers, frame_layout,
+                                 present_manager.SwapchainImageCount(),
+                                 swapchain.GetImageViewFormat());
+        rasterizer.PresentOcarinaHudless(false);
+        if (hudless.image && hudless.width == frame->width && hudless.height == frame->height) {
+            frame->frame_gen_hudless = *hudless.image;
+        }
+    }
 
 #ifdef HAS_LSFG
     void(frame_gen.WantedGenerations(present_manager.MaxExtraFrames()));

@@ -421,6 +421,8 @@ private:
     /// Upload data from guest to an image
     template <typename StagingBuffer>
     void UploadImageContents(Image& image, StagingBuffer& staging_buffer);
+    /// EDEN_NX2_ASTC_VERIFY=1: compares a GPU-decoded ASTC image with the CPU decoder.
+    void VerifyAstcUpload(Image& image);
 
     /// Create a new image view from a guest descriptor
     [[nodiscard]] ImageViewId CreateImageView(const TICEntry& config);
@@ -590,9 +592,12 @@ private:
     void ClearStaleGpu(GPUVAddr gpu_addr, size_t size);
     [[nodiscard]] bool IsAllStale(DAddr addr, size_t size) const;
     void UpdateStaleTracking(u64 run_begin, u64 run_pages, s32 delta);
+    // Off unless EDEN_NX2_TC_SKIP_STALE=1: in Ocarina of Time a skipped upload left the fog reading
+    // stale data after an area loaded (white blobs in Kokiri Forest until the area was entered
+    // again). Fritchii turned it off as well (not a clear win in Hyrule Field).
     bool tc_skip_stale{[] {
         const char* value = std::getenv("EDEN_NX2_TC_SKIP_STALE");
-        return value == nullptr || value[0] != '0'; // EDEN_NX2_TC_SKIP_STALE=0: off
+        return value != nullptr && value[0] == '1';
     }()};
     /// Device memory pages (Core::Memory::YUZU_PAGEBITS), not this cache's 1 MiB lookup pages.
     static constexpr u64 STALE_PAGE_BITS = 12;

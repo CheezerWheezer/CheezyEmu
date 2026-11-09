@@ -52,6 +52,7 @@
 #include "video_core/renderer_vulkan/vk_cooperative_hmma_test.h"
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/renderer_vulkan/vk_pipeline_cache_records.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
@@ -421,9 +422,24 @@ struct DeferredStages {
     std::array<std::vector<u32>, Maxwell::MaxShaderStage> reference_spirv;
 };
 
-size_t GetTotalPipelineWorkers() {
+size_t GetTotalPipelineWorkers(const Device& device) {
     const size_t max_core_threads =
         std::max<size_t>(static_cast<size_t>(std::thread::hardware_concurrency()), 2ULL) - 1ULL;
+    // EDEN_NX2_PIPELINE_WORKERS=<n> sets the number of pipeline build threads (Spikol02/Nyamu).
+    if (const char* value = std::getenv("EDEN_NX2_PIPELINE_WORKERS")) {
+        const long requested = std::strtol(value, nullptr, 10);
+        if (requested > 0) {
+            return std::min(max_core_threads, static_cast<size_t>(requested));
+        }
+    }
+    // AMD's legacy Polaris driver uses a lot of RAM per compile of a large Switch 2 shader, and
+    // one build per core is the likely cause of the RX 580 running out of RAM after the intro.
+    if (device.IsAmdLegacyGcn()) {
+        LOG_WARNING(Render_Vulkan,
+                    "AMD GCN4 or older: limiting pipeline build threads to 2 "
+                    "(EDEN_NX2_PIPELINE_WORKERS overrides)");
+        return std::min<size_t>(max_core_threads, 2ULL);
+    }
 #ifdef __ANDROID__
     const int configured = AndroidSettings::values.pipeline_worker_count.GetValue();
     const int clamped = std::clamp(configured, 2, 8);
@@ -493,7 +509,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
       use_vulkan_pipeline_cache{Settings::values.use_vulkan_driver_pipeline_cache.GetValue() &&
                                 !DriverCachesPipelines(device_)},
       num_pipeline_workers{device.HasBrokenParallelShaderCompiling() ? 1ULL
-                                                                     : GetTotalPipelineWorkers()},
+                                                                     : GetTotalPipelineWorkers(device)},
       emission_budget{num_pipeline_workers},
       workers(num_pipeline_workers, "VkPipelineBuilder", {}, Common::ThreadPlacement::Background),
       deferred_workers(1, "VkDeferredPipelines", {}, Common::ThreadPlacement::Background),
@@ -790,6 +806,7 @@ bool PreloadAllPipelines() {
 } // Anonymous namespace
 
 PipelineCache::~PipelineCache() {
+    serialization_stop.request_stop();
     background_pipelines.Stop();
     workers.WaitForRequests();
     serialization_thread.WaitForRequests();
@@ -894,14 +911,14 @@ namespace {
 /// that bind every pointer the first one binds, those binding the most first and the newest of
 /// those binding as many (an older one can be from a translator that asked about fewer slots, and
 /// fail), then the others in cache order.
-void OrderComputeTranslations(std::vector<FileEnvironment>& candidates) {
+void OrderComputeTranslations(std::vector<CachedComputeTranslation>& candidates) {
     if (candidates.size() < 2) {
         return;
     }
     std::vector<std::vector<u64>> keys;
     keys.reserve(candidates.size());
-    for (const FileEnvironment& env : candidates) {
-        keys.push_back(env.MappedStoragePointerKeys());
+    for (const CachedComputeTranslation& candidate : candidates) {
+        keys.push_back(candidate.env.MappedStoragePointerKeys());
     }
     std::vector<size_t> order(candidates.size());
     std::iota(order.begin(), order.end(), size_t{0});
@@ -921,7 +938,7 @@ void OrderComputeTranslations(std::vector<FileEnvironment>& candidates) {
         }
         return lhs > rhs;
     });
-    std::vector<FileEnvironment> ordered;
+    std::vector<CachedComputeTranslation> ordered;
     ordered.reserve(candidates.size());
     for (const size_t index : order) {
         ordered.push_back(std::move(candidates[index]));
@@ -1097,15 +1114,38 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         size_t built{};
         bool has_loaded{};
         std::unique_ptr<PipelineStatistics> statistics;
+        /// Records the load never chooses: those lacking a value the translator reads (graphics
+        /// ones with their key hash), and copies of a compute translation that stays
+        std::vector<VideoCommon::PipelineRecord> incomplete;
+        std::vector<std::pair<u64, VideoCommon::PipelineRecord>> incomplete_graphics;
+        std::vector<VideoCommon::PipelineRecord> copies;
     } state;
     // A rebuilt translation is cached beside the stale one. Choose between them before building, so
     // loading only ever adds entries (see OrderComputeTranslations), and take the next when a
     // translation fails.
-    ::Common::unordered_map<ComputePipelineCacheKey, std::vector<FileEnvironment>> compute_envs;
+    ::Common::unordered_map<ComputePipelineCacheKey, std::vector<CachedComputeTranslation>>
+        compute_envs;
     // The same for graphics: a pipeline whose record failed to load is stored again when the GPU
     // thread builds it, and its records are tried newest first.
     std::vector<std::pair<GraphicsPipelineCacheKey, GraphicsRecords>> graphics_records;
     ::Common::unordered_map<GraphicsPipelineCacheKey, size_t> graphics_record_index;
+    // Where each record read begins and ends, to remove those the load never chooses.
+    u64 record_begin{VideoCommon::PipelineCacheMagic.size() + sizeof(CACHE_VERSION)};
+    const auto read_record{[&](std::ifstream& file) {
+        const auto record{VideoCommon::ReadPipelineRecord(file, record_begin)};
+        record_begin = record.end;
+        return record;
+    }};
+    /// For each graphics key hash as stored, the newest record read and its stages. Records of
+    /// one key are tried newest first (see CreateCachedGraphicsPipeline), so an older record with
+    /// the same stored key is only reached when the newer one fails, which then stores the
+    /// pipeline again: the older ones are removed (upstream #815 keeps the first instead).
+    std::unordered_map<u64, std::pair<VideoCommon::PipelineRecord, u64>> newest_graphics;
+    std::vector<DuplicateGraphicsRecord> graphics_duplicates;
+    // Records of one pipeline under different stored keys (shader packs from other drivers),
+    // logged to see what the cache holds.
+    size_t shared_pipeline_records{};
+    u64 shared_pipeline_bytes{};
 
     if (device.IsKhrPipelineExecutablePropertiesEnabled()) {
         state.statistics = std::make_unique<PipelineStatistics>(device);
@@ -1113,17 +1153,20 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     const auto load_compute{[&](std::ifstream& file, FileEnvironment env) {
         ComputePipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
-        compute_envs[key].push_back(std::move(env));
+        VideoCommon::CheckComputeRecord(env, key.shared_memory_size, key.workgroup_size);
+        compute_envs[key].push_back({std::move(env), read_record(file)});
     }};
     const auto queue_compute{[&](const ComputePipelineCacheKey& key,
-                                 std::vector<FileEnvironment> candidates) {
-        workers.QueueWork([this, key, envs_ = std::move(candidates), &state,
+                                 std::vector<CachedComputeTranslation> candidates) {
+        workers.QueueWork([this, key, candidates_ = std::move(candidates), &state,
                            &callback]() mutable {
             ShaderPools pools;
             ComputePipelineCacheEntry entry;
-            for (auto& env : envs_) {
+            size_t chosen{};
+            for (; chosen < candidates_.size(); ++chosen) {
                 pools.ReleaseContents();
-                entry = CreateComputePipeline(pools, key, env, state.statistics.get(), false);
+                entry = CreateComputePipeline(pools, key, candidates_[chosen].env,
+                                              state.statistics.get(), false);
                 if (entry.pipeline) {
                     break;
                 }
@@ -1132,6 +1175,9 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             if (entry.pipeline) {
                 compute_cache.emplace(key, std::move(entry));
             }
+            AddUnchosenComputeTranslations(candidates_, chosen,
+                                           host_info.EnvironmentReadProperties(), state.incomplete,
+                                           state.copies);
             ++state.built;
             if (state.has_loaded) {
                 callback(VideoCore::LoadCallbackStage::Build, state.built, state.total);
@@ -1142,6 +1188,17 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     const auto load_graphics{[&](std::ifstream& file, std::vector<FileEnvironment> envs) {
         GraphicsPipelineCacheKey key;
         file.read(reinterpret_cast<char*>(&key), sizeof(key));
+        VideoCommon::CheckGraphicsRecord(key.unique_hashes, envs.size());
+        const auto record{read_record(file)};
+        u64 stages{};
+        for (const FileEnvironment& env : envs) {
+            stages = (stages << 8) | static_cast<u32>(env.ShaderStage());
+        }
+        if (const auto [newest, inserted] = newest_graphics.try_emplace(key.Hash(), record, stages);
+            !inserted && newest->second.second == stages) {
+            graphics_duplicates.push_back({newest->second.first, record.end - sizeof(key)});
+            newest->second.first = record;
+        }
         if (key.state.driver_id != dynamic_features.driver_id ||
             key.state.driver_version != dynamic_features.driver_version) {
             // Pipelines from a cache made with another driver (a shared shader pack) are
@@ -1209,6 +1266,9 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         const auto [it, inserted] = graphics_record_index.try_emplace(key, graphics_records.size());
         if (inserted) {
             graphics_records.emplace_back(key, GraphicsRecords{});
+        } else {
+            ++shared_pipeline_records;
+            shared_pipeline_bytes += record.end - record.begin;
         }
         graphics_records[it->second].second.push_back(std::move(envs));
     }};
@@ -1284,6 +1344,19 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
         LOG_INFO(Render_Vulkan, "{} cached graphics pipelines came from another driver",
                  foreign_driver_pipelines);
     }
+    {
+        u64 duplicate_bytes{};
+        for (const auto& duplicate : graphics_duplicates) {
+            duplicate_bytes += duplicate.record.end - duplicate.record.begin;
+        }
+        LOG_INFO(Render_Vulkan,
+                 "Pipeline cache: {} MiB read; {} graphics records repeat a stored key ({} MiB, "
+                 "older copies to remove), {} more share a pipeline under another key ({} MiB)",
+                 record_begin >> 20, graphics_duplicates.size(), duplicate_bytes >> 20,
+                 shared_pipeline_records - (std::min)(shared_pipeline_records,
+                                                      graphics_duplicates.size()),
+                 (shared_pipeline_bytes - (std::min)(shared_pipeline_bytes, duplicate_bytes)) >> 20);
+    }
     if (skipped_pipelines != 0) {
         LOG_INFO(
             Render_Vulkan,
@@ -1297,6 +1370,40 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     lock.unlock();
 
     workers.WaitForRequests(stop_loading);
+
+    AddIncompleteGraphics(state.incomplete_graphics, graphics_duplicates, disk_pipelines,
+                          state.incomplete);
+    // Records the load never chooses are read again at every boot. The serialization thread
+    // rewrites the file without them, before it appends the pipelines built from now on: at once
+    // for incomplete ones, else once the superseded ones take up an eighth of the file.
+    u64 superseded_bytes{};
+    for (const auto& record : state.copies) {
+        superseded_bytes += record.end - record.begin;
+    }
+    for (const auto& duplicate : graphics_duplicates) {
+        superseded_bytes += duplicate.record.end - duplicate.record.begin;
+    }
+    if (!stop_loading.stop_requested() &&
+        (!state.incomplete.empty() ||
+         (superseded_bytes != 0 && superseded_bytes >= record_begin / 8))) {
+        auto removed{std::move(state.incomplete)};
+        removed.insert(removed.end(), state.copies.begin(), state.copies.end());
+        serialization_thread.QueueWork([filename = pipeline_cache_filename,
+                                        loaded_size = record_begin, records = std::move(removed),
+                                        duplicates = std::move(graphics_duplicates), stop_loading,
+                                        destroyed = serialization_stop.get_token()]() mutable {
+            // Stopped by a cancelled load, or by the cache's destruction.
+            std::stop_source stop;
+            const std::stop_callback on_cancel{stop_loading, [&stop] { stop.request_stop(); }};
+            const std::stop_callback on_destroy{destroyed, [&stop] { stop.request_stop(); }};
+            if (stop.stop_requested()) {
+                return;
+            }
+            AddEqualGraphicsKeys(filename, duplicates, records);
+            VideoCommon::RemovePipelines(stop.get_token(), filename, CACHE_VERSION, loaded_size,
+                                         std::move(records));
+        });
+    }
 
     if (use_vulkan_pipeline_cache) {
         SerializeVulkanPipelineCache(vulkan_pipeline_cache_filename, vulkan_pipeline_cache,
@@ -1363,7 +1470,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                 u32 num_envs{};
                 file.read(reinterpret_cast<char*>(&num_envs), sizeof(num_envs));
                 FileEnvironment env;
-                env.Deserialize(file);
+                env.Deserialize(file, end);
                 if (num_envs != 1 || env.ShaderStage() != Shader::Stage::Compute) {
                     LOG_WARNING(Render_Vulkan, "Shader precache: unexpected entry in {}", path);
                     throw std::runtime_error("unexpected entry");
@@ -1734,7 +1841,8 @@ bool PipelineCache::AdoptTranslation(PendingTranslation& job) {
                     env_ptrs.push_back(&(*envs)[index]);
                 }
             }
-            SerializePipeline(key, env_ptrs, pipeline_cache_filename, CACHE_VERSION);
+            SerializePipeline(key, env_ptrs, pipeline_cache_filename, CACHE_VERSION,
+                              host_info.EnvironmentReadProperties());
         });
         QueueVulkanPipelineCacheFlush();
     }
@@ -1833,6 +1941,18 @@ void PipelineCache::EvictUnusedPipelines() {
     // this long is destroyed; it takes 2-3 ms to build again from the driver's pipeline cache.
     constexpr u64 EvictAfterFrames = 9000;
     if (frame_count <= EvictAfterFrames) {
+        return;
+    }
+    // Going back to a place rebuilt every pipeline it had used (a hitch per object, Fritchii v3
+    // stopped this too): keep up to this many, or none with EDEN_NX2_EVICT_PIPELINES=1. 12000 kept
+    // ~5 GB of driver memory on a 12 GB card in Ocarina; the texture cache sat at its critical
+    // threshold, evicting and decoding textures again (hitches), so about 1.8 GB.
+    static const bool evict_always = [] {
+        const char* const value = std::getenv("EDEN_NX2_EVICT_PIPELINES");
+        return value && value[0] == '1';
+    }();
+    constexpr size_t KeepPipelinesUpTo = 4000;
+    if (!evict_always && graphics_cache.size() <= KeepPipelinesUpTo) {
         return;
     }
     const u64 cutoff = frame_count - EvictAfterFrames;
@@ -2542,7 +2662,8 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline() {
                 env_ptrs.push_back(&envs[index]);
             }
         }
-        SerializePipeline(key, env_ptrs, pipeline_cache_filename, CACHE_VERSION);
+        SerializePipeline(key, env_ptrs, pipeline_cache_filename, CACHE_VERSION,
+                          host_info.EnvironmentReadProperties());
     });
     QueueVulkanPipelineCacheFlush();
     return pipeline;
@@ -2574,7 +2695,7 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(const ComputePipe
                           fmt::format("failed-compute-{:016x}-v{}.env", key.unique_hash, CACHE_VERSION);
         std::ofstream file{path, std::ios::binary};
         if (file) {
-            env.Serialize(file);
+            env.Serialize(file, host_info.EnvironmentReadProperties());
             LOG_INFO(Render_Vulkan, "Captured failed compute environment: {} written={}",
                      path.string(), file.good());
         }
@@ -2584,7 +2705,8 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(const ComputePipe
     }
     serialization_thread.QueueWork([this, key, env_ = std::move(env)] {
         SerializePipeline(key, std::array<const GenericEnvironment*, 1>{&env_},
-                          pipeline_cache_filename, CACHE_VERSION);
+                          pipeline_cache_filename, CACHE_VERSION,
+                          host_info.EnvironmentReadProperties());
     });
     QueueVulkanPipelineCacheFlush();
     return entry;
@@ -2668,30 +2790,40 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(
 
 void PipelineCache::SerializeVulkanPipelineCache(const std::filesystem::path& filename,
                                                  const vk::PipelineCache& pipeline_cache,
-                                                 u32 cache_version) try {
+                                                 u32 cache_version) {
     // Written beside the cache and renamed over it: the emulator stopped mid-write left the cache
     // empty, and every later boot failed to read it.
     auto temporary = filename;
     temporary += ".tmp";
     std::ofstream file(temporary, std::ios::binary);
-    file.exceptions(std::ifstream::failbit);
     if (!file.is_open()) {
         LOG_ERROR(Common_Filesystem, "Failed to open Vulkan driver pipeline cache file {}",
-                  Common::FS::PathToUTF8String(filename));
+                  Common::FS::PathToUTF8String(temporary));
         return;
     }
-    file.write(VULKAN_CACHE_MAGIC_NUMBER.data(), VULKAN_CACHE_MAGIC_NUMBER.size())
-        .write(reinterpret_cast<const char*>(&cache_version), sizeof(cache_version));
+    try {
+        file.exceptions(std::ifstream::failbit);
+        file.write(VULKAN_CACHE_MAGIC_NUMBER.data(), VULKAN_CACHE_MAGIC_NUMBER.size())
+            .write(reinterpret_cast<const char*>(&cache_version), sizeof(cache_version));
 
-    size_t cache_size = 0;
-    std::vector<char> cache_data;
-    if (pipeline_cache) {
-        pipeline_cache.Read(&cache_size, nullptr);
-        cache_data.resize(cache_size);
-        pipeline_cache.Read(&cache_size, cache_data.data());
+        size_t cache_size = 0;
+        std::vector<char> cache_data;
+        if (pipeline_cache) {
+            pipeline_cache.Read(&cache_size, nullptr);
+            cache_data.resize(cache_size);
+            pipeline_cache.Read(&cache_size, cache_data.data());
+        }
+        file.write(cache_data.data(), cache_size);
+        file.close();
+    } catch (const std::ios_base::failure& e) {
+        // The cache stays as it was: only the file being written goes.
+        LOG_ERROR(Common_Filesystem, "{}", e.what());
+        file.exceptions(std::ios::goodbit);
+        file.close();
+        std::error_code remove_error;
+        std::filesystem::remove(temporary, remove_error);
+        return;
     }
-    file.write(cache_data.data(), cache_size);
-    file.close();
     std::error_code error;
     std::filesystem::rename(temporary, filename, error);
     if (error) {
@@ -2703,13 +2835,6 @@ void PipelineCache::SerializeVulkanPipelineCache(const std::filesystem::path& fi
 
     LOG_INFO(Render_Vulkan, "Vulkan driver pipelines cached at: {}",
              Common::FS::PathToUTF8String(filename));
-
-} catch (const std::ios_base::failure& e) {
-    LOG_ERROR(Common_Filesystem, "{}", e.what());
-    if (!Common::FS::RemoveFile(filename)) {
-        LOG_ERROR(Common_Filesystem, "Failed to delete Vulkan driver pipeline cache file {}",
-                  Common::FS::PathToUTF8String(filename));
-    }
 }
 
 vk::PipelineCache PipelineCache::LoadVulkanPipelineCache(const std::filesystem::path& filename,

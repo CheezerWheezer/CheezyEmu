@@ -18,6 +18,7 @@
 #include "video_core/renderer_vulkan/vk_compute_pass.h"
 #include "video_core/renderer_vulkan/vk_dlss_network_probe.h"
 #include "video_core/renderer_vulkan/vk_fsr3_upscaler.h"
+#include "video_core/renderer_vulkan/vk_fsr4_upscaler.h"
 #ifdef EGLANTINE_STREAMLINE
 #include "video_core/renderer_vulkan/vk_streamline_dlss.h"
 #endif
@@ -258,6 +259,16 @@ public:
     /// The game DLSS network's health check (ProbeGameDlssOutput), created on first use.
     std::unique_ptr<DlssNetworkProbe> dlss_network_probe;
     std::optional<std::chrono::steady_clock::time_point> fsr3_last_evaluation;
+
+    /// AMD FSR 4 (FidelityFX SDK 2.4) in place of the game's DLSS, before FSR 3.1, where AMD's
+    /// runtime offers it. Returns false to fall back to FSR 3.1.
+    bool UpscaleWithFsr4(Framebuffer* dst_framebuffer, ImageView& input_color,
+                         ImageView& motion_vectors, ImageView& depth,
+                         std::array<u32, 2> render_size, std::array<f32, 2> jitter,
+                         std::array<f32, 2> motion_scale, f32 frame_time_ms, bool reset,
+                         bool sharpen, f32 sharpness);
+    std::unique_ptr<Fsr4Upscaler> fsr4_upscaler;
+    bool fsr4_unsupported{};
 
     /// Draws an upscaler's RGBA16F output into the DLSS output and returns it to GENERAL.
     void DrawUpscaledOutput(Framebuffer* dst_framebuffer, VkImageView view, VkImage image,

@@ -38,6 +38,10 @@ struct Frame {
     vk::Semaphore render_ready;
     vk::Fence present_done;
     bool storage_capable{};
+    u64 frame_gen_id{};      ///< AMD frame generation: the prepared game frame shown, or 0.
+    VkRect2D frame_gen_rect{}; ///< Where the game picture sits in the frame.
+    /// AMD frame generation: this frame drawn from the game's image before its HUD, or null.
+    VkImage frame_gen_hudless{};
 };
 
 class PresentManager {
@@ -78,6 +82,9 @@ private:
     void CopyToSwapchain(Frame* frame);
 
     void CopyToSwapchainImpl(Frame* frame);
+    /// Records the copy of the frame's hudless twin to a swapchain-sized image for AMD frame
+    /// generation, and returns that image (null without a twin).
+    VkImage CopyHudless(const vk::CommandBuffer& cmdbuf, Frame* frame, VkExtent2D extent);
 
     void RecreateSwapchain(Frame* frame);
 
@@ -104,6 +111,12 @@ private:
     std::mutex free_mutex;
     std::jthread present_thread;
     bool blit_supported;
+    /// AMD frame generation reads the hudless image on its own queue after the present returns,
+    /// so a few take turns.
+    std::array<vk::Image, 4> hudless_images;
+    VkExtent2D hudless_extent{};
+    VkFormat hudless_format{};
+    size_t hudless_next{};
     bool storage_supported;
     bool use_present_thread;
     std::atomic<std::size_t> image_count{};

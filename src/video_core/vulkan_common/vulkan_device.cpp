@@ -630,7 +630,14 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
     // AMD GCN4 and older are told apart by their lack of float16, read before float16 is turned
     // off for newer AMD drivers below: checked after that, every AMD GPU looked like GCN4 and lost
     // VK_EXT_sampler_filter_minmax (an RDNA3 Radeon 780M logged it).
-    const bool amd_gcn4_or_older = is_amd && !features.shader_float16_int8.shaderFloat16;
+    const u32 device_id = properties.properties.deviceID;
+    // Polaris 10/11/20/21/30 (RX 470-590), Polaris 12 (RX 540/550) and the RX 580 2048SP.
+    const bool is_polaris = properties.properties.vendorID == 0x1002 &&
+                            ((device_id >= 0x67C0 && device_id <= 0x67FF) ||
+                             (device_id >= 0x6980 && device_id <= 0x699F) || device_id == 0x6FDF);
+    const bool amd_gcn4_or_older =
+        is_amd && (is_polaris || !features.shader_float16_int8.shaderFloat16);
+    is_amd_legacy_gcn = is_amd_driver && amd_gcn4_or_older;
     if (is_amd_driver) {
         // AMD drivers need a higher amount of Sets per Pool in certain circumstances like in XC2.
         sets_per_pool = 96;
@@ -647,6 +654,9 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             LOG_WARNING(Render_Vulkan,
                         "AMD drivers (2026+) have broken float16 math");
             features.shader_float16_int8.shaderFloat16 = false;
+            // AMD's FSR 4 runs its own shaders inside its DLL and needs the device feature; the
+            // emulator's shaders still don't do float16 math (float16_math below stays false).
+            fsr4_float16 = Settings::values.amd_fsr4.GetValue();
         }
     }
 
@@ -777,13 +787,21 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
     // host-only shaders (frame generation) may use it. The AMD and Intel workarounds turn it off
     // for every shader, host ones included.
     host_float16_supported |= float16_math;
-    if (host_float16_supported) {
+    if (host_float16_supported || fsr4_float16) {
         features.shader_float16_int8.shaderFloat16 = VK_TRUE;
     }
     logical = vk::Device::Create(physical, queue_cis, ExtensionListForVulkan(loaded_extensions), first_next, dld);
 
     graphics_queue = logical.GetQueue(graphics_family);
     present_queue = logical.GetQueue(present_family);
+    if (frame_gen_present) {
+        frame_gen_present_family = frame_gen_present->first;
+        for (u32 i = 0; i < frame_gen_queue_count; ++i) {
+            dld.vkGetDeviceQueue(*logical, frame_gen_present->first,
+                                 frame_gen_present->second + i, &frame_gen_queues[i]);
+        }
+        frame_gen_present_queue = frame_gen_queues[0];
+    }
 
 #ifdef EGLANTINE_STREAMLINE
     if (streamline_extensions) {
@@ -1900,6 +1918,37 @@ void Device::SetupFamilies(VkSurfaceKHR surface) {
     if (present) {
         present_family = *present;
     }
+#ifdef _WIN32
+    // AMD's frame generation swapchain presents from its own threads, so it gets a queue of its
+    // own: a compute family that can present (AMD), else a second graphics queue (NVIDIA, Intel).
+    if (surface && Settings::values.frame_gen.GetValue() &&
+        Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
+        const u32 families = static_cast<u32>(queue_family_properties.size());
+        for (u32 index = 0; index < families && !frame_gen_present; ++index) {
+            const auto& family = queue_family_properties[index];
+            if (index != graphics_family && family.queueCount > 0 &&
+                (family.queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+                physical.GetSurfaceSupportKHR(index, surface)) {
+                frame_gen_present = std::pair{index, 0u};
+                frame_gen_queue_count = std::min(family.queueCount, 3u);
+            }
+        }
+        if (!frame_gen_present && queue_family_properties[graphics_family].queueCount > 1 &&
+            physical.GetSurfaceSupportKHR(graphics_family, surface)) {
+            frame_gen_present = std::pair{graphics_family, 1u};
+            frame_gen_queue_count =
+                std::min(queue_family_properties[graphics_family].queueCount - 1, 3u);
+        }
+        if (frame_gen_present) {
+            LOG_INFO(Render_Vulkan,
+                     "AMD frame generation: presents on queue family {} index {} ({} queues)",
+                     frame_gen_present->first, frame_gen_present->second, frame_gen_queue_count);
+        } else {
+            LOG_WARNING(Render_Vulkan, "AMD frame generation: no spare present queue on this GPU, "
+                                       "frame generation is off");
+        }
+    }
+#endif
 }
 
 bool Device::TryReserveCustomBorderColorSamplers(size_t count) const {
@@ -2071,20 +2120,29 @@ void Device::CollectToolingInfo() {
 std::vector<VkDeviceQueueCreateInfo> Device::GetDeviceQueueCreateInfos() const {
     static constexpr float QUEUE_PRIORITY = 1.0f;
 
+    static constexpr std::array<float, 4> QUEUE_PRIORITIES{1.0f, 1.0f, 1.0f, 1.0f};
+
     ::Common::unordered_set<u32> unique_queue_families{graphics_family, present_family};
+    if (frame_gen_present) {
+        unique_queue_families.insert(frame_gen_present->first);
+    }
     std::vector<VkDeviceQueueCreateInfo> queue_cis;
     queue_cis.reserve(unique_queue_families.size());
 
     for (const u32 queue_family : unique_queue_families) {
+        const u32 count =
+            frame_gen_present && frame_gen_present->first == queue_family
+                ? frame_gen_present->second + frame_gen_queue_count
+                : 1;
         auto& ci = queue_cis.emplace_back(VkDeviceQueueCreateInfo{
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
             .queueFamilyIndex = queue_family,
-            .queueCount = 1,
+            .queueCount = count,
             .pQueuePriorities = nullptr,
         });
-        ci.pQueuePriorities = &QUEUE_PRIORITY;
+        ci.pQueuePriorities = count > 1 ? QUEUE_PRIORITIES.data() : &QUEUE_PRIORITY;
     }
 
     return queue_cis;

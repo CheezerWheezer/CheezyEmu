@@ -5067,17 +5067,27 @@ void MainWindow::UpdateStatusBar() {
         emu_speed_label->setText(tr("Speed: %1%").arg(results.emulation_speed * 100.0, 0, 'f', 0));
     }
 
-    QString fpsText = tr("Game: %1 FPS").arg(std::round(results.average_game_fps), 0, 'f', 0);
+    const auto frame_gen = QtCommon::system->GPU().Renderer().GetFrameGenStatus();
+    frame_gen_generating = frame_gen.generated_frames > frame_gen_frames;
+    frame_gen_frames = frame_gen.generated_frames;
+
+    // AMD frame generation adds one frame per game frame after the emulator presents, where the
+    // game's frame rate can't see it: show what reaches the screen while it generates.
+    const bool amd_frame_gen = frame_gen_generating && Settings::values.frame_gen.GetValue() &&
+                               Settings::values.frame_gen_type.GetValue() ==
+                                   Settings::FrameGenType::AmdFsr;
+    QString fpsText =
+        amd_frame_gen
+            ? tr("Game: %1 FPS (%2 + FG)")
+                  .arg(std::round(results.average_game_fps * 2.0), 0, 'f', 0)
+                  .arg(std::round(results.average_game_fps), 0, 'f', 0)
+            : tr("Game: %1 FPS").arg(std::round(results.average_game_fps), 0, 'f', 0);
     if (!m_fpsSuffix.isEmpty())
         fpsText = fpsText % QStringLiteral(" (%1)").arg(m_fpsSuffix);
 
     game_fps_label->setText(fpsText);
 
     emu_frametime_label->setText(tr("Frame: %1 ms").arg(results.frametime * 1000.0, 0, 'f', 2));
-
-    const auto frame_gen = QtCommon::system->GPU().Renderer().GetFrameGenStatus();
-    frame_gen_generating = frame_gen.generated_frames > frame_gen_frames;
-    frame_gen_frames = frame_gen.generated_frames;
     frame_gen_state = frame_gen.state;
     UpdateFrameGenButton();
 
@@ -5157,10 +5167,13 @@ void MainWindow::UpdateFrameGenButton() {
                              .find(Settings::values.frame_gen_type.GetValue())
                              ->second.toUpper();
     const u32 target_rate = Settings::values.frame_gen_target_rate.GetValue();
-    const QString mode = target_rate == 0
+    // AMD's frame generation always adds one frame per game frame.
+    const bool amd = Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr;
+    const QString mode = amd ? tr("FG %1 2X").arg(type)
+                         : target_rate == 0
                              ? tr("FG %1 %2X").arg(type).arg(Settings::FrameGenMultiplier())
                              : tr("FG %1 AUTO").arg(type);
-    const QString target = target_rate == 0
+    const QString target = target_rate == 0 || amd
                                ? QString()
                                : tr(" It adds up to %1 frames per game frame to reach %2 FPS.")
                                      .arg(Settings::MAX_FRAME_GEN_MULTIPLIER - 1)

@@ -48,7 +48,8 @@ static VkPresentModeKHR ChooseSwapPresentMode(bool has_imm, bool has_mailbox,
     Settings::VSyncMode setting = [has_imm, has_mailbox]() {
         // Choose Mailbox or Immediate if unlocked and those modes are supported
         const auto mode = Settings::values.vsync_mode.GetValue();
-        if (Settings::values.frame_gen.GetValue()) {
+        if (Settings::values.frame_gen.GetValue() &&
+            Settings::values.frame_gen_type.GetValue() != Settings::FrameGenType::AmdFsr) {
             return mode == Settings::VSyncMode::FifoRelaxed ? mode : Settings::VSyncMode::Fifo;
         }
         if (Settings::values.use_speed_limit.GetValue() &&
@@ -130,7 +131,13 @@ Swapchain::Swapchain(
     Create(surface, width_, height_);
 }
 
-Swapchain::~Swapchain() = default;
+Swapchain::~Swapchain() {
+    if (frame_gen_swapchain) {
+        AmdFrameGen::WaitForPresents();
+        Destroy();
+        AmdFrameGen::Shutdown();
+    }
+}
 
 void Swapchain::Create(
     VkSurfaceKHR_T* surface_,
@@ -149,9 +156,13 @@ void Swapchain::Create(
         return;
     }
 
+    // AMD's present thread uses its queue until its presents finish; idle that first.
+    if (frame_gen_swapchain) {
+        AmdFrameGen::WaitForPresents();
+    }
     // Submitted work may still wait on the old acquire/present semaphores; destroying them under
     // it loses the device on MoltenVK (window moved to a display with a different scale).
-    if (swapchain) {
+    if (IsCreated()) {
         std::scoped_lock lock{scheduler.submit_mutex};
         const VkResult result = device.GetLogical().WaitIdle();
         if (result == VK_ERROR_DEVICE_LOST) {
@@ -169,9 +180,13 @@ void Swapchain::Create(
 }
 
 bool Swapchain::AcquireNextImage(bool may_flush) {
-    const VkResult result = device.GetLogical().AcquireNextImageKHR(
-        *swapchain, (std::numeric_limits<u64>::max)(), *present_semaphores[frame_index],
-        VK_NULL_HANDLE, &image_index);
+    const VkResult result =
+        frame_gen_swapchain
+            ? AmdFrameGen::AcquireNextImage(device, frame_gen_swapchain,
+                                            *present_semaphores[frame_index], &image_index)
+            : device.GetLogical().AcquireNextImageKHR(
+                  *swapchain, (std::numeric_limits<u64>::max)(), *present_semaphores[frame_index],
+                  VK_NULL_HANDLE, &image_index);
     switch (result) {
     case VK_SUCCESS:
         break;
@@ -230,20 +245,29 @@ bool Swapchain::AcquireNextImage(bool may_flush) {
     return false;
 }
 
-void Swapchain::Present(VkSemaphore render_semaphore) {
+void Swapchain::Present(VkSemaphore render_semaphore,
+                        const AmdFrameGen::PresentTarget& frame_gen) {
     const auto present_queue{device.GetPresentQueue()};
+    const VkSwapchainKHR handle = frame_gen_swapchain ? frame_gen_swapchain : *swapchain;
     const VkPresentInfoKHR present_info{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .pNext = nullptr,
         .waitSemaphoreCount = render_semaphore ? 1U : 0U,
         .pWaitSemaphores = &render_semaphore,
         .swapchainCount = 1,
-        .pSwapchains = swapchain.address(),
+        .pSwapchains = &handle,
         .pImageIndices = &image_index,
         .pResults = nullptr,
     };
-    std::scoped_lock lock{scheduler.submit_mutex};
-    switch (const VkResult result = present_queue.Present(present_info)) {
+    // AMD's present submits to the graphics queue itself, taking the submit lock as it does.
+    std::unique_lock lock{scheduler.submit_mutex, std::defer_lock};
+    if (!frame_gen_swapchain) {
+        lock.lock();
+    }
+    const VkResult result = frame_gen_swapchain
+                                ? AmdFrameGen::Present(*present_queue, present_info, frame_gen)
+                                : present_queue.Present(present_info);
+    switch (result) {
     case VK_SUCCESS:
         break;
     case VK_SUBOPTIMAL_KHR:
@@ -350,12 +374,30 @@ void Swapchain::CreateSwapchain(const VkSurfaceCapabilitiesKHR& capabilities) {
     // Request the size again to reduce the possibility of a TOCTOU race condition.
     const auto updated_capabilities = physical_device.GetSurfaceCapabilitiesKHR(VkSurfaceKHR(surface));
     swapchain_ci.imageExtent = ChooseSwapExtent(updated_capabilities, width, height);
-    // Don't add code within this and the swapchain creation.
-    swapchain = device.GetLogical().CreateSwapchainKHR(swapchain_ci);
+    // The window starts as a tiny placeholder; AMD's swapchain waits for the real size. After a
+    // few failures at real sizes the session keeps normal swapchains.
+    const bool real_size =
+        swapchain_ci.imageExtent.width >= 320 && swapchain_ci.imageExtent.height >= 240;
+    if (AmdFrameGen::Requested() && real_size && frame_gen_failures < 3) {
+        // AMD's swapchain takes a plain create info: no format list, no mutable format.
+        VkSwapchainCreateInfoKHR frame_gen_ci = swapchain_ci;
+        frame_gen_ci.pNext = nullptr;
+        frame_gen_ci.flags &= ~VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR;
+        frame_gen_swapchain =
+            AmdFrameGen::CreateSwapchain(device, scheduler.submit_mutex, frame_gen_ci);
+        if (frame_gen_swapchain == VK_NULL_HANDLE) {
+            ++frame_gen_failures;
+        }
+    }
+    if (!frame_gen_swapchain) {
+        // Don't add code within this and the swapchain creation.
+        swapchain = device.GetLogical().CreateSwapchainKHR(swapchain_ci);
+    }
 
     extent = swapchain_ci.imageExtent;
 
-    images = swapchain.GetImages();
+    images = frame_gen_swapchain ? AmdFrameGen::GetImages(device, frame_gen_swapchain)
+                                 : swapchain.GetImages();
     image_count = static_cast<u32>(images.size());
 #ifdef __ANDROID__
     // Android is already ordered the same as Switch.
@@ -379,6 +421,10 @@ void Swapchain::Destroy() {
     present_semaphores.clear();
     render_semaphores.clear();
     swapchain.reset();
+    if (frame_gen_swapchain) {
+        AmdFrameGen::DestroySwapchain(device, frame_gen_swapchain);
+        frame_gen_swapchain = VK_NULL_HANDLE;
+    }
 }
 
 bool Swapchain::NeedsPresentModeUpdate() const {

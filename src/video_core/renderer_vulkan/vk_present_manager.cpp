@@ -10,6 +10,7 @@
 #ifdef HAS_LSFG
 #include "video_core/renderer_vulkan/present/lsfg_common.h"
 #endif
+#include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
 #include "video_core/renderer_vulkan/vk_present_manager.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
@@ -189,12 +190,15 @@ Frame* PresentManager::GetRenderFrame() {
 void PresentManager::Present(Frame* frame) {
     if (use_present_thread) {
         scheduler.Record([this, frame](vk::CommandBuffer) {
+            // In order with the game frame's commands, so this is the frame it prepared.
+            frame->frame_gen_id = AmdFrameGen::TakePreparedFrame();
             std::unique_lock lock{queue_mutex};
             present_queue.push_back(frame);
             frame_cv.notify_one();
         });
     } else {
         scheduler.WaitWorker();
+        frame->frame_gen_id = AmdFrameGen::TakePreparedFrame();
         CopyToSwapchain(frame);
         free_queue.push_back(frame);
     }
@@ -425,6 +429,86 @@ void PresentManager::CopyToSwapchain(Frame* frame) {
     DiscardFrame(frame);
 }
 
+VkImage PresentManager::CopyHudless(const vk::CommandBuffer& cmdbuf, Frame* frame,
+                                    VkExtent2D extent) {
+    if (!frame->frame_gen_hudless || !swapchain.IsFrameGeneration()) {
+        return VK_NULL_HANDLE;
+    }
+    const VkFormat format = swapchain.GetImageFormat();
+    if (hudless_extent.width != extent.width || hudless_extent.height != extent.height ||
+        hudless_format != format || !hudless_images[0]) {
+        // The swapchain was just made again; nothing reads the old images any more.
+        for (auto& image : hudless_images) {
+            image = memory_allocator.CreateImage({
+                .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = 0,
+                .imageType = VK_IMAGE_TYPE_2D,
+                .format = format,
+                .extent = {extent.width, extent.height, 1},
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .samples = VK_SAMPLE_COUNT_1_BIT,
+                .tiling = VK_IMAGE_TILING_OPTIMAL,
+                .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                .queueFamilyIndexCount = 0,
+                .pQueueFamilyIndices = nullptr,
+                .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            });
+        }
+        hudless_extent = extent;
+        hudless_format = format;
+    }
+    const VkImage target = *hudless_images[hudless_next];
+    hudless_next = (hudless_next + 1) % hudless_images.size();
+    const VkImage source = frame->frame_gen_hudless;
+    constexpr VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    const auto barrier = [&](VkImage image, VkAccessFlags src, VkAccessFlags dst,
+                             VkImageLayout old_layout, VkImageLayout new_layout) {
+        return VkImageMemoryBarrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = src,
+            .dstAccessMask = dst,
+            .oldLayout = old_layout,
+            .newLayout = new_layout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange = range,
+        };
+    };
+    const std::array before{
+        barrier(source, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL),
+        barrier(target, 0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
+    };
+    cmdbuf.PipelineBarrier(vk::PIPELINE_STAGE_GRAPHICS_COMPUTE_TRANSFER,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, {}, {}, {}, before);
+    // The same copy as the frame's to the swapchain image, so the two match pixel for pixel.
+    if (blit_supported) {
+        cmdbuf.BlitImage(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         MakeImageBlit(frame->width, frame->height, extent.width, extent.height),
+                         VK_FILTER_LINEAR);
+    } else {
+        cmdbuf.CopyImage(source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         MakeImageCopy(frame->width, frame->height, extent.width, extent.height));
+    }
+    const std::array after{
+        barrier(source, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL),
+        barrier(target, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
+    };
+    cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, {},
+                           {}, {}, after);
+    return target;
+}
+
 void PresentManager::CopyToSwapchainImpl(Frame* frame) {
 
     // If the size of the incoming frames has changed, recreate the swapchain
@@ -548,6 +632,8 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
     cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, {},
                            {}, {}, post_barriers);
 
+    const VkImage hudless = CopyHudless(cmdbuf, frame, extent);
+
     cmdbuf.End();
 
     const VkSemaphore present_semaphore = swapchain.CurrentPresentSemaphore();
@@ -587,8 +673,29 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
         }
     }
 
-    // Present
-    swapchain.Present(render_semaphore);
+    // Present. The game rectangle scales with the blit from the frame to the swapchain image.
+    AmdFrameGen::PresentTarget frame_gen{.frame_id = frame->frame_gen_id,
+                                         .rect = {},
+                                         .hudless = hudless,
+                                         .hudless_format = hudless_format,
+                                         .hudless_extent = extent};
+    if (frame->width != 0 && frame->height != 0) {
+        const auto& rect = frame->frame_gen_rect;
+        const auto scale = [](u32 value, u32 to, u32 from) {
+            return static_cast<u32>(static_cast<u64>(value) * to / from);
+        };
+        const u32 width = rect.extent.width != 0 ? rect.extent.width : frame->width;
+        const u32 height = rect.extent.height != 0 ? rect.extent.height : frame->height;
+        frame_gen.rect = VkRect2D{
+            .offset = {static_cast<s32>(scale(static_cast<u32>(rect.offset.x), extent.width,
+                                              frame->width)),
+                       static_cast<s32>(scale(static_cast<u32>(rect.offset.y), extent.height,
+                                              frame->height))},
+            .extent = {scale(width, extent.width, frame->width),
+                       scale(height, extent.height, frame->height)},
+        };
+    }
+    swapchain.Present(render_semaphore, frame_gen);
 }
 
 } // namespace Vulkan

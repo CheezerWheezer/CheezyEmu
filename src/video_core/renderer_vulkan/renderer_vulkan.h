@@ -11,11 +11,13 @@
 #include <variant>
 
 #include "common/dynamic_library.h"
+#include "common/settings.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/renderer_base.h"
 #ifdef HAS_LSFG
 #include "video_core/renderer_vulkan/present/frame_gen.h"
 #endif
+#include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
 #include "video_core/renderer_vulkan/vk_blit_screen.h"
 #include "video_core/renderer_vulkan/vk_present_manager.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -60,6 +62,13 @@ public:
     }
 
     [[nodiscard]] VideoCore::FrameGenStatus GetFrameGenStatus() const override {
+        if (Settings::values.frame_gen.GetValue() &&
+            Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
+            const u64 generated = AmdFrameGen::GeneratedFrames();
+            return {.state = generated != 0 ? VideoCore::FrameGenState::Running
+                                            : VideoCore::FrameGenState::Pending,
+                    .generated_frames = generated};
+        }
 #ifdef HAS_LSFG
         return frame_gen.CurrentStatus();
 #else
@@ -115,6 +124,9 @@ private:
     BlitScreen blit_swapchain;
     BlitScreen blit_capture;
     BlitScreen blit_applet;
+    /// AMD frame generation: draws each frame again from the game's image before its HUD.
+    BlitScreen blit_hudless;
+    std::vector<Frame> hudless_frames;
     RasterizerVulkan rasterizer;
 #ifdef HAS_LSFG
     FrameGen frame_gen;
