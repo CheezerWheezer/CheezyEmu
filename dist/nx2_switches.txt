@@ -2,7 +2,7 @@
 # One NAME=VALUE per line. Lines starting with # are ignored.
 # A variable already set in the environment wins over this file.
 # Between files, the user copy (%APPDATA%\cheezyemu\nx2_switches.txt, or
-# $XDG_CONFIG_HOME/eden/nx2_switches.txt) wins over this one, so editing this file is never
+# $XDG_CONFIG_HOME/cheezyemu/nx2_switches.txt) wins over this one, so editing this file is never
 # needed: copy the lines you want into your own and restart.
 # Beside-application files accept EDEN_NX2_* and the emulator's diagnostic switches only.
 # Host environment settings, including library paths such as EDEN_STREAMLINE_DIR, must be
@@ -35,6 +35,11 @@ EDEN_NX2_FENCE_BATCH=1
 
 # Drop reactive-flushing read traps on Switch 2 programs (opt-in; can reduce FPS from 29 to 24 in MKW).
 #EDEN_NX2_NO_REACTIVE=1
+
+# Switch 2 semaphore mirror (new in build 11, from Lichii): copies GPU queue progress into the
+# page the GPU waits on; fixes freezes and black screens after cutscenes. =0 turns it off as in
+# build 10, to test whether it causes a problem (for example wrong, too-bright lighting).
+#EDEN_NX2_SEM_MIRROR=0
 
 #EDEN_NX2_MME_JIT=0
 #EDEN_NX2_PBFLUSH=0

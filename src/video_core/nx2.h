@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -514,7 +515,16 @@ inline bool Nx2SparseUnwritten(u64 gpu_address, u64 size) {
 }
 
 /// GPU VA in the first page that mirrors a release at `address`, or 0.
+/// EDEN_NX2_SEM_MIRROR=0 turns the mirror off (build 10 had none) to check whether it causes
+/// something, such as a lighting bug: it writes into guest memory the game may use otherwise.
 inline u64 Nx2SemaphoreMirror(u64 address) {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_SEM_MIRROR");
+        return !(value && value[0] == '0');
+    }();
+    if (!enabled) {
+        return 0;
+    }
     return Nx2IsSemaphoreRegion((address & ~u64{0xfff}) - 0x1000) ? address - 0x1000 : 0;
 }
 
