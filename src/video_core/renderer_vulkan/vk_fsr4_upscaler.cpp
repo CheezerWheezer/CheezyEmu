@@ -475,7 +475,7 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
                     .queueFamilyIndexCount = 0,
                     .pQueueFamilyIndices = nullptr,
                 },
-                MemoryAllocator::MemoryUsage::Download);
+                MemoryUsage::Download);
             std::memset(health_buffer.Mapped().data(), 0, HEALTH_SIZE);
         }
         health = *health_buffer;
