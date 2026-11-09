@@ -2591,9 +2591,26 @@ std::pair<const char*, const char*> RasterizerVulkan::UpscalerIdleReason() const
         return {"UNAVAILABLE", "AMD FSR couldn't start on this GPU or driver (see the log for "
                                "\"AMD FSR\"). The game uses its own upscaler."};
     }
+    // Why the last frame went without FSR, shown so a screenshot of the bar says where it stopped.
     const char* const reason = oot_idle_reason.load(std::memory_order_relaxed);
-    if (reason != nullptr && std::string_view{reason} == "unexpected upscale images") {
+    const std::string_view why = reason != nullptr ? std::string_view{reason} : std::string_view{};
+    if (why == "unexpected upscale images") {
         return {"RES 1X", "The game's images aren't at its own resolution: set Resolution to 1X."};
+    }
+    if (why.find("camera") != std::string_view::npos) {
+        return {"NO CAMERA", "FSR found no 3D camera in the game's frames, so it can't upscale "
+                             "them. Normal in menus, cutscenes and loading screens. If it stays "
+                             "during gameplay, please send eden_log.txt: its \"Ocarina FSR: no "
+                             "scene camera\" lines say why."};
+    }
+    if (why.find("depth") != std::string_view::npos) {
+        return {"NO DEPTH", "FSR found no depth image for the game's 3D scene this frame. If it "
+                            "stays during gameplay, please send eden_log.txt."};
+    }
+    if (why == "FSR preset pass sizes didn't fit") {
+        return {"PRESET SIZE", "The FSR preset's scene didn't fit the image FSR writes. Try "
+                               "another preset, and please send eden_log.txt (its \"FSR preset: "
+                               "pass not taken\" lines give the sizes)."};
     }
     return {"WAITING", "Waiting for gameplay: menus, cutscenes and loading screens are drawn "
                        "without FSR."};
@@ -3214,6 +3231,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     // reads this frame's scene colour and writes a larger B10G11R11 image goes on, silently.
     if (replace && !pipeline.CanReplaceOcarinaUpscale()) {
         if (oot_camera_sample_frame != render_trace_frame) {
+            // For the status bar: a preset's pass can only be told apart with this frame's camera.
+            oot_idle_reason.store("no scene camera this frame", std::memory_order_relaxed);
             return false;
         }
         const auto sampled = pipeline.SampledImages();
@@ -3230,6 +3249,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
             out.ImageHandle() == in.ImageHandle()) {
             // A scene-format input that still didn't fit: worth a line now and then.
             if (in.format == PixelFormat::E5B9G9R9_FLOAT) {
+                oot_idle_reason.store("FSR preset pass sizes didn't fit",
+                                      std::memory_order_relaxed);
                 static u32 logged = 0;
                 if (logged++ % 600 == 0) {
                     LOG_INFO(Render_Vulkan,
