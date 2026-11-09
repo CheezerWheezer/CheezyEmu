@@ -6,6 +6,16 @@ build 117 (`89440b2`) and is now its own emulator. Its main additions: compiled 
 (each shader is compiled once instead of every time you start the game), AMD FSR 4 and FSR 3.1
 upscaling, AMD frame generation, and the community's AMD performance work.
 
+## New in build 11
+
+How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.
+
+- **FSR and frame generation work again in docked mode with an FSR preset picked.** The presets
+  were made for handheld (1080p): docked (4K output) they gave the wrong sizes (Native AA rendered
+  a full 4K scene) and below Quality the scene no longer fit the 1440p to 4K path, so FSR and frame
+  generation turned off. Presets now apply in handheld mode only; docked runs as in build 9
+  (1440p, FSR to 4K, frame generation). Docked presets come in a later build.
+
 ## New in build 10
 
 How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.

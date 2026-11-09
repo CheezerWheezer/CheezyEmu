@@ -198,7 +198,8 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "Quality: 1280x720.\nBalanced: 1125x633.\nPerformance: 960x540.\n"
               "Ultra Performance: 640x360 (fastest, softest).\n"
               "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
-              "Resolution's fixed size. Takes effect when the game starts."));
+              "Resolution's fixed size.\nHandheld mode only for now: docked keeps the game's own "
+              "sizes (1440p, FSR to 4K). Takes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),

@@ -2662,8 +2662,9 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         const u32 drawn_height = static_cast<u32>(std::abs(viewport.scale_y) * 2.0f + 0.5f);
         // With an FSR preset the scene is drawn into the top-left corner at a fixed size: FSR
         // takes that corner as its input (it reads the render size from the top-left).
-        const bool preset = Settings::values.oot_fsr_preset.GetValue() !=
-                            Settings::OotFsrPreset::Native;
+        const bool preset =
+            Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native &&
+            Settings::values.use_docked_mode.GetValue() == Settings::ConsoleMode::Handheld;
         const f32 origin_x = viewport.translate_x - std::abs(viewport.scale_x);
         const f32 origin_y = viewport.translate_y - std::abs(viewport.scale_y);
         const bool top_left = std::abs(origin_x) < 1.0f && std::abs(origin_y) < 1.0f;
@@ -3123,7 +3124,9 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
 
 /// Track the scene depth on its reader dispatch, or try to replace a recognized upscale dispatch.
 bool RasterizerVulkan::OcarinaFsrPresetActive() const {
-    return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native;
+    // Handheld only (see ApplyOcarinaFsrPreset): docked keeps the game's sizes and the 4K path.
+    return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native &&
+           Settings::values.use_docked_mode.GetValue() == Settings::ConsoleMode::Handheld;
 }
 
 bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool replace) {

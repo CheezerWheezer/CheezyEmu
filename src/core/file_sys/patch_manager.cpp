@@ -139,6 +139,13 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
                     build_id, ocarina_build);
         return;
     }
+    // Handheld (1080p output) only for now. Docked outputs 4K: the same scales gave a 4K scene for
+    // Native AA, and below Quality the scene no longer fit the 1440p -> 4K FSR path, so FSR and
+    // frame generation turned off. Docked keeps the game's own sizes.
+    if (Settings::values.use_docked_mode.GetValue() == Settings::ConsoleMode::Docked) {
+        LOG_INFO(Loader, "    - Ocarina of Time FSR preset: skipped in docked mode (handheld only)");
+        return;
+    }
     // The upper half of an f32 whose lower half is zero (movz w9, #imm16, lsl #16).
     u16 scale_bits = 0x3F80;
     const char* preset_name = "";
