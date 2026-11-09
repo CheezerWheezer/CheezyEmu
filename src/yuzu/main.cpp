@@ -7,6 +7,7 @@
 #include "common/fs/path_util.h"
 #include "nx2_switches.h"
 #include "startup_checks.h"
+#include "util/crash_report.h"
 
 #if YUZU_ROOM
 #include <cstring>
@@ -107,6 +108,9 @@ int main(int argc, char* argv[]) {
                       Settings::values.perform_vulkan_check.GetValue())) {
         return 0;
     }
+
+    // Windows: a crash logs where it happened and writes a minidump (util/crash_report.h).
+    CrashReport::Install();
 
 #ifdef YUZU_CRASH_DUMPS
     Breakpad::InstallCrashHandler();

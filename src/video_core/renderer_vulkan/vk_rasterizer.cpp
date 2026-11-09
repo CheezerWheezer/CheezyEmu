@@ -2662,9 +2662,8 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         const u32 drawn_height = static_cast<u32>(std::abs(viewport.scale_y) * 2.0f + 0.5f);
         // With an FSR preset the scene is drawn into the top-left corner at a fixed size: FSR
         // takes that corner as its input (it reads the render size from the top-left).
-        const bool preset =
-            Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native &&
-            Settings::values.use_docked_mode.GetValue() == Settings::ConsoleMode::Handheld;
+        const bool preset = Settings::values.oot_fsr_preset.GetValue() !=
+                            Settings::OotFsrPreset::Native;
         const f32 origin_x = viewport.translate_x - std::abs(viewport.scale_x);
         const f32 origin_y = viewport.translate_y - std::abs(viewport.scale_y);
         const bool top_left = std::abs(origin_x) < 1.0f && std::abs(origin_y) < 1.0f;
@@ -3124,9 +3123,7 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
 
 /// Track the scene depth on its reader dispatch, or try to replace a recognized upscale dispatch.
 bool RasterizerVulkan::OcarinaFsrPresetActive() const {
-    // Handheld only (see ApplyOcarinaFsrPreset): docked keeps the game's sizes and the 4K path.
-    return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native &&
-           Settings::values.use_docked_mode.GetValue() == Settings::ConsoleMode::Handheld;
+    return Settings::values.oot_fsr_preset.GetValue() != Settings::OotFsrPreset::Native;
 }
 
 bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool replace) {
@@ -3264,9 +3261,16 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     // there; other sizes (1080p output) are replaced in place at the same size, as native AA.
     const bool same_size =
         target.size.width == extent.width && target.size.height == extent.height;
-    const bool four_k = upscale_4k && same_size && extent.width == 2560 && extent.height == 1440;
+    // Docked: the game's 1440p image goes out at 4K. With an FSR preset the scene is smaller than
+    // that image (Performance 1920x1080, Ultra Performance 1280x720): FSR still renders from the
+    // scene, writes 4K, and the 1440p image gets its downscaled copy as before.
+    const bool target_1440p = target.size.width == 2560 && target.size.height == 1440;
+    const bool preset_scene_4k = upscale_4k && OcarinaFsrPresetActive() && target_1440p &&
+                                 extent.width <= target.size.width &&
+                                 extent.height <= target.size.height && !same_size;
+    const bool four_k = upscale_4k && target_1440p && (same_size || preset_scene_4k);
     const bool valid_extents = upscale_4k
-        ? same_size
+        ? (same_size || preset_scene_4k)
         : (target.size.width == extent.width * 4 / 3 &&
            target.size.height == extent.height * 4 / 3) ||
               // An FSR preset: a smaller scene, upscaled by another ratio.
