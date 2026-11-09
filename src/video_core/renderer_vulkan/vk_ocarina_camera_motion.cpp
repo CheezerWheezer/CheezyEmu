@@ -1315,8 +1315,9 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
         }
         state.hud_before = VK_NULL_HANDLE;
         state.hud_after = VK_NULL_HANDLE;
-        if (state.hud_mask_ready && state.hud_mask_extent.width == extent.width &&
-            state.hud_mask_extent.height == extent.height) {
+        // The mask is at the output size, the motion and depth at the scene's (smaller when the
+        // game lowers its resolution and FSR upscales): the passes scale between the two.
+        if (state.hud_mask_ready) {
             if (!state.hud_motion_pass) {
                 state.hud_motion_pass = std::make_unique<OcarinaImagePass<1>>(
                     state.device, state.scheduler, state.pool, OCARINA_HUD_MOTION_COMP_SPV);

@@ -19,11 +19,16 @@ void main() {
     if (any(greaterThanEqual(pixel, extent))) {
         return;
     }
+    ivec2 mask_size = textureSize(hud_mask, 0);
+    vec2 mask_scale = vec2(mask_size) / vec2(extent);
     float hud = 0.0;
     for (int y = -4; y <= 4; ++y) {
         for (int x = -4; x <= 4; ++x) {
             ivec2 at = clamp(pixel + ivec2(x, y), ivec2(0), extent - 1);
-            hud = max(hud, texelFetch(hud_mask, at, 0).r);
+            // The mask is at the output size; the scene can be smaller (the game's dynamic
+            // resolution, e.g. 1440x810 upscaled to 1080p): take the mask pixel at the same place.
+            ivec2 mask_at = clamp(ivec2((vec2(at) + 0.5) * mask_scale), ivec2(0), mask_size - 1);
+            hud = max(hud, texelFetch(hud_mask, mask_at, 0).r);
         }
     }
     // Depth grows with distance here (not inverted): 0 is the near plane.
