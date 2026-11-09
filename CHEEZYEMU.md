@@ -45,6 +45,16 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   the frame generation one. The overlay shows both, so they're visible in fullscreen.
 - **Tools > Switch 2 Switches**: checkboxes for the nx2_switches.txt switches players use most
   (semaphore mirror, GPU thread split, keep ASTC, build every shader at boot...).
+- **FSR presets fixed and docked output**: Quality, Balanced and Ultra Performance start FSR and
+  frame generation now (only Performance and Native did). Docked, "Ocarina of Time docked output"
+  picks 4K or 1440p (lighter), and presets render a fraction of that output, as in PC games.
+- **FSR camera jitter (test)**: Tools > Switch 2 Switches > "FSR camera jitter". FSR rebuilds fine
+  detail from a camera nudged by less than a pixel every frame; without it low presets look
+  blocky. Off by default while it is tested: turn it off again if the picture shakes.
+- **Graphics that broke after a few minutes**: a shader thrown out after 9,000 unused frames could
+  be rebuilt wrong when it was needed again (from Lichii, not merged there yet).
+- **Performance**: cheaper per-draw work on the GPU thread and fewer pointless texture uploads
+  (Lichii #858, #910, #921, #1079).
 - **New icon** (vector, sharp at any size).
 - More fixes from Lichii build 130.
 
