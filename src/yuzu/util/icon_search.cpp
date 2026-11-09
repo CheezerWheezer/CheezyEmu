@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <cctype>
+#include <filesystem>
 #include <memory>
 #include <set>
 #include <string>
@@ -37,6 +38,7 @@
 #include "common/logging.h"
 #include "common/string_util.h"
 #include "qt_common/config/uisettings.h"
+#include "qt_common/game_list/game_pictures.h"
 #ifdef YUZU_BUNDLED_OPENSSL
 #include <openssl/cert.h>
 #endif
@@ -303,7 +305,8 @@ std::string UrlEncodePathSegment(std::string value) {
 }
 
 // Icon image URLs from a SteamGridDB response, best size first.
-std::vector<std::string> ParseSgdbIconUrls(const std::string& body) {
+std::vector<std::string> ParseSgdbIconUrls(const std::string& body,
+                                           std::size_t max_choices = MaxSgdbChoices) {
     std::vector<std::string> urls;
     const auto json = nlohmann::json::parse(body, nullptr, false);
     if (json.is_discarded() || !json.is_object() || !json.contains("data") ||
@@ -311,7 +314,7 @@ std::vector<std::string> ParseSgdbIconUrls(const std::string& body) {
         return urls;
     }
     for (const auto& item : json["data"]) {
-        if (urls.size() >= MaxSgdbChoices) {
+        if (urls.size() >= max_choices) {
             break;
         }
         if (item.is_object() && item.contains("url") && item["url"].is_string()) {
@@ -372,8 +375,12 @@ int ScoreCandidateTitle(const std::string& candidate, const std::string& query) 
 }
 
 
+// With sgdb_only, switchiconshowdown.com is skipped and SteamGridDB (which needs api_key) is the
+// only source. max_sgdb_choices limits how many SteamGridDB icons are downloaded.
 IconSearchResult RunIconSearch(const std::string& raw_query, u64 tid, const std::string& api_key,
-                               const std::atomic_bool& cancel) {
+                               const std::atomic_bool& cancel, bool sgdb_only = false,
+                               std::size_t max_sgdb_choices = MaxSgdbChoices,
+                               int min_sgdb_score = MinCandidateScore) {
     using namespace std::chrono;
     IconSearchResult out;
     try {
@@ -414,6 +421,9 @@ IconSearchResult RunIconSearch(const std::string& raw_query, u64 tid, const std:
         std::string primary_error;
         const auto primary_deadline = std::min(deadline, start + PrimarySourceDeadline);
         do {
+            if (sgdb_only) {
+                break;
+            }
             std::vector<std::string> queries{search_name};
             if (const auto colon = search_name.find(':');
                 colon != std::string::npos && colon > 0) {
@@ -486,12 +496,29 @@ IconSearchResult RunIconSearch(const std::string& raw_query, u64 tid, const std:
             return out;
         }
         const auto parsed = nlohmann::json::parse(search.body, nullptr, false);
+        // The closest name wins; between equally close names the newest release, so a Switch 2
+        // game is picked over an older game of the same name.
         int game_id = 0;
+        int best_score = min_sgdb_score - 1;
+        s64 best_release = -1;
         if (!parsed.is_discarded() && parsed.is_object() && parsed.contains("data") &&
-            parsed["data"].is_array() && !parsed["data"].empty() &&
-            parsed["data"][0].is_object() && parsed["data"][0].contains("id") &&
-            parsed["data"][0]["id"].is_number_integer()) {
-            game_id = parsed["data"][0]["id"].get<int>();
+            parsed["data"].is_array()) {
+            for (const auto& item : parsed["data"]) {
+                if (!item.is_object() || !item.contains("id") || !item["id"].is_number_integer() ||
+                    !item.contains("name") || !item["name"].is_string()) {
+                    continue;
+                }
+                const int score = ScoreCandidateTitle(item["name"].get<std::string>(), search_name);
+                const s64 release = item.contains("release_date") &&
+                                            item["release_date"].is_number_integer()
+                                        ? item["release_date"].get<s64>()
+                                        : 0;
+                if (score > best_score || (score == best_score && release > best_release)) {
+                    best_score = score;
+                    best_release = release;
+                    game_id = item["id"].get<int>();
+                }
+            }
         }
         if (game_id <= 0) {
             out.status = IconSearchStatus::NotFound;
@@ -505,7 +532,7 @@ IconSearchResult RunIconSearch(const std::string& raw_query, u64 tid, const std:
             return out;
         }
         // Collect every icon that arrives in time; the user picks one.
-        for (const auto& url : ParseSgdbIconUrls(icons.body)) {
+        for (const auto& url : ParseSgdbIconUrls(icons.body, max_sgdb_choices)) {
             const auto img = HttpGet(url, deadline, cancel);
             if (img.status != HttpStatus::Ok) {
                 if (img.status == HttpStatus::Cancelled || img.status == HttpStatus::Timeout) {
@@ -538,7 +565,45 @@ IconSearchResult RunIconSearch(const std::string& raw_query, u64 tid, const std:
     return out;
 }
 
+// SteamGridDB only: it has Switch 2 games. switchiconshowdown.com knows only Switch 1 games and
+// matched them by name (Ocarina of Time got Breath of the Wild's icon).
+IconSearchResult RunPreferredSearch(const std::string& name, u64 tid, const std::string& api_key,
+                                    const std::atomic_bool& cancel, std::size_t max_sgdb_choices,
+                                    int min_score) {
+    if (api_key.empty()) {
+        IconSearchResult result;
+        result.status = IconSearchStatus::NeedsApiKey;
+        return result;
+    }
+    return RunIconSearch(name, tid, api_key, cancel, true, max_sgdb_choices, min_score);
+}
+
 } // namespace
+
+GamePictureLookup FindGamePictureAutomatically(const std::string& name, u64 title_id,
+                                               const std::string& api_key,
+                                               const std::atomic_bool& cancel) {
+    GamePictureLookup lookup;
+    if (api_key.empty()) {
+        return lookup; // nothing to ask without a key; not a miss
+    }
+    constexpr int AutomaticMinScore = 750;
+    auto result = RunPreferredSearch(name, title_id, api_key, cancel, 1, AutomaticMinScore);
+    switch (result.status) {
+    case IconSearchStatus::Found:
+        lookup.png = std::move(result.icon_bytes);
+        break;
+    case IconSearchStatus::Choices:
+        lookup.png = std::move(result.choices.front());
+        break;
+    case IconSearchStatus::NotFound:
+        lookup.nothing_found = true;
+        break;
+    default:
+        break;
+    }
+    return lookup;
+}
 
 IconSearch::IconSearch(QWidget* parent) : QObject(parent), parent_widget{parent} {
     connect(&watcher, &QFutureWatcher<IconSearchResult>::finished, this, &IconSearch::OnFinished);
@@ -566,7 +631,10 @@ void IconSearch::Start(const QString& name, u64 title_id) {
     // The worker captures no pointer to the dialog, so it may safely outlive it.
     watcher.setFuture(QtConcurrent::run(
         [query, title_id, api_key = UISettings::values.steamgriddb_api_key.GetValue(),
-         cancel = cancel_flag] { return RunIconSearch(query, title_id, api_key, *cancel); }));
+         cancel = cancel_flag] {
+            return RunPreferredSearch(query, title_id, api_key, *cancel, MaxSgdbChoices,
+                                      MinCandidateScore);
+        }));
 }
 
 bool IconSearch::IsRunning() const {
@@ -615,8 +683,9 @@ int IconSearch::ChooseIcon(const std::vector<std::vector<u8>>& choices) {
 }
 
 bool IconSearch::AskForApiKey(bool missing) {
-    QString text = missing ? tr("No matching icon was found on switchiconshowdown.com. A "
-                                "SteamGridDB API key enables a fallback search.")
+    QString text = missing ? tr("CheezyEmu finds game pictures on SteamGridDB, which needs a "
+                                "free API key. With a key, pictures for your games also appear "
+                                "on their own.")
                            : tr("SteamGridDB rejected the saved API key.");
     if (UISettings::values.steamgriddb_api_key.GetValue().empty()) {
         text += QStringLiteral("<br><br>") +
@@ -645,6 +714,14 @@ bool IconSearch::AskForApiKey(bool missing) {
         return false;
     }
     UISettings::values.steamgriddb_api_key.SetValue(key_edit->text().trimmed().toStdString());
+    // Titles nothing was found for without a key are worth another automatic search.
+    std::error_code ec;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(QtCommon::GamePictures::Folder(), ec)) {
+        if (entry.path().extension() == ".none") {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
     return true;
 }
 
@@ -680,8 +757,8 @@ void IconSearch::OnFinished() {
         return;
     }
     case IconSearchStatus::NotFound:
-        message = tr("No matching icon was found on switchiconshowdown.com or SteamGridDB. Try a "
-                     "different game name or choose an icon file.");
+        message = tr("SteamGridDB has no picture for a game with this name. Try a different "
+                     "name or choose a picture file.");
         break;
     case IconSearchStatus::NeedsApiKey:
     case IconSearchStatus::BadApiKey:

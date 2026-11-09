@@ -173,6 +173,8 @@ struct Values {
 
     // Optional key that enables the SteamGridDB icon fallback
     Setting<std::string> steamgriddb_api_key{linkage, {}, "steamgriddb_api_key", Category::Ui};
+    // Look up pictures online for listed games that have none (SteamGridDB with a key).
+    Setting<bool> auto_game_pictures{linkage, true, "auto_game_pictures", Category::Ui};
 
     std::string theme;
 

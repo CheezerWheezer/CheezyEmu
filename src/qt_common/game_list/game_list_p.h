@@ -14,6 +14,8 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QObject>
+#include <QPainter>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QStandardItem>
 #include <QString>
@@ -42,9 +44,18 @@ Q_DECLARE_METATYPE(GameListItemType);
  * @param size The desired width and height of the default icon.
  * @return QPixmap default icon
  */
+// A game without a picture shows a faded CheezyEmu cheese until one is found.
 static QPixmap GetDefaultIcon(u32 size) {
     QPixmap icon(size, size);
     icon.fill(Qt::transparent);
+    const QPixmap cheese(QStringLiteral(":/img/cheezyemu.png"));
+    if (!cheese.isNull()) {
+        QPainter painter(&icon);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.setOpacity(0.35);
+        const int inset = static_cast<int>(size) / 6;
+        painter.drawPixmap(QRect(inset, inset, size - 2 * inset, size - 2 * inset), cheese);
+    }
     return icon;
 }
 
@@ -80,6 +91,8 @@ public:
     static constexpr int FullPathRole = SortRole + 2;
     static constexpr int ProgramIdRole = SortRole + 3;
     static constexpr int FileTypeRole = SortRole + 4;
+    /// Whether the entry shows a real picture (from the game or the picture cache).
+    static constexpr int HasPictureRole = SortRole + 5;
 
     GameListItemPath() = default;
     GameListItemPath(const QString& game_path, const std::vector<u8>& picture_data,
@@ -112,15 +125,24 @@ public:
 
         setData(tooltip, Qt::ToolTipRole);
 
+        SetPicture(picture_data);
+    }
+
+    /// Shows a picture (PNG or JPEG bytes), or the placeholder when they don't decode.
+    void SetPicture(const std::vector<u8>& picture_data) {
         const u32 size = UISettings::values.game_icon_size.GetValue();
 
         QPixmap picture;
-        if (!picture.loadFromData(picture_data.data(), static_cast<u32>(picture_data.size()))) {
+        const bool loaded =
+            !picture_data.empty() &&
+            picture.loadFromData(picture_data.data(), static_cast<u32>(picture_data.size()));
+        if (!loaded) {
             picture = GetDefaultIcon(size);
         }
         picture = picture.scaled(size, size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
         setData(picture, Qt::DecorationRole);
+        setData(loaded, HasPictureRole);
     }
 
     int type() const override {

@@ -6,6 +6,11 @@
 
 #pragma once
 
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <vector>
+
 #include <QLabel>
 #include <QLineEdit>
 #include <QList>
@@ -33,6 +38,8 @@ class GameListSearchField;
 class ControllerNavigation;
 class GameListWorker;
 class GameListDir;
+class GameListItemPath;
+class IconSearch;
 class MainWindow;
 enum class AmLaunchType;
 enum class StartGameType;
@@ -142,6 +149,16 @@ private:
     void ToggleFavorite(u64 program_id);
 
     void PopupContextMenu(const QPoint& menu_location);
+
+    /// Calls visit for every game entry (a game can be listed twice: its folder and Favorites).
+    void ForEachGameItem(const std::function<void(GameListItemPath&)>& visit);
+    /// Looks up pictures for listed games that have none, one at a time off the UI thread.
+    void StartPictureSearch();
+    /// Saves a found or picked picture and shows it on every entry of the game.
+    void ApplyPicture(u64 program_id, const std::vector<u8>& png);
+    void FindPictureOnline(u64 program_id);
+    void ChoosePictureFile(u64 program_id);
+    void ResetPicture(u64 program_id);
     void AddGamePopup(QMenu& context_menu, u64 program_id, const std::string& path);
     void AddCustomDirPopup(QMenu& context_menu, QModelIndex selected);
     void AddPermDirPopup(QMenu& context_menu, QModelIndex selected);
@@ -178,6 +195,11 @@ private:
     bool nup_conversion_running{};
     u64 reportable_program_id{};
     QAbstractItemView* m_currentView = nullptr;
+
+    std::shared_ptr<std::atomic_bool> picture_cancel{std::make_shared<std::atomic_bool>(false)};
+    bool picture_search_running{};
+    IconSearch* picture_search = nullptr;
+    u64 picture_search_target{};
 };
 
 class GameListPlaceholder : public QWidget {

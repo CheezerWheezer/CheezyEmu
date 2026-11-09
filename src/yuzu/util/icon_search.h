@@ -40,6 +40,17 @@ struct IconSearchResult {
 // user has set an API key. The search runs in the background under one 10 second deadline; errors,
 // the API key prompt and the choice between several icons are handled here, so a caller only
 // connects IconSelected.
+struct GamePictureLookup {
+    std::vector<u8> png;        ///< 256x256 PNG, empty when none was found.
+    bool nothing_found = false; ///< The sources answered and had nothing (not a network error).
+};
+
+/// Finds a game picture without asking anything: SteamGridDB's first icon when api_key is set,
+/// else switchiconshowdown.com. Blocks; run it off the UI thread.
+GamePictureLookup FindGamePictureAutomatically(const std::string& name, u64 title_id,
+                                               const std::string& api_key,
+                                               const std::atomic_bool& cancel);
+
 class IconSearch : public QObject {
     Q_OBJECT
 public:

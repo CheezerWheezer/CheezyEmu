@@ -6,8 +6,13 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QBuffer>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QImage>
+#include <QPointer>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QHeaderView>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -23,12 +28,14 @@
 #include <qlayoutitem.h>
 
 #include "common/common_types.h"
+#include "common/logging.h"
 #include "core/core.h"
 #include "core/file_sys/nup_writer.h"
 #include "core/file_sys/patch_manager.h"
 #include "core/file_sys/registered_cache.h"
 #include "qt_common/config/uisettings.h"
 #include "qt_common/game_list/game_list_p.h"
+#include "qt_common/game_list/game_pictures.h"
 #include "qt_common/game_list/model.h"
 #include "qt_common/qt_common.h"
 #include "qt_common/util/game.h"
@@ -40,6 +47,7 @@
 #include "yuzu/main_window.h"
 #include "yuzu/shader_warm_dialog.h"
 #include "yuzu/util/controller_navigation.h"
+#include "yuzu/util/icon_search.h"
 
 GameList::GameList(FileSys::VirtualFilesystem vfs_, FileSys::ManualContentProvider* provider_,
                    PlayTime::PlayTimeManager& play_time_manager_, Core::System& system_,
@@ -106,7 +114,152 @@ void GameList::SetNupConversionRunning(bool running) {
 }
 
 GameList::~GameList() {
+    picture_cancel->store(true); // the picture search stops at its next game
     UnloadController();
+}
+
+void GameList::ForEachGameItem(const std::function<void(GameListItemPath&)>& visit) {
+    const std::function<void(QStandardItem*)> walk = [&](QStandardItem* parent) {
+        for (int row = 0; row < parent->rowCount(); ++row) {
+            QStandardItem* const item = parent->child(row, 0);
+            if (item == nullptr) {
+                continue;
+            }
+            if (item->data(GameListItem::TypeRole).value<GameListItemType>() ==
+                GameListItemType::Game) {
+                visit(*static_cast<GameListItemPath*>(item));
+            } else if (item->hasChildren()) {
+                walk(item);
+            }
+        }
+    };
+    walk(item_model->invisibleRootItem());
+}
+
+void GameList::StartPictureSearch() {
+    if (picture_search_running || !UISettings::values.auto_game_pictures.GetValue() ||
+        UISettings::values.steamgriddb_api_key.GetValue().empty()) {
+        return;
+    }
+    std::vector<std::pair<u64, std::string>> wanted;
+    ForEachGameItem([&wanted](GameListItemPath& item) {
+        const u64 program_id = item.data(GameListItemPath::ProgramIdRole).toULongLong();
+        const QString name = item.data(GameListItemPath::TitleRole).toString().trimmed();
+        if (program_id == 0 || name.isEmpty() ||
+            item.data(GameListItemPath::HasPictureRole).toBool() ||
+            QtCommon::GamePictures::RecentlyMissing(program_id) ||
+            std::ranges::any_of(wanted, [&](const auto& w) { return w.first == program_id; })) {
+            return;
+        }
+        wanted.emplace_back(program_id, name.toStdString());
+    });
+    if (wanted.empty()) {
+        return;
+    }
+    picture_search_running = true;
+    LOG_INFO(Frontend, "Game pictures: looking up {} game(s) without one", wanted.size());
+    // The worker holds no pointer to the list: results come back through a guarded call on the
+    // UI thread, and the cancel flag stops it when the list goes away.
+    QPointer<GameList> self{this};
+    (void)QtConcurrent::run([self, wanted = std::move(wanted),
+                             api_key = UISettings::values.steamgriddb_api_key.GetValue(),
+                             cancel = picture_cancel] {
+        for (const auto& [program_id, name] : wanted) {
+            if (cancel->load()) {
+                break;
+            }
+            const auto found = FindGamePictureAutomatically(name, program_id, api_key, *cancel);
+            if (!found.png.empty()) {
+                QtCommon::GamePictures::Save(program_id, found.png);
+                LOG_INFO(Frontend, "Game pictures: found one for {:016X} ({})", program_id, name);
+                QMetaObject::invokeMethod(
+                    qApp,
+                    [self, program_id, png = found.png] {
+                        if (self) {
+                            self->ApplyPicture(program_id, png);
+                        }
+                    },
+                    Qt::QueuedConnection);
+            } else if (found.nothing_found) {
+                QtCommon::GamePictures::MarkMissing(program_id);
+                LOG_INFO(Frontend, "Game pictures: none found for {:016X} ({})", program_id,
+                         name);
+            }
+        }
+        QMetaObject::invokeMethod(
+            qApp,
+            [self] {
+                if (self) {
+                    self->picture_search_running = false;
+                }
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void GameList::ApplyPicture(u64 program_id, const std::vector<u8>& png) {
+    ForEachGameItem([&](GameListItemPath& item) {
+        if (item.data(GameListItemPath::ProgramIdRole).toULongLong() == program_id) {
+            item.SetPicture(png);
+        }
+    });
+    UpdateIconSizes();
+}
+
+void GameList::FindPictureOnline(u64 program_id) {
+    QString name;
+    ForEachGameItem([&](GameListItemPath& item) {
+        if (name.isEmpty() &&
+            item.data(GameListItemPath::ProgramIdRole).toULongLong() == program_id) {
+            name = item.data(GameListItemPath::TitleRole).toString();
+        }
+    });
+    if (picture_search == nullptr) {
+        picture_search = new IconSearch(this);
+        connect(picture_search, &IconSearch::IconSelected, this,
+                [this](const QByteArray& png, const QString&) {
+                    const std::vector<u8> bytes(png.begin(), png.end());
+                    if (picture_search_target != 0 &&
+                        QtCommon::GamePictures::Save(picture_search_target, bytes)) {
+                        ApplyPicture(picture_search_target, bytes);
+                    }
+                    // A key may have just been entered: look up the other games too.
+                    StartPictureSearch();
+                });
+    }
+    if (picture_search->IsRunning()) {
+        return;
+    }
+    picture_search_target = program_id;
+    picture_search->Start(name, program_id);
+}
+
+void GameList::ChoosePictureFile(u64 program_id) {
+    const QString file = QFileDialog::getOpenFileName(
+        this, tr("Choose a Picture"), {}, tr("Images (*.png *.jpg *.jpeg *.webp *.bmp)"));
+    if (file.isEmpty()) {
+        return;
+    }
+    QImage image(file);
+    if (image.isNull()) {
+        return;
+    }
+    image = image.scaled(256, 256, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    image = image.copy((image.width() - 256) / 2, (image.height() - 256) / 2, 256, 256);
+    QByteArray png;
+    QBuffer buffer(&png);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    const std::vector<u8> bytes(png.begin(), png.end());
+    if (QtCommon::GamePictures::Save(program_id, bytes)) {
+        ApplyPicture(program_id, bytes);
+    }
+}
+
+void GameList::ResetPicture(u64 program_id) {
+    QtCommon::GamePictures::Remove(program_id);
+    // Reloading the list shows the game's own picture again, or looks one up.
+    PopulateAsync(UISettings::values.game_dirs);
 }
 
 void GameList::SetupViews() {
@@ -266,6 +419,7 @@ void GameList::OnFilterCloseClicked() {
 
 void GameList::OnPopulatingCompleted(const QStringList& watch_list) {
     emit ShowList(!item_model->IsEmpty());
+    StartPictureSearch();
 
     // favorites row
     if (m_isTreeMode) {
@@ -534,6 +688,18 @@ void GameList::AddGamePopup(QMenu& context_menu, u64 program_id, const std::stri
         edit_nup->setEnabled(!nup_conversion_running);
     }
     QAction* properties = context_menu.addAction(tr("Configure Game"));
+    if (program_id != 0) {
+        QMenu* picture_menu = context_menu.addMenu(tr("Game Picture"));
+        connect(picture_menu->addAction(tr("Find Picture Online...")), &QAction::triggered, this,
+                [this, program_id] { FindPictureOnline(program_id); });
+        connect(picture_menu->addAction(tr("Choose Picture File...")), &QAction::triggered, this,
+                [this, program_id] { ChoosePictureFile(program_id); });
+        QAction* reset_picture = picture_menu->addAction(tr("Reset Picture"));
+        reset_picture->setEnabled(
+            std::filesystem::exists(QtCommon::GamePictures::PicturePath(program_id)));
+        connect(reset_picture, &QAction::triggered, this,
+                [this, program_id] { ResetPicture(program_id); });
+    }
     // Compatibility reports go to the upstream project's website, which doesn't take CheezyEmu
     // builds: the entry is hidden.
     constexpr bool compatibility_reports = false;
