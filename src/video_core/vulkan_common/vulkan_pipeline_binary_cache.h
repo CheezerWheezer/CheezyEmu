@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2026 Lichii contributors
+// SPDX-FileCopyrightText: Copyright 2026 CheezyEmu contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #pragma once

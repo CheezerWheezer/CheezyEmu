@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright 2026 Lichii contributors
+// SPDX-FileCopyrightText: Copyright 2026 CheezyEmu contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // AMD FSR 4 (FidelityFX SDK 2.4, Vulkan) in place of a game's DLSS evaluation.

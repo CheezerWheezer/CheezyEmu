@@ -65,6 +65,9 @@ Windows and `cheezyemu` on other desktop platforms.
 
 ## Credits and license
 
+Copyright © 2026 CheezerWheezer and the CheezyEmu contributors. CheezyEmu is free software
+under the GNU General Public License v3 or later ([LICENSE.txt](LICENSE.txt), [NOTICE.txt](NOTICE.txt)).
+
 CheezyEmu is built on the work of many projects and their contributors, and keeps their copyright
 notices and licenses:
 

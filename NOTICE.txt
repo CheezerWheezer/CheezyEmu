@@ -1,0 +1,16 @@
+CheezyEmu
+Copyright (C) 2026 CheezerWheezer and the CheezyEmu contributors
+
+CheezyEmu is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. See LICENSE.txt for the full license text.
+
+CheezyEmu is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+CheezyEmu includes code from these projects, under their copyright and licenses:
+  - Lichii (zortos293 and contributors), GPL-3.0-or-later
+  - Eglantine, Eden Emulator Project, GPL-3.0-or-later
+  - yuzu Emulator Project, GPL-2.0-or-later
+  - Sudachi, citra and other projects named in the source files
+Third-party libraries keep their own licenses: see the LICENSES folder and externals/.
