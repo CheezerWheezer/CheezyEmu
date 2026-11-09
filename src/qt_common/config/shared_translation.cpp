@@ -197,16 +197,19 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "Native: the game's own size, 1440x810.\n"
               "Quality: 1280x720.\nBalanced: 1125x633.\nPerformance: 960x540.\n"
               "Ultra Performance: 640x360 (fastest, softest).\n"
-              "Docked the sizes are a fraction of 2560x1440: Native AA 2560x1440, Quality about "
-              "1710x961, Balanced 1500x844, Performance 1280x720, Ultra Performance 855x480; FSR "
-              "then writes 4K or 1440p (Ocarina of Time docked output).\n"
+              "Docked, the preset follows the docked output. 4K: Quality 2560x1440, Balanced "
+              "2250x1265, Performance 1920x1080, Ultra Performance 1280x720 (Native AA is "
+              "2560x1440 too, the largest the game draws docked). 1440p: Native AA 2560x1440, "
+              "Quality 1710x961, Balanced 1500x844, Performance 1280x720, Ultra Performance "
+              "855x480.\n"
               "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
               "Resolution's fixed size. Takes effect when the game starts."));
     INSERT(Settings, oot_docked_output, tr("Ocarina of Time docked output:"),
            tr("Docked only. 4K: FSR upscales the 3D scene to 3840x2160 (sharpest, heaviest).\n"
               "1440p: FSR writes the game's own 2560x1440 image instead and no 4K image is made, "
-              "which is lighter on the GPU. The FSR preset's scene sizes stay the same (a fraction "
-              "of 2560x1440).\nTakes effect when the game starts."));
+              "which is lighter on the GPU. The FSR preset renders a fraction of the output you "
+              "pick here, so 4K renders more for the same preset (Performance: 1920x1080 for 4K, "
+              "1280x720 for 1440p).\nTakes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),

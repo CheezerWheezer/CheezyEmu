@@ -172,11 +172,23 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     default:
         return;
     }
-    // Docked the scene is that fraction of 2560x1440 either way (Performance draws 1280x720); the
-    // docked output setting only decides whether FSR then writes 4K or the 1440p image.
+    // A preset is a ratio of what FSR writes, as in PC games. Docked the game's scale is a
+    // fraction of 2560x1440 (Performance at 0.5 draws 1280x720), which suits 1440p output. With 4K
+    // output it is scaled by 1.5 so the ratios are AMD's to 4K: Quality 2560x1440 (1.5x), Balanced
+    // 2250x1265 (1.7x), Performance 1920x1080 (2x), Ultra Performance 1280x720 (3x). It stops at
+    // 2560x1440, the largest scene the game draws docked (drawing past its images could corrupt
+    // them), so Native AA with 4K output is Quality's 2560x1440.
+    const bool docked = Settings::IsDockedMode();
     const bool docked_1440p =
-        Settings::IsDockedMode() &&
+        docked &&
         Settings::values.oot_docked_output.GetValue() == Settings::OotDockedOutput::Output1440p;
+    if (docked && !docked_1440p) {
+        const f32 scale = (std::min)(std::bit_cast<f32>(u32{scale_bits} << 16) * 1.5f, 1.0f);
+        scale_bits = static_cast<u16>(std::bit_cast<u32>(scale) >> 16); // rounded down
+        // The game keeps its fixed scale at 0.75 or below; the presets above that skip it, as
+        // Native AA does.
+        skip_clamp = skip_clamp || scale > 0.74f;
+    }
     const size_t header = sizeof(Loader::NSOHeader);
     const size_t branch_at = header + MAX_RESOLUTION_RECORDS[0].module_offset;
     const size_t scale_at = header + OCARINA_SCALE_OFFSET;
@@ -215,7 +227,7 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     }
     LOG_INFO(Loader, "    - Ocarina of Time FSR preset {}: 3D render scale {:.4f}{}", preset_name,
              std::bit_cast<f32>(u32{scale_bits} << 16),
-             docked_1440p ? " (docked, 1440p output)" : "");
+             docked_1440p ? " (docked, 1440p output)" : docked ? " (docked, 4K output)" : "");
 }
 
 constexpr std::array BUILTIN_PATCHES{
