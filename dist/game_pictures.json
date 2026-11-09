@@ -1,0 +1,1387 @@
+{
+ "version": 1,
+ "generated": "2026-11-09T10:11:21Z",
+ "source": "SteamGridDB (https://www.steamgriddb.com), title list from switchbrew.org",
+ "pictures": {
+  "04000170288DC000": {
+   "name": "Echo Weaver",
+   "url": "https://cdn2.steamgriddb.com/grid/4444644e44f1d022bcbeb71131c9e516.jpg",
+   "sgdb_game": 5446015
+  },
+  "04000220234BA000": {
+   "name": "DRAGON QUEST I & II HD-2D Remake",
+   "url": "https://cdn2.steamgriddb.com/grid/936213b4f7942d51cece732786faa4de.png",
+   "sgdb_game": 5455455
+  },
+  "04000360270F4000": {
+   "name": "The Necromancer's Tale",
+   "url": "https://cdn2.steamgriddb.com/grid/44a237c4097b7785fbba8772361d2229.png",
+   "sgdb_game": 5264500
+  },
+  "040003901FBC2000": {
+   "name": "Survival Kids",
+   "url": "https://cdn2.steamgriddb.com/grid/6b7033d4ad34511fd5c779fc008129f5.png",
+   "sgdb_game": 5492482
+  },
+  "040003C023FC4000": {
+   "name": "LEGO Batman: Legacy of the Dark Knight",
+   "url": "https://cdn2.steamgriddb.com/icon/0de275fb252abda19001070f4be30c9a.png",
+   "sgdb_game": 5499345
+  },
+  "04000470212CE000": {
+   "name": "Kunitsu-Gami: Path of the Goddess",
+   "url": "https://cdn2.steamgriddb.com/grid/e1a2af0046027cc58546273e96f53fe5.png",
+   "sgdb_game": 5446081
+  },
+  "040004C027E4C000": {
+   "name": "Constance",
+   "url": "https://cdn2.steamgriddb.com/grid/bfa97bc4bcc57e0cab6d91096ca5d1f8.png",
+   "sgdb_game": 5409439
+  },
+  "0400054025D02000": {
+   "name": "Rushing Beat X: Return of Brawl Brothers",
+   "url": "https://cdn2.steamgriddb.com/icon/3c1ea9867d54ce7a2ebaa7a7745385aa.png",
+   "sgdb_game": 5462425
+  },
+  "04000730260A0000": {
+   "name": "Jotunnslayer: Hordes of Hel",
+   "url": "https://cdn2.steamgriddb.com/icon/65b3060fe4ea5a0585840258d14e6cb1.png",
+   "sgdb_game": 5445398
+  },
+  "04000A3024F22000": {
+   "name": "Darwin's Paradox!",
+   "url": "https://cdn2.steamgriddb.com/icon/79e662f20445aae59c27ef1beb8ac083.png",
+   "sgdb_game": 5479123
+  },
+  "04000A8024AEE000": {
+   "name": "GRID Legends: Deluxe Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/bf471d6d51fdccf167434fd8d046bc2f.png",
+   "sgdb_game": 5290863
+  },
+  "04000B4027D7E000": {
+   "name": "Momento",
+   "url": "https://cdn2.steamgriddb.com/grid/094629e2eb384b90b5ea540f57867d4a.png",
+   "sgdb_game": 5438143
+  },
+  "04000D9025B16000": {
+   "name": "Minecraft Dungeons II",
+   "url": "https://cdn2.steamgriddb.com/icon/7740ff4337594da221cb315f1921f09a.png",
+   "sgdb_game": 5521700
+  },
+  "04000DE027BEC000": {
+   "name": "Resident Evil 3",
+   "url": "https://cdn2.steamgriddb.com/icon/5fc91308f724d6c005e827b9b9b5ced1.png",
+   "sgdb_game": 5253703
+  },
+  "04000E9024DDA000": {
+   "name": "Ys X: Proud Nordics",
+   "url": "https://cdn2.steamgriddb.com/icon/be3a7e8ce61a1db9af2b0c0a05905e39.png",
+   "sgdb_game": 5499680
+  },
+  "04000EF028608000": {
+   "name": "Dogpile",
+   "url": "https://cdn2.steamgriddb.com/grid/627f42747f63257694c3a74ff4bbc4ee.png",
+   "sgdb_game": 5504025
+  },
+  "04000FC022CC8000": {
+   "name": "Cyberpunk 2077: Ultimate Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/6374e3ddc6da019b8d63d803662c47e7.png",
+   "sgdb_game": 5209422
+  },
+  "0400101024F7A000": {
+   "name": "Resident Evil 7 biohazard Gold Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/6b62c3dfa59784a63a131cf0c831251f.png",
+   "sgdb_game": 9774
+  },
+  "04001040243D4000": {
+   "name": "The Legend of Heroes: Trails beyond the Horizon",
+   "url": "https://cdn2.steamgriddb.com/grid/b661bb8b1094d2b7838598cabdce9fdf.png",
+   "sgdb_game": 5483499
+  },
+  "0400114025CCA000": {
+   "name": "Shadow Tactics: Blades of the Shogun",
+   "url": "https://cdn2.steamgriddb.com/icon/95f9067d78cd71e5c49adbbf67e9ed8f.png",
+   "sgdb_game": 9765
+  },
+  "040012F028BC2000": {
+   "name": "The Witcher 3: Wild Hunt - Remastered",
+   "url": "https://cdn2.steamgriddb.com/icon/b9a8f4af85454f7c56c06f0a39e7ec23.png",
+   "sgdb_game": 4265
+  },
+  "040013C024128000": {
+   "name": "Atelier Ryza: Ever Darkness & the Secret Hideout DX",
+   "url": "https://cdn2.steamgriddb.com/icon/b339bbc54585e3bfa6177a570e03f08f.png",
+   "sgdb_game": 5497590
+  },
+  "0400172024E7A000": {
+   "name": "Overwatch",
+   "url": "https://cdn2.steamgriddb.com/icon/e16a4ca71de93b9d1e35186e568d9fdf.png",
+   "sgdb_game": 5517549
+  },
+  "040019C028C6E000": {
+   "name": "CloverPit",
+   "url": "https://cdn2.steamgriddb.com/icon/06bcf57e94063461b780a6e414862801.png",
+   "sgdb_game": 5469302
+  },
+  "04001A3028890000": {
+   "name": "Clive Barker's Hellraiser: Revival",
+   "url": "https://cdn2.steamgriddb.com/grid/d9028cb89b0114d2989e8d588a9ac9fa.png",
+   "sgdb_game": 5496274
+  },
+  "04001BD027712000": {
+   "name": "Vampire Crawlers: The Turbo Wildcard from Vampire Survivors",
+   "url": "https://cdn2.steamgriddb.com/icon/be9786d0fd37d1c9fd0aa87bf8ddf7e9.png",
+   "sgdb_game": 5509535
+  },
+  "04001CD025B68000": {
+   "name": "Octopath Traveler",
+   "url": "https://cdn2.steamgriddb.com/icon/3dd13198e56a2d4d0a9880ce2e55e813.png",
+   "sgdb_game": 4883735
+  },
+  "04001DF022CE6000": {
+   "name": "KINGDOM HEARTS III + Re Mind (DLC)",
+   "url": "https://cdn2.steamgriddb.com/icon/b8fa7fd38331444b05aa54244bd029b1.png",
+   "sgdb_game": 5254589
+  },
+  "04001F2025DCC000": {
+   "name": "Smalland: Survive the Wilds",
+   "url": "https://cdn2.steamgriddb.com/icon/00fc743b385f1c7cbf52cc496fa54907.png",
+   "sgdb_game": 24162
+  },
+  "0400208024DFE000": {
+   "name": "MY HERO ACADEMIA: All's Justice",
+   "url": "https://cdn2.steamgriddb.com/grid/ff3faad92a69204c13eb79c81df3db5b.png",
+   "sgdb_game": 5494110
+  },
+  "040021E02594A000": {
+   "name": "The Disney Afternoon Collection",
+   "url": "https://cdn2.steamgriddb.com/icon/7dd198c58e4cc86c17e2d28f36d7c647.png",
+   "sgdb_game": 13993
+  },
+  "0400224023CF8000": {
+   "name": "Relayer Advanced Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/grid/d98cff9fff1aaf31a73b083d449d4e82.png",
+   "sgdb_game": 5357741
+  },
+  "040023502410A000": {
+   "name": "Cronos: The New Dawn",
+   "url": "https://cdn2.steamgriddb.com/icon/ab35346c61fc243d06932f964941b016.png",
+   "sgdb_game": 5467939
+  },
+  "0400245021D2C000": {
+   "name": "Yoshi and the Mysterious Book",
+   "url": "https://cdn2.steamgriddb.com/icon/92af86ac9a5b0b91021a516e3820a067.png",
+   "sgdb_game": 5510100
+  },
+  "040024F0275F2000": {
+   "name": "The Legend of Heroes: Trails to Azure",
+   "url": "https://cdn2.steamgriddb.com/icon/c0271cbea409c4cb07f330748c7b21c9.png",
+   "sgdb_game": 5288483
+  },
+  "04002550248C4000": {
+   "name": "Content Warning",
+   "url": "https://cdn2.steamgriddb.com/icon/59f7026f4ef0e7534b53ec1659adc071.png",
+   "sgdb_game": 5448263
+  },
+  "0400255025990000": {
+   "name": "Ultimate Sheep Raccoon",
+   "url": "https://cdn2.steamgriddb.com/grid/4b0b060ce3fd870e17703ea1d649e949.jpg",
+   "sgdb_game": 5473253
+  },
+  "0400256024344000": {
+   "name": "Gear.Club Unlimited 3",
+   "url": "https://cdn2.steamgriddb.com/grid/0cdf21647ac45cc8be333b4fe26f3d91.jpg",
+   "sgdb_game": 5512026
+  },
+  "040025902298A000": {
+   "name": "Little Nightmares II Enhanced Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/2411738e33e3a1e464006e8677029c01.png",
+   "sgdb_game": 5266557
+  },
+  "040025D02743A000": {
+   "name": "Sektori",
+   "url": "https://cdn2.steamgriddb.com/icon/dde6019e1de75330ca25606602ecaa07.png",
+   "sgdb_game": 5348797
+  },
+  "040026002669C000": {
+   "name": "Wanderstop",
+   "url": "https://cdn2.steamgriddb.com/grid/511e15842eb41df50d55b710d9c9652b.png",
+   "sgdb_game": 5454367
+  },
+  "040026802427E000": {
+   "name": "The Rogue Prince of Persia",
+   "url": "https://cdn2.steamgriddb.com/icon/031d112d59d145aaeb8810c5ad11c983.png",
+   "sgdb_game": 5448943
+  },
+  "040027D028688000": {
+   "name": "Mind Diver",
+   "url": "https://cdn2.steamgriddb.com/grid/32fc4f98a47dfb68bfce04eb9b3f073f.png",
+   "sgdb_game": 5375562
+  },
+  "0400288028C8C000": {
+   "name": "Parkasaurus: Dinoluxe Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/b974c7cb5435d20eec371829c4e74878.png",
+   "sgdb_game": 16720
+  },
+  "040029202747A000": {
+   "name": "Balatro",
+   "url": "https://cdn2.steamgriddb.com/icon/904d4d99ee1daf52392d86358fd1b218.png",
+   "sgdb_game": 5403326
+  },
+  "040029A01D3E0000": {
+   "name": "Nintendo GameCube - Nintendo Classics",
+   "url": "https://cdn2.steamgriddb.com/icon/1958ecc0f18ef6b4eb68722df94b3b36.png",
+   "sgdb_game": 5483962
+  },
+  "04002A6027344000": {
+   "name": "Junkster",
+   "url": "https://cdn2.steamgriddb.com/grid/c78c05fa9e3fb93ff4160d9291dda862.png",
+   "sgdb_game": 5508273
+  },
+  "04002B1027BF2000": {
+   "name": "Resident Evil 4 Gold Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/44202a5fa08bc5dcbe83780b3d544d51.png",
+   "sgdb_game": 5332120
+  },
+  "04002F5028CA4000": {
+   "name": "Dead Age 2",
+   "url": "https://cdn2.steamgriddb.com/icon/9d7db814dd162e275b91f517bd7eda6a.png",
+   "sgdb_game": 5252803
+  },
+  "0400303021AAC000": {
+   "name": "DELTARUNE",
+   "url": "https://cdn2.steamgriddb.com/icon/af93c9db0e2bfa76554dfbdde8426e81.png",
+   "sgdb_game": 5246864
+  },
+  "0400304025212000": {
+   "name": "WWE 2K26 Standard Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/b75ef3fc7fa8502e0d65f5ea73b858ac.png",
+   "sgdb_game": 5516291
+  },
+  "040030D022A5A000": {
+   "name": "KINGDOM HEARTS HD 2.8 Final Chapter Prologue",
+   "url": "https://cdn2.steamgriddb.com/icon/1a35488e943e4aeba6d6c78feeedcc4d.png",
+   "sgdb_game": 5246710
+  },
+  "04003170238F0000": {
+   "name": "Valheim",
+   "url": "https://cdn2.steamgriddb.com/icon/19b1fd7c570468de98bac1a074673090.png",
+   "sgdb_game": 29531
+  },
+  "0400328024BEA000": {
+   "name": "STARSEEKER: Astroneer Expeditions",
+   "url": "https://cdn2.steamgriddb.com/grid/d095cfcc81c6873744535c995d3312bc.png",
+   "sgdb_game": 5483944
+  },
+  "040032B023CA4000": {
+   "name": "Orbitals",
+   "url": "https://cdn2.steamgriddb.com/icon/05220b0763d8755e60d8304ba141b91f.png",
+   "sgdb_game": 5512618
+  },
+  "040033C029D9E000": {
+   "name": "The Convenience Store",
+   "url": "https://cdn2.steamgriddb.com/icon/16b872fc557900838e19f750151167e4.png",
+   "sgdb_game": 5254929
+  },
+  "0400340027A84000": {
+   "name": "Moros Protocol",
+   "url": "https://cdn2.steamgriddb.com/icon/7bcb5f10f996c43a8ae2396afd992a82.png",
+   "sgdb_game": 5325513
+  },
+  "0400341027E14000": {
+   "name": "Stellar Blade Complete Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/017ddc7873b184db49337b2472cdc83f.png",
+   "sgdb_game": 5443884
+  },
+  "04003610271C2000": {
+   "name": "Solarpunk",
+   "url": "https://cdn2.steamgriddb.com/grid/18436c0bd4bf414c19eda4b968930473.jpg",
+   "sgdb_game": 5321497
+  },
+  "040036B0237FA000": {
+   "name": "Majogami",
+   "url": "https://cdn2.steamgriddb.com/grid/911a3fcb1ef83834113f02bc1372ab37.png",
+   "sgdb_game": 5495082
+  },
+  "040036E024882000": {
+   "name": "Yakuza Kiwami 3 & Dark Ties",
+   "url": "https://cdn2.steamgriddb.com/icon/caa7fbc279ad180c08d87cf71a260097.png",
+   "sgdb_game": 5503254
+  },
+  "040036E0268F8000": {
+   "name": "D-topia",
+   "url": "https://cdn2.steamgriddb.com/grid/2201184c174084c9e455a23931a34287.jpg",
+   "sgdb_game": 5503224
+  },
+  "040037C025346000": {
+   "name": "PGA TOUR 2K25",
+   "url": "https://cdn2.steamgriddb.com/icon/0d6139fdbc7238dbf14cc1997b83ce58.png",
+   "sgdb_game": 5475828
+  },
+  "0400380020056000": {
+   "name": "Splatoon Raiders",
+   "url": "https://cdn2.steamgriddb.com/icon/34b307e5a2ec3f5b96fa8c0641180d82.png",
+   "sgdb_game": 5492483
+  },
+  "040038D02786C000": {
+   "name": "Disgaea Mayhem",
+   "url": "https://cdn2.steamgriddb.com/grid/11579561a3c5ef4442674ca0656a6258.jpg",
+   "sgdb_game": 5519107
+  },
+  "04003940236DC000": {
+   "name": "PAC-MAN WORLD 2 Re-PAC",
+   "url": "https://cdn2.steamgriddb.com/icon/7556c7dab4ecd0221c334e1f4d95b608.png",
+   "sgdb_game": 5497188
+  },
+  "04003A4026868000": {
+   "name": "City Hunter",
+   "url": "https://cdn2.steamgriddb.com/grid/4279c666cefe0b02291178985d7d1608.png",
+   "sgdb_game": 5439945
+  },
+  "04003AD02923E000": {
+   "name": "Hyrule Warriors: Age of Calamity - Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/367c9ae075bd4d63b91356f0206bebe5.png",
+   "sgdb_game": 5267007
+  },
+  "04003EB02655E000": {
+   "name": "The Lord of the Rings: War in the North - Legacy Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/9d06fc0e479bf3d6bbc365b1e580d3d1.png",
+   "sgdb_game": 5660
+  },
+  "04003F40232DE000": {
+   "name": "Hyrule Warriors: Age of Imprisonment",
+   "url": "https://cdn2.steamgriddb.com/grid/38dd56b4f4a0aa6f1fc365821025ef4e.png",
+   "sgdb_game": 5483959
+  },
+  "04003FB022F4E000": {
+   "name": "RAIDOU Remastered: The Mystery of the Soulless Army",
+   "url": "https://cdn2.steamgriddb.com/grid/8fb7917048856dadf6276e4e1b5c1a84.jpg",
+   "sgdb_game": 5483319
+  },
+  "0400408021236000": {
+   "name": "Daemon X Machina: Titanic Scion",
+   "url": "https://cdn2.steamgriddb.com/icon/1fbd02197ce9924616402392d2554987.png",
+   "sgdb_game": 5484820
+  },
+  "040040C028AE2000": {
+   "name": "Duskfade",
+   "url": "https://cdn2.steamgriddb.com/grid/3031f8ea494952a85df6f711ef3134a1.jpg",
+   "sgdb_game": 5484824
+  },
+  "0400410024C4E000": {
+   "name": "High On Life 2",
+   "url": "https://cdn2.steamgriddb.com/icon/da7bf32c6e89c01fb9ba2a655daf2652.png",
+   "sgdb_game": 5491700
+  },
+  "0400412024EB4000": {
+   "name": "Nicktoons & The Dice of Destiny",
+   "url": "https://cdn2.steamgriddb.com/grid/aa2238e53dd5100a89e52f69143fa4ba.png",
+   "sgdb_game": 5491584
+  },
+  "040041601D83A000": {
+   "name": "Drag x Drive",
+   "url": "https://cdn2.steamgriddb.com/grid/f5a85419baa368efec38d69b3d7e6394.png",
+   "sgdb_game": 5484094
+  },
+  "040041E0212AE000": {
+   "name": "Fast Fusion",
+   "url": "https://cdn2.steamgriddb.com/icon/05eb8f957411f020be89b12816aaacbc.png",
+   "sgdb_game": 5492474
+  },
+  "040043D0240DC000": {
+   "name": "Marvel's Guardians of the Galaxy: Encore Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/0ba41b0d638ce6603ba3187af10ea9ca.png",
+   "sgdb_game": 5287647
+  },
+  "04004500271B8000": {
+   "name": "Moonlighter 2: The Endless Vault",
+   "url": "https://cdn2.steamgriddb.com/icon/8288999e960ebe6aca280a2c31f5645b.png",
+   "sgdb_game": 5472742
+  },
+  "040045F02661E000": {
+   "name": "Mixtape",
+   "url": "https://cdn2.steamgriddb.com/icon/3485e3f691974fa6f77c58a291a7a8ff.png",
+   "sgdb_game": 5454522
+  },
+  "040046A0248C0000": {
+   "name": "BOKURA: planet",
+   "url": "https://cdn2.steamgriddb.com/grid/ddd92cc52d714bc48f118728074b7279.jpg",
+   "sgdb_game": 5460830
+  },
+  "04004710276DA000": {
+   "name": "and Roger",
+   "url": "https://cdn2.steamgriddb.com/grid/8fb01d8014689f67f9acdb31adf689b9.jpg",
+   "sgdb_game": 5472890
+  },
+  "040047D020DB2000": {
+   "name": "Puyo Puyo Tetris 2S",
+   "url": "https://cdn2.steamgriddb.com/grid/14bdde95910af0b0a40a69b45b58b4a9.png",
+   "sgdb_game": 5492484
+  },
+  "0400486024DEC000": {
+   "name": "The Legend of Zelda: Ocarina of Time",
+   "url": "https://cdn2.steamgriddb.com/icon/0cd62ce3dc7e5f1648f771916f6ce8eb.png",
+   "sgdb_game": 5532594
+  },
+  "04004890268C0000": {
+   "name": "THE NEW DENPA MEN",
+   "url": "https://cdn2.steamgriddb.com/grid/a53df285c43b2ca317aef4e807f6c46d.png",
+   "sgdb_game": 5455457
+  },
+  "040048B025160000": {
+   "name": "Possessor(s)",
+   "url": "https://cdn2.steamgriddb.com/grid/d39e1179f379337ff663aef4b8a0fd88.jpg",
+   "sgdb_game": 5454390
+  },
+  "040048C027456000": {
+   "name": "Dread Delusion",
+   "url": "https://cdn2.steamgriddb.com/icon/379d0d579830498a6f745b67f172ca33.png",
+   "sgdb_game": 5290958
+  },
+  "04004A1024BD6000": {
+   "name": "MIO: Memories in Orbit",
+   "url": "https://cdn2.steamgriddb.com/grid/8dd217ca7ba94077691ebe15c529391d.png",
+   "sgdb_game": 5455449
+  },
+  "04004BF027BB2000": {
+   "name": "Rugby League 26",
+   "url": "https://cdn2.steamgriddb.com/grid/eb974d73563e5407d6bb479840832cba.png",
+   "sgdb_game": 5495725
+  },
+  "04004CD022304000": {
+   "name": "Little Nightmares III",
+   "url": "https://cdn2.steamgriddb.com/icon/95ba1db891b82e4d4663fc0ffab345c4.png",
+   "sgdb_game": 5423718
+  },
+  "04004D302590A000": {
+   "name": "CRISIS CORE -FINAL FANTASY VII- REUNION",
+   "url": "https://cdn2.steamgriddb.com/icon/fd4a2eb88997b18e788c8e2017685210.png",
+   "sgdb_game": 5352444
+  },
+  "04004E8025EC4000": {
+   "name": "RuneScape: Dragonwilds",
+   "url": "https://cdn2.steamgriddb.com/icon/5feee1d34cec9c997857ddfb0e483115.png",
+   "sgdb_game": 5483723
+  },
+  "04004EA0268B8000": {
+   "name": "Destroy All Humans!",
+   "url": "https://cdn2.steamgriddb.com/icon/4895158a0f7db7824b1eb3a6981a9972.png",
+   "sgdb_game": 5123056
+  },
+  "040050B02954E000": {
+   "name": "Scritchy Scratchy",
+   "url": "https://cdn2.steamgriddb.com/grid/9bc0505111ce738ebe0aadbdbe7fe3d7.jpg",
+   "sgdb_game": 5500324
+  },
+  "040052E01D3DA000": {
+   "name": "Nintendo GameCube - Nintendo Classics",
+   "url": "https://cdn2.steamgriddb.com/icon/1958ecc0f18ef6b4eb68722df94b3b36.png",
+   "sgdb_game": 5483962
+  },
+  "040052F026A52000": {
+   "name": "R-Type Dimensions III",
+   "url": "https://cdn2.steamgriddb.com/icon/6fd223e96a2a3b9f8bd6428b9b0f8094.png",
+   "sgdb_game": 5511903
+  },
+  "0400543027FFC000": {
+   "name": "Graveyard Keeper 2",
+   "url": "https://cdn2.steamgriddb.com/icon/d2e1cc3689a9a1b1b2ce156e1fcf3f87.png",
+   "sgdb_game": 5524099
+  },
+  "040055202608A000": {
+   "name": "Back to the Dawn",
+   "url": "https://cdn2.steamgriddb.com/grid/6dcf7f53d72760ce493d3164039fa61a.png",
+   "sgdb_game": 5301498
+  },
+  "04005550254B8000": {
+   "name": "FATAL FRAME II: Crimson Butterfly REMAKE",
+   "url": "https://cdn2.steamgriddb.com/icon/ff9dc8b1d9d40f18c571e8e1fe168d81.png",
+   "sgdb_game": 5501967
+  },
+  "040057C02159A000": {
+   "name": "Nintendo Switch 2 Welcome Tour",
+   "url": "https://cdn2.steamgriddb.com/grid/f375478aecc203ccdc2e866271d29fe4.png",
+   "sgdb_game": 5484010
+  },
+  "04005870238DA000": {
+   "name": "The Duskbloods",
+   "url": "https://cdn2.steamgriddb.com/icon/53acaecb2cb66285a5663c3046e7f620.png",
+   "sgdb_game": 5483960
+  },
+  "04005A702546E000": {
+   "name": "Metaphor: ReFantazio",
+   "url": "https://cdn2.steamgriddb.com/icon/a780f357b441c97532b3de7fe7c1df37.png",
+   "sgdb_game": 5439691
+  },
+  "04005C902322C000": {
+   "name": "No Sleep For Kaname Date - From AI: THE SOMNIUM FILES",
+   "url": "https://cdn2.steamgriddb.com/grid/2e132778a90be5673abd02569a6cc611.jpg",
+   "sgdb_game": 5484607
+  },
+  "04005CC022C9E000": {
+   "name": "DRAGON QUEST VII Reimagined",
+   "url": "https://cdn2.steamgriddb.com/icon/3edef10bb3c1644206406ff254d0ed20.png",
+   "sgdb_game": 5501986
+  },
+  "04006020233D4000": {
+   "name": "MARVEL Cosmic Invasion",
+   "url": "https://cdn2.steamgriddb.com/icon/82cf46948ca0f531a256e38473c9282f.png",
+   "sgdb_game": 5483322
+  },
+  "0400617024E42000": {
+   "name": "DYNASTY WARRIORS: ORIGINS",
+   "url": "https://cdn2.steamgriddb.com/icon/bcd92d3435659c233fb1539ea1d6a44c.png",
+   "sgdb_game": 5453515
+  },
+  "040062C02722A000": {
+   "name": "Super Meat Boy 3D",
+   "url": "https://cdn2.steamgriddb.com/icon/7be9f234f2dc2b716b263dc3d73822d8.png",
+   "sgdb_game": 5491712
+  },
+  "0400643029154000": {
+   "name": "Dicevaders",
+   "url": "https://cdn2.steamgriddb.com/grid/c502c1f9fe0cf9907f50734201d09a14.jpg",
+   "sgdb_game": 5509573
+  },
+  "040064902843C000": {
+   "name": "Space Warlord Baby Trading Simulator",
+   "url": "https://cdn2.steamgriddb.com/icon/e62717a223112bbe2453fc578368567e.png",
+   "sgdb_game": 5511279
+  },
+  "040065A023ABA000": {
+   "name": "ChromaGun 2: Dye Hard",
+   "url": "https://cdn2.steamgriddb.com/icon/f9c558cb67aa3f697b4bf6e6481e4f0e.png",
+   "sgdb_game": 5454250
+  },
+  "0400668024E94000": {
+   "name": "Squirrel with a Gun",
+   "url": "https://cdn2.steamgriddb.com/grid/8c3346eaa74e997b8af33f4fb023ca3e.png",
+   "sgdb_game": 5341104
+  },
+  "040067A025F2C000": {
+   "name": "Granblue Fantasy Versus: Rising Legendary Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/9a15edfbee45bb3e6f2785dd200012e5.png",
+   "sgdb_game": 5420388
+  },
+  "040069E024F5A000": {
+   "name": "Deadzone: Rogue",
+   "url": "https://cdn2.steamgriddb.com/icon/cd4ec96ab5c4c3556ec1314ef5171dee.png",
+   "sgdb_game": 5465463
+  },
+  "04006B10291EE000": {
+   "name": "Ground Zero Hero",
+   "url": "https://cdn2.steamgriddb.com/grid/b7b2ab9aa9cfd8e2b24e1e2c6bf16ae8.png",
+   "sgdb_game": 5439169
+  },
+  "04006C5025F8A000": {
+   "name": "Digimon Story Time Stranger",
+   "url": "https://cdn2.steamgriddb.com/icon/9c7b1b7f0902b04a7c99152cdc6964cf.png",
+   "sgdb_game": 5479052
+  },
+  "04006CC0223D2000": {
+   "name": "HITMAN World of Assassination - Signature Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/525839b729d6299a45cb653e3d16a849.png",
+   "sgdb_game": 5262141
+  },
+  "04006D1023DB6000": {
+   "name": "Rotwood",
+   "url": "https://cdn2.steamgriddb.com/icon/9c4e4926eeffa13ea65caad11a22e5c2.png",
+   "sgdb_game": 5335247
+  },
+  "04006D2028CDC000": {
+   "name": "Funguys Swarm",
+   "url": "https://cdn2.steamgriddb.com/grid/bad0949a675b87bdb91e5cc9ec5670a7.png",
+   "sgdb_game": 5479667
+  },
+  "040071401FF84000": {
+   "name": "Chillin' by the Fire",
+   "url": "https://cdn2.steamgriddb.com/grid/ef407dee9f130f85c1d8c79761ba4a6d.png",
+   "sgdb_game": 5497706
+  },
+  "040073D025D98000": {
+   "name": "Scott Pilgrim EX",
+   "url": "https://cdn2.steamgriddb.com/icon/3e19f952b2947bc7b7fb03f6e78ad38d.png",
+   "sgdb_game": 5491540
+  },
+  "040074A01BF12000": {
+   "name": "Donkey Kong Bananza",
+   "url": "https://cdn2.steamgriddb.com/icon/81db731a04ca6f6ac860366900faf705.png",
+   "sgdb_game": 5483961
+  },
+  "040076E025B46000": {
+   "name": "Star Trek: Voyager - Across the Unknown",
+   "url": "https://cdn2.steamgriddb.com/icon/6c2a60785d1be4ad1e88e1cc69175b27.png",
+   "sgdb_game": 5499474
+  },
+  "040077201BE50000": {
+   "name": "Kirby Air Riders",
+   "url": "https://cdn2.steamgriddb.com/icon/dfa78bad779b17f017bb6b4a1a6ab305.png",
+   "sgdb_game": 5483963
+  },
+  "040078001CCF6000": {
+   "name": "Street Fighter 6",
+   "url": "https://cdn2.steamgriddb.com/icon/1ac6ffba021b9168d14c06ae8b4916de.png",
+   "sgdb_game": 5352662
+  },
+  "0400786026244000": {
+   "name": "Warhammer Survivors",
+   "url": "https://cdn2.steamgriddb.com/grid/48512a0e8e3f3e78c4bfbbc08f2175bf.png",
+   "sgdb_game": 5507642
+  },
+  "040078A028E6C000": {
+   "name": "Maestro",
+   "url": "https://cdn2.steamgriddb.com/grid/6cf06c7da3333616a4b21c0fd9cf7d19.png",
+   "sgdb_game": 5518724
+  },
+  "040078C026E4C000": {
+   "name": "Disney Epic Mickey: Rebrushed",
+   "url": "https://cdn2.steamgriddb.com/icon/1f7630f64a5f07d5e4dc5b909e92162f.png",
+   "sgdb_game": 5444781
+  },
+  "04007A7024024000": {
+   "name": "Warhammer 40,000: Rogue Trader",
+   "url": "https://cdn2.steamgriddb.com/icon/e769339918b5830adcc93bd724fd6d6f.png",
+   "sgdb_game": 5365537
+  },
+  "04007C6028AA8000": {
+   "name": "Yoshi and the Mysterious Book Demo",
+   "url": "https://cdn2.steamgriddb.com/icon/92af86ac9a5b0b91021a516e3820a067.png",
+   "sgdb_game": 5510100
+  },
+  "04007D1024268000": {
+   "name": "Yakuza Kiwami 2",
+   "url": "https://cdn2.steamgriddb.com/icon/ac6fdf0df9ed3690a41a64f0ea69b289.png",
+   "sgdb_game": 5512074
+  },
+  "04007E00249C2000": {
+   "name": "Skate Story",
+   "url": "https://cdn2.steamgriddb.com/icon/732c87bb4361e47d0c886502a3a01667.png",
+   "sgdb_game": 5334583
+  },
+  "04007FD027432000": {
+   "name": "Ratatan",
+   "url": "https://cdn2.steamgriddb.com/grid/3e5b3c00db5cd07038a1f612efb1ccad.png",
+   "sgdb_game": 5471456
+  },
+  "04007FD027916000": {
+   "name": "Police Simulator: Patrol Officers",
+   "url": "https://cdn2.steamgriddb.com/grid/f586de33bb2e84ddad160ba0e0d00260.jpg",
+   "sgdb_game": 5277327
+  },
+  "040080D0277C6000": {
+   "name": "Haste",
+   "url": "https://cdn2.steamgriddb.com/icon/382cd9dfd0536bc7679eba7c920911a1.png",
+   "sgdb_game": 5437301
+  },
+  "0400813022B32000": {
+   "name": "Fortnite",
+   "url": "https://cdn2.steamgriddb.com/icon/4ba9c4cbc9d4bc70794e3ba598e0ece6.png",
+   "sgdb_game": 36136
+  },
+  "04008150213A2000": {
+   "name": "Assassin's Creed Shadows",
+   "url": "https://cdn2.steamgriddb.com/icon/217012438adbc5b09935791e216348ac.png",
+   "sgdb_game": 5353927
+  },
+  "040081702541E000": {
+   "name": "DYNASTY WARRIORS 3: Complete Edition Remastered",
+   "url": "https://cdn2.steamgriddb.com/icon/ac23632cebdc699c83c976fd021fcd14.png",
+   "sgdb_game": 5503851
+  },
+  "0400817025C2C000": {
+   "name": "The Midnight Walk",
+   "url": "https://cdn2.steamgriddb.com/grid/55ea9ec96f9c6ba9c6891796d9b9c7e2.png",
+   "sgdb_game": 5465977
+  },
+  "040081A0292C2000": {
+   "name": "Quest of Dungeons",
+   "url": "https://cdn2.steamgriddb.com/grid/29e211bb2108e7597fee863b46c4d08f.jpg",
+   "sgdb_game": 3627
+  },
+  "04008210270D4000": {
+   "name": "TCG Card Shop Simulator",
+   "url": "https://cdn2.steamgriddb.com/icon/1eb4622384cfc86f49e6c7afac0ef530.png",
+   "sgdb_game": 5456442
+  },
+  "0400831029682000": {
+   "name": "Jenny LeClue - Detectivu",
+   "url": "https://cdn2.steamgriddb.com/icon/6dce545a567f05bd732da6b229741912.png",
+   "sgdb_game": 5337
+  },
+  "0400878028EB4000": {
+   "name": "Queen's Domain",
+   "url": "https://cdn2.steamgriddb.com/icon/0620239c9952d3ae38aae38315d5759f.png",
+   "sgdb_game": 5409227
+  },
+  "0400886026B2A000": {
+   "name": "to a T",
+   "url": "https://cdn2.steamgriddb.com/grid/84d038aa544a741d6510e6cc560c403c.jpg",
+   "sgdb_game": 5411637
+  },
+  "0400890023806000": {
+   "name": "OCTOPATH TRAVELER 0",
+   "url": "https://cdn2.steamgriddb.com/icon/18ec36fca13a7aff8319d2abed7bea48.png",
+   "sgdb_game": 5497142
+  },
+  "04008980227DC000": {
+   "name": "DRAGON QUEST XI S: Echoes of an Elusive Age - Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/0b9ad296faa8930bfad91f2c8e809cf6.png",
+   "sgdb_game": 5264231
+  },
+  "04008BE0262BC000": {
+   "name": "FINAL FANTASY VII REBIRTH",
+   "url": "https://cdn2.steamgriddb.com/icon/85384631fe6ed619b535371b48125138.png",
+   "sgdb_game": 5336387
+  },
+  "04008C6024BB4000": {
+   "name": "The Elder Scrolls V: Skyrim Anniversary Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/9b919c23d10644f99c0313a41316e90e.png",
+   "sgdb_game": 5293900
+  },
+  "04008D30269A4000": {
+   "name": "SHINOBI: Art of Vengeance",
+   "url": "https://cdn2.steamgriddb.com/icon/bca3531762af8a993c4f60c48fd5e33b.png",
+   "sgdb_game": 5479053
+  },
+  "04008E302412C000": {
+   "name": "Atelier Ryza 3: Alchemist of the End & the Secret Key DX",
+   "url": "https://cdn2.steamgriddb.com/icon/942846d97f7a48f31b6e54f29e281b6b.png",
+   "sgdb_game": 5497592
+  },
+  "040090C026ED0000": {
+   "name": "NBA 2K27",
+   "url": "https://cdn2.steamgriddb.com/grid/ee881d0dfc13beab15eb95d9f2330a30.jpg",
+   "sgdb_game": 5538791
+  },
+  "0400912023308000": {
+   "name": "Goat Simulator 3",
+   "url": "https://cdn2.steamgriddb.com/icon/0d1e0d602ebcba3dec4cff58832c7181.png",
+   "sgdb_game": 5336702
+  },
+  "040091C0232EE000": {
+   "name": "Persona 3 Reload",
+   "url": "https://cdn2.steamgriddb.com/icon/23678bec1cebcf7cab6ea56b2ec203cf.png",
+   "sgdb_game": 5423841
+  },
+  "040091F027876000": {
+   "name": "STAR OCEAN THE SECOND STORY R",
+   "url": "https://cdn2.steamgriddb.com/icon/9377e91beb4b28f3f27a6c7060b8fc2a.png",
+   "sgdb_game": 5409747
+  },
+  "0400921025B32000": {
+   "name": "Sonic Frontiers - Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/35ca20541074b1df74604cf1e228e13f.png",
+   "sgdb_game": 5309245
+  },
+  "04009360204A8000": {
+   "name": "Wo Long: Fallen Dynasty Complete Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/57b46045a900400f25ae6d1dd411ed99.png",
+   "sgdb_game": 5335618
+  },
+  "040093D0233B0000": {
+   "name": "FINAL FANTASY VII REMAKE INTERGRADE",
+   "url": "https://cdn2.steamgriddb.com/icon/6d0f1d0259c9fda9d36fd81469a7bbc3.png",
+   "sgdb_game": 5310669
+  },
+  "0400945028B8C000": {
+   "name": "Montabi",
+   "url": "https://cdn2.steamgriddb.com/grid/af7036a11ea9c3c7e12aa287d84bb720.jpg",
+   "sgdb_game": 5484075
+  },
+  "04009480266D0000": {
+   "name": "Resident Evil 2 Deluxe Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/9a81296481f826ed174c1dd994cf50e4.png",
+   "sgdb_game": 29143
+  },
+  "040094B02455C000": {
+   "name": "MOUSE: P.I. For Hire",
+   "url": "https://cdn2.steamgriddb.com/icon/d0d22c03ae0c31f3017022fd3a4249bf.png",
+   "sgdb_game": 5400121
+  },
+  "04009570209F8000": {
+   "name": "Hogwarts Legacy",
+   "url": "https://cdn2.steamgriddb.com/icon/a9fc9c894b76eea1e36c6b109781af2b.png",
+   "sgdb_game": 5267354
+  },
+  "040097D02412A000": {
+   "name": "Atelier Ryza 2: Lost Legends & the Secret Fairy DX",
+   "url": "https://cdn2.steamgriddb.com/icon/14047aa48652db0c80f855b416ba138a.png",
+   "sgdb_game": 5497591
+  },
+  "0400994022308000": {
+   "name": "Little Nightmares Enhanced Edition - Complete Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/e1810d6a235e1a531ed9ada0db549fbc.png",
+   "sgdb_game": 5493339
+  },
+  "040099F027C2C000": {
+   "name": "Teeto",
+   "url": "https://cdn2.steamgriddb.com/grid/3c21cff34e9d56035cb64c213fa8e55d.png",
+   "sgdb_game": 5441701
+  },
+  "04009A70262D0000": {
+   "name": "Yakuza Kiwami 3 & Dark Ties (Demo Version)",
+   "url": "https://cdn2.steamgriddb.com/icon/caa7fbc279ad180c08d87cf71a260097.png",
+   "sgdb_game": 5503254
+  },
+  "04009B802881A000": {
+   "name": "Mewgenics",
+   "url": "https://cdn2.steamgriddb.com/icon/ef32687535505ca5c5b7447d8e6bb0a4.png",
+   "sgdb_game": 5360523
+  },
+  "04009E10268BA000": {
+   "name": "Destroy All Humans! 2 - Reprobed",
+   "url": "https://cdn2.steamgriddb.com/icon/df281d0a011f72a66deadb7cee8af12f.png",
+   "sgdb_game": 5296764
+  },
+  "0400A02022D2A000": {
+   "name": "Two Point Museum",
+   "url": "https://cdn2.steamgriddb.com/icon/4de13e504962c8f81055bf09363b79de.png",
+   "sgdb_game": 5461508
+  },
+  "0400A15024D62000": {
+   "name": "Turok: Origins",
+   "url": "https://cdn2.steamgriddb.com/grid/ad712e2ba6f4d75365373ea584590624.png",
+   "sgdb_game": 5473444
+  },
+  "0400A1B0289D4000": {
+   "name": "Touhou Koumakyou: New Classic - the Embodiment of Scarlet Devil",
+   "url": "https://cdn2.steamgriddb.com/icon/22f9bcb0a0a208a76b2dc24d67dd0a16.png",
+   "sgdb_game": 5532574
+  },
+  "0400A2B02653E000": {
+   "name": "Starship Troopers: Ultimate Bug War!",
+   "url": "https://cdn2.steamgriddb.com/icon/41a2d5062acab20838e301bc7e540b1d.png",
+   "sgdb_game": 5521177
+  },
+  "0400A3A01EE4C000": {
+   "name": "Pokémon Pokopia",
+   "url": "https://cdn2.steamgriddb.com/icon/e28b0634b57fb089c0490311948ca4a9.png",
+   "sgdb_game": 5503567
+  },
+  "0400A3A0269E6000": {
+   "name": "Citadelum",
+   "url": "https://cdn2.steamgriddb.com/grid/912526215a73ba6309f8a64596880515.jpg",
+   "sgdb_game": 5441536
+  },
+  "0400A58024718000": {
+   "name": "Resident Evil Requiem",
+   "url": "https://cdn2.steamgriddb.com/icon/0d0d068cff0db92dc94e24996c9e4b94.png",
+   "sgdb_game": 5491566
+  },
+  "0400A5A025B6A000": {
+   "name": "OCTOPATH TRAVELER II",
+   "url": "https://cdn2.steamgriddb.com/icon/8e7e22dad3557b815916a9cb97707f07.png",
+   "sgdb_game": 5352228
+  },
+  "0400A6C026276000": {
+   "name": "Teenage Mutant Ninja Turtles Arcade: Wrath of The Mutants - Ninja Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/059c785616af216d5106c8ace3894470.png",
+   "sgdb_game": 5447839
+  },
+  "0400A71024D16000": {
+   "name": "The Elder Scrolls IV: Oblivion Remastered",
+   "url": "https://cdn2.steamgriddb.com/icon/c14c140722861cca078f7afe5e2f9c85.png",
+   "sgdb_game": 5486082
+  },
+  "0400A79026B36000": {
+   "name": "Kena: Bridge of Spirits",
+   "url": "https://cdn2.steamgriddb.com/icon/8d1f1aac0dd8a76b49e8bbdda0c7c98c.png",
+   "sgdb_game": 5267310
+  },
+  "0400A940233E0000": {
+   "name": "Daemon X Machina: Titanic Scion",
+   "url": "https://cdn2.steamgriddb.com/icon/1fbd02197ce9924616402392d2554987.png",
+   "sgdb_game": 5484820
+  },
+  "0400A95026AB2000": {
+   "name": "Alien: Rogue Incursion Evolved Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/f23ee2c88e5ad2bdbc5cf3476c8dd7eb.png",
+   "sgdb_game": 5488155
+  },
+  "0400AC8025344000": {
+   "name": "Total Chaos",
+   "url": "https://cdn2.steamgriddb.com/icon/11dc5453a55bd010f0c71d1f0918a5ea.png",
+   "sgdb_game": 5449667
+  },
+  "0400ACB025A42000": {
+   "name": "Ira",
+   "url": "https://cdn2.steamgriddb.com/grid/4597478691c771c88b1ca1ec07ea2396.png",
+   "sgdb_game": 5281721
+  },
+  "0400B08022A58000": {
+   "name": "KINGDOM HEARTS -HD 1.5+2.5 ReMIX-",
+   "url": "https://cdn2.steamgriddb.com/icon/07493d1f6b6c63c6ac60302219359967.png",
+   "sgdb_game": 5250081
+  },
+  "0400B1E02610C000": {
+   "name": "People of Note",
+   "url": "https://cdn2.steamgriddb.com/grid/e54665100c4b480a42161b622b4a230a.jpg",
+   "sgdb_game": 5503222
+  },
+  "0400B20025A70000": {
+   "name": "Tomb Raider I-III Remastered",
+   "url": "https://cdn2.steamgriddb.com/icon/90346acb4e6366175e42ee24795726f8.png",
+   "sgdb_game": 5429212
+  },
+  "0400B21022266000": {
+   "name": "WWE 2K25 Standard Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/7840431e46f0ebd7b683f39c36d78436.png",
+   "sgdb_game": 5474936
+  },
+  "0400B3E026C64000": {
+   "name": "SnowRunner",
+   "url": "https://cdn2.steamgriddb.com/icon/1ca6bbff2b5e3a0f442e1407ec1c1654.png",
+   "sgdb_game": 5255130
+  },
+  "0400B3F0259BE000": {
+   "name": "FATAL FURY: City of the Wolves - STANDARD Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/85f04cdc828abe14dbe23e584cefabcf.png",
+   "sgdb_game": 5447399
+  },
+  "0400B4B021792000": {
+   "name": "REANIMAL",
+   "url": "https://cdn2.steamgriddb.com/icon/c239bdd5ce103ef119d568fadfdf9404.png",
+   "sgdb_game": 5462324
+  },
+  "0400B5B029444000": {
+   "name": "Meccha Chameleon",
+   "url": "https://cdn2.steamgriddb.com/icon/2d35494f83db560b9c05c4910a397028.png",
+   "sgdb_game": 5529099
+  },
+  "0400B6302227E000": {
+   "name": "The Adventures of Elliot: The Millennium Tales",
+   "url": "https://cdn2.steamgriddb.com/icon/b6459f0025a79ec8efb69d93c6816d07.png",
+   "sgdb_game": 5510270
+  },
+  "0400B6E025CE8000": {
+   "name": "Big Walk",
+   "url": "https://cdn2.steamgriddb.com/icon/c7dfe95373bfe4bca2cfa4a1f7383fda.png",
+   "sgdb_game": 5438463
+  },
+  "0400B78024F7E000": {
+   "name": "Resident Evil Village Gold Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/5f4c2dede5fc1a802639c02223cb952c.png",
+   "sgdb_game": 5262085
+  },
+  "0400B7A02454A000": {
+   "name": "Fallout 4: Anniversary Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/420ee74ebc0cdf8c41079485d18e9384.png",
+   "sgdb_game": 7993
+  },
+  "0400B960276E2000": {
+   "name": "Yu-Gi-Oh! TAG FORCE GX",
+   "url": "https://cdn2.steamgriddb.com/grid/bd67fa39aac7fc2560a200326c876514.png",
+   "sgdb_game": 5548947
+  },
+  "0400B99028910000": {
+   "name": "TOEM 2",
+   "url": "https://cdn2.steamgriddb.com/grid/9da27d84585e697df2605f6d1a06f02f.jpg",
+   "sgdb_game": 5473158
+  },
+  "0400BA202340A000": {
+   "name": "Daemon X Machina: Titanic Scion",
+   "url": "https://cdn2.steamgriddb.com/icon/1fbd02197ce9924616402392d2554987.png",
+   "sgdb_game": 5484820
+  },
+  "0400BBB020FF0000": {
+   "name": "Yakuza 0 Director's Cut",
+   "url": "https://cdn2.steamgriddb.com/icon/1b4af63695e8f35c6e73c3047698e3c9.png",
+   "sgdb_game": 5488551
+  },
+  "0400BBE027A0A000": {
+   "name": "One Move Away",
+   "url": "https://cdn2.steamgriddb.com/icon/8260cf6579a63f72ae8ec35bf74e632e.png",
+   "sgdb_game": 5473449
+  },
+  "0400BDE024DF4000": {
+   "name": "ShapeHero Factory",
+   "url": "https://cdn2.steamgriddb.com/icon/8b4c78eac40944896eaef63ea53a908e.png",
+   "sgdb_game": 5401630
+  },
+  "0400BE102811E000": {
+   "name": "Sea of Stars",
+   "url": "https://cdn2.steamgriddb.com/icon/d41b4390a6d81dfcb5046e382e9bd80b.png",
+   "sgdb_game": 5257712
+  },
+  "0400BE70262DA000": {
+   "name": "System Shock",
+   "url": "https://cdn2.steamgriddb.com/icon/e4307462005493743b6178622c588208.png",
+   "sgdb_game": 12164
+  },
+  "0400C11023B5A000": {
+   "name": "Indiana Jones and the Great Circle",
+   "url": "https://cdn2.steamgriddb.com/icon/845e511017cac015863e945fe4c2967c.png",
+   "sgdb_game": 5441885
+  },
+  "0400C18025BBA000": {
+   "name": "Blue Prince",
+   "url": "https://cdn2.steamgriddb.com/icon/ee07f6700c7e7033642a704a16287b2d.png",
+   "sgdb_game": 5282856
+  },
+  "0400C22026E48000": {
+   "name": "Escape the Backrooms",
+   "url": "https://cdn2.steamgriddb.com/grid/645f71206a4a32f9d7d721d0628e29a2.png",
+   "sgdb_game": 5386096
+  },
+  "0400C3F00006E000": {
+   "name": "Mario Kart World",
+   "url": "https://cdn2.steamgriddb.com/icon/8602a68b90c0e388754208b9bfaa2363.png",
+   "sgdb_game": 5483943
+  },
+  "0400C3F0272EE000": {
+   "name": "Starsand Island",
+   "url": "https://cdn2.steamgriddb.com/icon/cada9a4b3ac10525225f0bb3186406a1.png",
+   "sgdb_game": 5451215
+  },
+  "0400C420250EC000": {
+   "name": "The Touryst Deluxe",
+   "url": "https://cdn2.steamgriddb.com/grid/094c958aad4278d476f1ed1e73f6f964.jpg",
+   "sgdb_game": 5305803
+  },
+  "0400C45026074000": {
+   "name": "Tombi! 2: The Evil Swine Return Special Edition",
+   "url": "https://cdn2.steamgriddb.com/grid/b23e39fbc9251657364e4c20e65b7e87.png",
+   "sgdb_game": 5507781
+  },
+  "0400C470236D6000": {
+   "name": "FULL METAL SCHOOLGIRL",
+   "url": "https://cdn2.steamgriddb.com/icon/ea89cd9a8de80449db514a2a52632515.png",
+   "sgdb_game": 5493961
+  },
+  "0400C76024710000": {
+   "name": "PRAGMATA",
+   "url": "https://cdn2.steamgriddb.com/icon/0b8fb2585cbd33976511f41030dd75e3.png",
+   "sgdb_game": 5454532
+  },
+  "0400C800247DE000": {
+   "name": "SpongeBob SquarePants: Titans of the Tide",
+   "url": "https://cdn2.steamgriddb.com/icon/b4e1eccc678c687930bf789c16d15967.png",
+   "sgdb_game": 5497356
+  },
+  "0400C94027292000": {
+   "name": "Observer: System Redux",
+   "url": "https://cdn2.steamgriddb.com/icon/a8628a6b26c2302a4a6828b39d5b9f86.png",
+   "sgdb_game": 5266044
+  },
+  "0400CA20271D6000": {
+   "name": "Jurassic World Evolution 2: Complete Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/ce0d3d8872efe653b0c766a9be2a922d.png",
+   "sgdb_game": 5287379
+  },
+  "0400CA40208C8000": {
+   "name": "Split Fiction",
+   "url": "https://cdn2.steamgriddb.com/icon/ddffd490d40ec585d5f5b446a0b3424a.png",
+   "sgdb_game": 5473464
+  },
+  "0400CA40208C9001": {
+   "name": "Split Fiction",
+   "url": "https://cdn2.steamgriddb.com/icon/ddffd490d40ec585d5f5b446a0b3424a.png",
+   "sgdb_game": 5473464
+  },
+  "0400CB3024EF8000": {
+   "name": "Suika Game Planet",
+   "url": "https://cdn2.steamgriddb.com/grid/fed7e624cbcef03edce83bf5608e537c.png",
+   "sgdb_game": 5510271
+  },
+  "0400CE7022F4A000": {
+   "name": "RAIDOU Remastered: The Mystery of the Soulless Army",
+   "url": "https://cdn2.steamgriddb.com/grid/8fb7917048856dadf6276e4e1b5c1a84.jpg",
+   "sgdb_game": 5483319
+  },
+  "0400CF702589C000": {
+   "name": "Warframe",
+   "url": "https://cdn2.steamgriddb.com/icon/7322c71e66f72ebb1cf52d9a6abc90ca.png",
+   "sgdb_game": 2506
+  },
+  "0400D030265D8000": {
+   "name": "BOKURA",
+   "url": "https://cdn2.steamgriddb.com/icon/f11266828b1858ddc683919bf8deee9a.png",
+   "sgdb_game": 5302739
+  },
+  "0400D09026580000": {
+   "name": "AFL 26",
+   "url": "https://cdn2.steamgriddb.com/grid/f8e991160185d27cb11f9638dac3fa76.jpg",
+   "sgdb_game": 5488036
+  },
+  "0400D1C026514000": {
+   "name": "Tombi! Special Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/88ebdc73abec27aede121f0171d5842d.png",
+   "sgdb_game": 5336799
+  },
+  "0400D1E0237CC000": {
+   "name": "Monster Hunter Stories 3: Twisted Reflection",
+   "url": "https://cdn2.steamgriddb.com/icon/603a6301fb0aeea0b24dcf72f0dcde18.png",
+   "sgdb_game": 5497561
+  },
+  "0400D28024076000": {
+   "name": "Call of the Elder Gods",
+   "url": "https://cdn2.steamgriddb.com/grid/40da67f21d6b9b2356f9344415bcd50a.jpg",
+   "sgdb_game": 5491628
+  },
+  "0400D4201C6EA000": {
+   "name": "Mario Tennis Fever",
+   "url": "https://cdn2.steamgriddb.com/icon/3138886b20d6766816465b170deb098b.png",
+   "sgdb_game": 5504602
+  },
+  "0400D68027B20000": {
+   "name": "DayZ: Cool Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/53ac2d01e41ff949c11c916309ae17b7.png",
+   "sgdb_game": 2280
+  },
+  "0400D940263CC000": {
+   "name": "Onimusha: Way of the Sword",
+   "url": "https://cdn2.steamgriddb.com/icon/ed42d077bec6f12d01c0eb9a68be637b.png",
+   "sgdb_game": 5473482
+  },
+  "0400D97028CB6000": {
+   "name": "Heartworm",
+   "url": "https://cdn2.steamgriddb.com/grid/5bc1aa828f11d69b8c3f0e61aa801e43.png",
+   "sgdb_game": 5258174
+  },
+  "0400D9E01D3E6000": {
+   "name": "Pokémon Winds",
+   "url": "https://cdn2.steamgriddb.com/grid/54ba38920af9587a94faa023dfa95955.png",
+   "sgdb_game": 5520373
+  },
+  "0400DA10226BE000": {
+   "name": "NBA 2K26",
+   "url": "https://cdn2.steamgriddb.com/icon/99cc801d75cb19bfa907b4bc028dba4f.png",
+   "sgdb_game": 5494876
+  },
+  "0400DAE0251C8000": {
+   "name": "LEGO Voyagers",
+   "url": "https://cdn2.steamgriddb.com/icon/a17bf70c7cfc521094e5cf8bc02bc04a.png",
+   "sgdb_game": 5491531
+  },
+  "0400DAE0251C9001": {
+   "name": "LEGO Voyagers",
+   "url": "https://cdn2.steamgriddb.com/icon/a17bf70c7cfc521094e5cf8bc02bc04a.png",
+   "sgdb_game": 5491531
+  },
+  "0400DCC0223F8000": {
+   "name": "No Sleep For Kaname Date - From AI: THE SOMNIUM FILES",
+   "url": "https://cdn2.steamgriddb.com/grid/2e132778a90be5673abd02569a6cc611.jpg",
+   "sgdb_game": 5484607
+  },
+  "0400DD30263FE000": {
+   "name": "Kernel Hearts",
+   "url": "https://cdn2.steamgriddb.com/grid/bdc9506e8ced481792c04fca186b9c34.jpg",
+   "sgdb_game": 5466661
+  },
+  "0400DDB020648000": {
+   "name": "Cyberpunk 2077: Ultimate Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/6374e3ddc6da019b8d63d803662c47e7.png",
+   "sgdb_game": 5209422
+  },
+  "0400DDF027542000": {
+   "name": "Amanda the Adventurer 3",
+   "url": "https://cdn2.steamgriddb.com/grid/d54d414b602df70c0ae3b39fdce57ea6.png",
+   "sgdb_game": 5486597
+  },
+  "0400DE0026B22000": {
+   "name": "Hell is Us",
+   "url": "https://cdn2.steamgriddb.com/icon/ca89b7b947afed6fd6ad6b5e9f205805.png",
+   "sgdb_game": 5324189
+  },
+  "0400DF60259F6000": {
+   "name": "METAL GEAR SOLID 4: Guns of the Patriots - Master Collection Version",
+   "url": "https://cdn2.steamgriddb.com/icon/2ec8a05725aebca751493eb7f49e9e7f.png",
+   "sgdb_game": 5517797
+  },
+  "0400DF9028C54000": {
+   "name": "Deck of Haunts",
+   "url": "https://cdn2.steamgriddb.com/grid/1d425c146f88dd55080c06b6e862ea72.png",
+   "sgdb_game": 5466720
+  },
+  "0400DFF0273FA000": {
+   "name": "Coffee Talk Tokyo",
+   "url": "https://cdn2.steamgriddb.com/grid/508fa30bb0ad7a4fb2e6a66b52033475.png",
+   "sgdb_game": 5463038
+  },
+  "0400E070279B6000": {
+   "name": "Amnesia: Rebirth",
+   "url": "https://cdn2.steamgriddb.com/icon/f19ddb426d07d2620e12aa23cac56410.png",
+   "sgdb_game": 5257345
+  },
+  "0400E140216D4000": {
+   "name": "SONIC X SHADOW GENERATIONS",
+   "url": "https://cdn2.steamgriddb.com/icon/a646a8ba0917365383de28e5ed481469.png",
+   "sgdb_game": 5442858
+  },
+  "0400E23021102000": {
+   "name": "WILD HEARTS S",
+   "url": "https://cdn2.steamgriddb.com/grid/52a676d28a85985bcffdd6492192e33b.png",
+   "sgdb_game": 5511684
+  },
+  "0400E2D028F7C000": {
+   "name": "Tormented Souls 2",
+   "url": "https://cdn2.steamgriddb.com/icon/2163f971d73a8c928a7d739fb2732ee1.png",
+   "sgdb_game": 5423939
+  },
+  "0400E3A024B4E000": {
+   "name": "Fading Echo",
+   "url": "https://cdn2.steamgriddb.com/grid/cf8cca763ad259df2b8140c4986aec84.png",
+   "sgdb_game": 5491629
+  },
+  "0400E440238BC000": {
+   "name": "Dear me, I was ...",
+   "url": "https://cdn2.steamgriddb.com/grid/1ab5c566b8a1b7ce1b900bb5d9588741.jpg",
+   "sgdb_game": 5494033
+  },
+  "0400E5502720C000": {
+   "name": "Truxton Extreme",
+   "url": "https://cdn2.steamgriddb.com/icon/953dbbef8a26d8cafeacdbebc3c21c29.png",
+   "sgdb_game": 5491653
+  },
+  "0400E570261A2000": {
+   "name": "South of Midnight Weaver's Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/7f062e654e2ef93d0f5a8dda92877138.png",
+   "sgdb_game": 5407516
+  },
+  "0400E7D0239DC000": {
+   "name": "Mortal Kombat: Legacy Kollection",
+   "url": "https://cdn2.steamgriddb.com/icon/c8855bc410d4a55fe772bfdde075c24a.png",
+   "sgdb_game": 5491285
+  },
+  "0400E88025B1A000": {
+   "name": "Star Fox",
+   "url": "https://cdn2.steamgriddb.com/icon/754ef5c0c09b2069d4ee3f0268197ecd.png",
+   "sgdb_game": 5529362
+  },
+  "0400E8D0265C8000": {
+   "name": "FINAL FANTASY X/X-2 HD Remaster",
+   "url": "https://cdn2.steamgriddb.com/icon/c7b1de046b9638de896f64adc484c647.png",
+   "sgdb_game": 7167
+  },
+  "0400E98025DE4000": {
+   "name": "OPUS: Prism Peak",
+   "url": "https://cdn2.steamgriddb.com/grid/aa9f0d48f093e49f87581dddf1c83ca3.jpg",
+   "sgdb_game": 5324397
+  },
+  "0400EBD0236AE000": {
+   "name": "Tony Hawk's Pro Skater 3 + 4",
+   "url": "https://cdn2.steamgriddb.com/icon/e4be781a01edd471d58ebf6fa3585796.png",
+   "sgdb_game": 5480866
+  },
+  "0400EE2024E98000": {
+   "name": "Denshattack!",
+   "url": "https://cdn2.steamgriddb.com/icon/10f7ef0077aa26b7a043bc58a78040b0.png",
+   "sgdb_game": 5499301
+  },
+  "0400EEA025554000": {
+   "name": "LEGO Harry Potter Collection",
+   "url": "https://cdn2.steamgriddb.com/icon/aec3ed7338bbf69ca9e72e7faaf5fe36.png",
+   "sgdb_game": 5308137
+  },
+  "0400EF4026274000": {
+   "name": "Snoopy & The Great Mystery Club",
+   "url": "https://cdn2.steamgriddb.com/icon/cd18be2b2e13470c7e3b44e501d3f623.png",
+   "sgdb_game": 5498614
+  },
+  "0400F0E024D46000": {
+   "name": "Lies of P: Complete Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/072278eca9b171854f70564769acae45.png",
+   "sgdb_game": 5285351
+  },
+  "0400F12025CCC000": {
+   "name": "Shadow Tactics: Blades of the Shogun - Aiko's Choice",
+   "url": "https://cdn2.steamgriddb.com/icon/185fb97cf60d29cc561a42817ec2f3b9.png",
+   "sgdb_game": 5280707
+  },
+  "0400F22025F02000": {
+   "name": "The Last Salvage Squad",
+   "url": "https://cdn2.steamgriddb.com/grid/db6ee3297c414964cb41bcb6384a9167.jpg",
+   "sgdb_game": 5485783
+  },
+  "0400F23024BDE000": {
+   "name": "Carmageddon: Rogue Shift",
+   "url": "https://cdn2.steamgriddb.com/grid/e729e53a32ea4e946f4dd14fd232187a.jpg",
+   "sgdb_game": 5519388
+  },
+  "0400F410224DE000": {
+   "name": "Middle-earth: Shadow of War: Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/6e7d63d4c467dd6145a0626cb68f4ec4.png",
+   "sgdb_game": 6995
+  },
+  "0400F470274C2000": {
+   "name": "Stray",
+   "url": "https://cdn2.steamgriddb.com/icon/f7bbcc6ef14fd79655f09efb14b99316.png",
+   "sgdb_game": 5262075
+  },
+  "0400F5802371E000": {
+   "name": "ELDEN RING Tarnished Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/3167c17045d6c735db44c699b444f532.png",
+   "sgdb_game": 5277816
+  },
+  "0400F65024266000": {
+   "name": "Yakuza Kiwami",
+   "url": "https://cdn2.steamgriddb.com/icon/2affe3646f5f011855973dc2b45a3335.png",
+   "sgdb_game": 5512075
+  },
+  "0400F6D020A02000": {
+   "name": "Suikoden I&II HD Remaster for Nintendo Switch 2: Gate Rune and Dunan Unification Wars",
+   "url": "https://cdn2.steamgriddb.com/icon/b020093543b13787fd4455fb26784845.png",
+   "sgdb_game": 5352802
+  },
+  "0400F7D0239A6000": {
+   "name": "PowerWash Simulator 2",
+   "url": "https://cdn2.steamgriddb.com/icon/89dbca68be341e03b5fb59777b93067e.png",
+   "sgdb_game": 5481931
+  },
+  "0400F7F02353E000": {
+   "name": "Goodnight Universe",
+   "url": "https://cdn2.steamgriddb.com/grid/3043f1a852706cd700d37bef6aa77073.png",
+   "sgdb_game": 5508413
+  },
+  "0400F8A0275F0000": {
+   "name": "The Legend of Heroes: Trails from Zero",
+   "url": "https://cdn2.steamgriddb.com/icon/8110eaeb55d8f5ed7aa18842dc0ceacd.png",
+   "sgdb_game": 5288482
+  },
+  "0400F8D026D6A000": {
+   "name": "Demeo x Dungeons & Dragons: Battlemarked",
+   "url": "https://cdn2.steamgriddb.com/grid/d34e9520cb82668542e3a8b297c538ee.jpg",
+   "sgdb_game": 5491093
+  },
+  "0400F97023C72000": {
+   "name": "Disgaea 7 Complete",
+   "url": "https://cdn2.steamgriddb.com/icon/331715f2fe524ed42a3f58aabf89f08e.png",
+   "sgdb_game": 5348606
+  },
+  "0400F9A021142000": {
+   "name": "DRAGON BALL: Sparking! ZERO",
+   "url": "https://cdn2.steamgriddb.com/icon/ed37651d022bdb1b1fa2c564834c0c50.png",
+   "sgdb_game": 5438464
+  },
+  "0400F9E025342000": {
+   "name": "Bubsy 4D",
+   "url": "https://cdn2.steamgriddb.com/icon/843abb981a1f35e08f16419beeef89af.png",
+   "sgdb_game": 5499305
+  },
+  "0400FA6025B54000": {
+   "name": "METAL GEAR SOLID: Peace Walker - Master Collection Version",
+   "url": "https://cdn2.steamgriddb.com/icon/a24876934453c3bb20440a39a6eb3927.png",
+   "sgdb_game": 5517798
+  },
+  "0400FDB022B7C000": {
+   "name": "Tomb Raider: Definitive Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/64782004a614800c94d4d4e9843aff34.png",
+   "sgdb_game": 5480095
+  },
+  "0400FED0215A4000": {
+   "name": "Star Wars Outlaws Gold Edition",
+   "url": "https://cdn2.steamgriddb.com/icon/42649f0dcf0e847882d130633b861862.png",
+   "sgdb_game": 5442017
+  },
+  "0400FF8023CF0000": {
+   "name": "They are Billions",
+   "url": "https://cdn2.steamgriddb.com/grid/cbe2274a06434d12638993ee11eec48d.png",
+   "sgdb_game": 18611
+  },
+  "0400FF902081C000": {
+   "name": "Apex Legends",
+   "url": "https://cdn2.steamgriddb.com/icon/7c792a8279211dece3b4df04719c818a.png",
+   "sgdb_game": 35001
+  }
+ }
+}

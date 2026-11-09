@@ -75,17 +75,31 @@ def parse_titles(wikitext):
 def clean_name(name):
     name = re.sub(r"[™®©]", "", name)
     name = name.replace("–", "-").replace("—", "-")
+    name = name.replace("’", "'").replace("‘", "'").replace("　", " ")
     return re.sub(r"\s+", " ", name).strip()
 
 
+# Suffixes a store name adds to the game's own name: editions, demos, remasters, bundles.
+SUFFIXES = [
+    r"\s*\+\s*.*$",
+    r"\s*[-:]?\s*Nintendo Switch 2 Edition.*$",
+    r"\s*[(\[]?\s*(Demo Version|Demo|DEMO|Trial|Free Trial|Trial Version)\s*[)\]]?$",
+    r"\s*[-:]?\s*(The\s+)?([\w'.]+\s+)?(Edition|Cut|Bundle)$",
+    r"\s*[-:]?\s*(HD\s+)?(Remaster(ed)?|Remake|Deluxe|Complete|Definitive)$",
+]
+
+
 def search_names(name):
-    """The name, then without edition or demo suffixes."""
+    """The name, then the name with store suffixes removed one by one."""
     names = [clean_name(name)]
-    stripped = re.sub(r"\s*[-:]?\s*(Nintendo Switch 2 Edition.*|DEMO|Demo|Trial|Free Trial)$",
-                      "", names[0]).strip()
-    stripped = re.sub(r"\s*\+\s*.*Nintendo Switch 2 Edition.*$", "", stripped).strip()
-    if stripped and stripped not in names:
-        names.append(stripped)
+    current = names[0]
+    for _ in range(3):
+        for pattern in SUFFIXES:
+            stripped = re.sub(pattern, "", current).strip(" -:")
+            if stripped and stripped != current and len(stripped) >= 3:
+                current = stripped
+                if current not in names:
+                    names.append(current)
     return names
 
 
@@ -123,8 +137,11 @@ def find_game(name, key):
 
 
 def first_icon(game_id, key):
+    # Icons first; many new games only have box art (grids): square ones, then any.
     for query in ("/icons/game/%d?dimensions=256,512&mimes=image/png" % game_id,
-                  "/icons/game/%d?mimes=image/png" % game_id):
+                  "/icons/game/%d?mimes=image/png" % game_id,
+                  "/grids/game/%d?dimensions=512x512,1024x1024&mimes=image/png,image/jpeg" % game_id,
+                  "/grids/game/%d?mimes=image/png,image/jpeg&types=static" % game_id):
         body = get(SGDB + query, key)
         for item in json.loads(body or b"{}").get("data") or []:
             if item.get("url"):
@@ -133,6 +150,9 @@ def first_icon(game_id, key):
 
 
 def main():
+    # Names include Japanese and other scripts; a Windows console defaults to cp1252.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     key = os.environ.get("SGDB_API_KEY", "").strip()
     if not key:
         sys.exit("Set SGDB_API_KEY to a SteamGridDB API key")
