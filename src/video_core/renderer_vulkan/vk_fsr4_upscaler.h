@@ -89,6 +89,11 @@ private:
     bool CreateContext(VkExtent2D render_size, VkExtent2D upscale_size, bool depth_inverted,
                        bool hdr);
     void DestroyContext();
+    /// Reads back the last output sample. Returns true when FSR 4 has drawn black (or NaN) over a
+    /// varied picture long enough that it should give way to FSR 3.1.
+    bool CheckOutputHealth();
+    /// Swaps the provider for FSR 3.1 after a black FSR 4 output. False when there is none.
+    bool SwitchToFsr3();
 
     const Device& device;
     Scheduler& scheduler;
@@ -102,6 +107,15 @@ private:
     vk::ImageView output_view;
     vk::Sampler point_sampler;
     std::atomic<bool> failed{};
+
+    // FSR 4 output check: a few input and output pixels read back every so often.
+    vk::Buffer health_buffer;
+    u64 health_tick{};
+    bool health_pending{};
+    u32 health_frame{};
+    u32 good_checks{};
+    u32 black_checks{};
+    bool health_done{}; ///< FSR 4 drew a picture: stop checking.
 };
 
 } // namespace Vulkan

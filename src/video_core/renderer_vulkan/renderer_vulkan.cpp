@@ -338,12 +338,13 @@ void RendererVulkan::Report() const {
     LOG_INFO(Render_Vulkan, "Driver: {} {}", device.GetVendorName(), GetDriverVersion(device));
     LOG_INFO(Render_Vulkan, "Device: {}", device_info.model);
     LOG_INFO(Render_Vulkan, "Vulkan: {}", api_version);
-    // Conservative mode caps this at 6 GiB plus 1 GiB per resolution step (7.00 at 1X): say so,
-    // or the number reads like other programs holding the rest of the card.
+    // Conservative mode caps this at 6 GiB plus 1 GiB per resolution step (7.00 at 1X) on larger
+    // cards: say so when it did, or the number reads like other programs holding the rest of the
+    // card. Smaller cards show what the driver offers, less up to 1 GiB kept for the system.
     LOG_INFO(Render_Vulkan, "Available VRAM: {:.2f} GiB{}", available_vram,
-             Settings::values.vram_usage_mode.GetValue() == Settings::VramUsageMode::Aggressive
-                 ? ""
-                 : " (VRAM Usage Mode: Conservative, capped at 6 GiB + 1 GiB per resolution step)");
+             device.IsVramCapped()
+                 ? " (VRAM Usage Mode: Conservative, capped at 6 GiB + 1 GiB per resolution step)"
+                 : " (what the driver offers, less up to 1 GiB kept for the system)");
     if (VideoCommon::RenderTrace::Enabled()) {
         LOG_INFO(Render_Vulkan, "Render trace enabled: interval=600 frames, log_filter={}",
                  Settings::values.log_filter.GetValue());

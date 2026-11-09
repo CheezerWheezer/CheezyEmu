@@ -2104,6 +2104,7 @@ void Device::CollectPhysicalMemoryInfo() {
             // Account for resolution scaling in memory limits
             const size_t normal_memory = 6_GiB;
             const size_t scaler_memory = 1_GiB * Settings::values.resolution_info.ScaleUp(1);
+            vram_capped = device_access_memory > normal_memory + scaler_memory;
             device_access_memory = std::min<u64>(device_access_memory, normal_memory + scaler_memory);
         }
     }

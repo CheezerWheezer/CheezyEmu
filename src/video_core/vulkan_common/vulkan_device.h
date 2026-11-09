@@ -1138,6 +1138,11 @@ FN_MAX_LIMIT_LIST
         return supported_extensions;
     }
 
+    /// Whether Conservative VRAM mode lowered GetDeviceLocalMemory below what the card has.
+    bool IsVramCapped() const {
+        return vram_capped;
+    }
+
     u64 GetDeviceLocalMemory() const {
         return device_access_memory;
     }
@@ -1465,6 +1470,7 @@ private:
     bool supports_conditional_barriers{};      ///< Allows barriers in conditional control flow.
     mutable std::atomic<size_t> custom_border_color_samplers_used{};
     u64 device_access_memory{};                ///< Total size of device local memory in bytes.
+    bool vram_capped{}; ///< Conservative VRAM mode capped device_access_memory.
     u32 sets_per_pool{};                       ///< Sets per Description Pool
     NvidiaArchitecture nvidia_arch{NvidiaArchitecture::Arch_AmpereOrNewer};
 

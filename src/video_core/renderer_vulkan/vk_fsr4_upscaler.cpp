@@ -34,8 +34,10 @@ namespace Vulkan {
 
 namespace {
 constexpr VkFormat OUTPUT_FORMAT = VK_FORMAT_R16G16B16A16_SFLOAT;
-constexpr VkImageUsageFlags OUTPUT_USAGE =
-    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+constexpr VkImageUsageFlags OUTPUT_USAGE = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                                           VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
 } // Anonymous namespace
 
 #ifdef _WIN32
@@ -43,6 +45,19 @@ constexpr VkImageUsageFlags OUTPUT_USAGE =
 namespace {
 
 using Api = FfxRuntime::Api;
+
+// Set when FSR 4 drew black over a real picture: FSR 3.1 from then on, for this session.
+std::atomic<bool> fsr4_output_black{};
+
+// The output check: an 8x8 grid of input and output pixels, 16 bytes a pixel.
+constexpr u32 HEALTH_GRID = 8;
+constexpr u32 HEALTH_SAMPLES = HEALTH_GRID * HEALTH_GRID;
+constexpr VkDeviceSize HEALTH_STRIDE = 16;
+constexpr VkDeviceSize HEALTH_OUTPUT_OFFSET = HEALTH_SAMPLES * HEALTH_STRIDE;
+constexpr VkDeviceSize HEALTH_SIZE = 2 * HEALTH_OUTPUT_OFFSET;
+constexpr u32 HEALTH_INTERVAL = 30;   ///< Frames between samples.
+constexpr u32 HEALTH_BLACK_LIMIT = 8; ///< Black samples in a row (about 4 to 8 s) to switch.
+constexpr u32 HEALTH_GOOD_LIMIT = 4;  ///< Good samples to stop checking.
 
 VkDeviceContext DeviceContext(const Device& device) {
     return VkDeviceContext{
@@ -67,7 +82,8 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
         const char* const value = std::getenv("EDEN_NX2_FSR_VERSION");
         return value && value[0] == '3';
     }();
-    const bool want_fsr4 = Settings::values.amd_fsr4.GetValue() && !force_fsr3;
+    const bool black = fsr4_output_black.load();
+    const bool want_fsr4 = Settings::values.amd_fsr4.GetValue() && !force_fsr3 && !black;
     VkDeviceContext vk_context = DeviceContext(device);
     u64 count = 0;
     ffxQueryDescGetVersions versions{};
@@ -108,6 +124,7 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
     if (fsr3) {
         LOG_INFO(Render_Vulkan, "AMD FSR: using FSR {} ({})", fsr3->name,
                  force_fsr3                                 ? "forced by EDEN_NX2_FSR_VERSION=3"
+                 : black                                    ? "FSR 4 drew a black picture"
                  : !Settings::values.amd_fsr4.GetValue()    ? "FSR 4 is turned off"
                                                             : "no FSR 4 for this GPU or driver");
     }
@@ -182,7 +199,7 @@ bool Fsr4Upscaler::IsAvailable(const Device& device) {
 }
 
 bool Fsr4Upscaler::IsFsr4(const Device& device) {
-    return IsAvailable(device) && Probe(device).fsr4;
+    return IsAvailable(device) && Probe(device).fsr4 && !fsr4_output_black.load();
 }
 
 Fsr4Upscaler::Fsr4Upscaler(const Device& device_, Scheduler& scheduler_,
@@ -344,8 +361,80 @@ void Fsr4Upscaler::CreateOutput(VkExtent2D upscale_size) {
     });
 }
 
+bool Fsr4Upscaler::CheckOutputHealth() {
+    if (!health_pending || !scheduler.IsFree(health_tick)) {
+        return false;
+    }
+    health_pending = false;
+    health_buffer.Invalidate();
+    const std::span<const u8> data = health_buffer.Mapped();
+    // The input is a real picture when its pixels differ (not a fade, a loading or a flat screen).
+    u32 distinct_inputs = 0;
+    for (u32 i = 1; i < HEALTH_SAMPLES; ++i) {
+        if (std::memcmp(&data[i * HEALTH_STRIDE], &data[0], HEALTH_STRIDE) != 0) {
+            ++distinct_inputs;
+        }
+    }
+    // The output is RGBA16F: black or NaN in every sample is a broken FSR 4.
+    u32 bad_outputs = 0;
+    for (u32 i = 0; i < HEALTH_SAMPLES; ++i) {
+        std::array<u16, 4> texel;
+        std::memcpy(texel.data(), &data[HEALTH_OUTPUT_OFFSET + i * HEALTH_STRIDE], sizeof(texel));
+        bool nan = false;
+        bool black = true;
+        for (u32 channel = 0; channel < 3; ++channel) {
+            const u16 bits = texel[channel];
+            nan |= (bits & 0x7c00) == 0x7c00;
+            black &= (bits & 0x7fff) == 0;
+        }
+        if (nan || black) {
+            ++bad_outputs;
+        }
+    }
+    if (distinct_inputs < HEALTH_SAMPLES / 4) {
+        return false; // nothing to judge by
+    }
+    if (bad_outputs < HEALTH_SAMPLES) {
+        black_checks = 0;
+        if (++good_checks >= HEALTH_GOOD_LIMIT) {
+            health_done = true;
+            health_buffer = vk::Buffer{};
+            LOG_INFO(Render_Vulkan, "AMD FSR {}: output check passed", context->provider.name);
+        }
+        return false;
+    }
+    ++black_checks;
+    LOG_WARNING(Render_Vulkan, "AMD FSR {}: black output over a game picture ({} of {})",
+                context->provider.name, black_checks, HEALTH_BLACK_LIMIT);
+    return black_checks >= HEALTH_BLACK_LIMIT;
+}
+
+bool Fsr4Upscaler::SwitchToFsr3() {
+    fsr4_output_black = true;
+    scheduler.Finish();
+    DestroyContext();
+    health_buffer = vk::Buffer{};
+    health_done = true;
+    const auto provider = FindFsr4(*context->api, device);
+    if (!provider || provider->name.starts_with('4')) {
+        LOG_ERROR(Render_Vulkan, "AMD FSR 4 drew a black picture and no FSR 3.1 is offered; "
+                                 "using the game's upscaler");
+        return false;
+    }
+    LOG_ERROR(Render_Vulkan, "AMD FSR 4 drew a black picture on this GPU or driver: switched to "
+                             "FSR {}. Updating the graphics driver may fix FSR 4.",
+              provider->name);
+    context->provider = *provider;
+    render_extent = {}; // the next frame creates the FSR 3.1 context
+    return true;
+}
+
 bool Fsr4Upscaler::Upscale(const Inputs& in) {
     if (failed) {
+        return false;
+    }
+    if (!health_done && CheckOutputHealth() && !SwitchToFsr3()) {
+        failed = true;
         return false;
     }
     const bool extent_changed = !output_image || in.render_size.width != render_extent.width ||
@@ -370,8 +459,32 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
     }
     const bool reset = in.reset || options_changed;
 
+    // FSR 4 only: check its output now and then until it has drawn a picture.
+    VkBuffer health = VK_NULL_HANDLE;
+    if (!health_done && !health_pending && context->provider.name.starts_with('4') &&
+        ++health_frame % HEALTH_INTERVAL == 0) {
+        if (!health_buffer) {
+            health_buffer = memory_allocator.CreateBuffer(
+                VkBufferCreateInfo{
+                    .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                    .pNext = nullptr,
+                    .flags = 0,
+                    .size = HEALTH_SIZE,
+                    .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+                    .queueFamilyIndexCount = 0,
+                    .pQueueFamilyIndices = nullptr,
+                },
+                MemoryAllocator::MemoryUsage::Download);
+            std::memset(health_buffer.Mapped().data(), 0, HEALTH_SIZE);
+        }
+        health = *health_buffer;
+        health_pending = true;
+        health_tick = scheduler.CurrentTick();
+    }
+
     scheduler.RequestOutsideRenderPassOperationContext();
-    scheduler.Record([this, in, reset, output = *output_image](vk::CommandBuffer cmdbuf) {
+    scheduler.Record([this, in, reset, health, output = *output_image](vk::CommandBuffer cmdbuf) {
         constexpr VkAccessFlags WRITES =
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
             VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -448,6 +561,58 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
         cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, output_written, {},
                                to_general);
+        if (health != VK_NULL_HANDLE) {
+            // An 8x8 grid of input and output pixels, for CheckOutputHealth.
+            const VkMemoryBarrier to_transfer{
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .pNext = nullptr,
+                .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | WRITES,
+                .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            };
+            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                   VK_PIPELINE_STAGE_TRANSFER_BIT, 0, to_transfer);
+            const auto grid = [](u32 mip, u32 layer, VkExtent2D size, VkDeviceSize base) {
+                std::array<VkBufferImageCopy, HEALTH_SAMPLES> regions{};
+                const VkImageSubresourceLayers layers{
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .mipLevel = mip,
+                    .baseArrayLayer = layer,
+                    .layerCount = 1,
+                };
+                for (u32 y = 0; y < HEALTH_GRID; ++y) {
+                    for (u32 x = 0; x < HEALTH_GRID; ++x) {
+                        const u32 i = y * HEALTH_GRID + x;
+                        regions[i] = VkBufferImageCopy{
+                            .bufferOffset = base + i * HEALTH_STRIDE,
+                            .bufferRowLength = 0,
+                            .bufferImageHeight = 0,
+                            .imageSubresource = layers,
+                            .imageOffset{
+                                static_cast<s32>((2 * x + 1) * size.width / (2 * HEALTH_GRID)),
+                                static_cast<s32>((2 * y + 1) * size.height / (2 * HEALTH_GRID)),
+                                0},
+                            .imageExtent{1, 1, 1},
+                        };
+                    }
+                }
+                return regions;
+            };
+            const auto input_regions = grid(in.color.range.baseMipLevel,
+                                            in.color.range.baseArrayLayer, in.render_size, 0);
+            const auto output_regions = grid(0, 0, in.upscale_size, HEALTH_OUTPUT_OFFSET);
+            cmdbuf.CopyImageToBuffer(in.color.image, VK_IMAGE_LAYOUT_GENERAL, health,
+                                     input_regions);
+            cmdbuf.CopyImageToBuffer(output, VK_IMAGE_LAYOUT_GENERAL, health, output_regions);
+            const VkMemoryBarrier to_host{
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .pNext = nullptr,
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+            };
+            cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                   VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                   0, to_host);
+        }
         if (result != FFX_API_RETURN_OK && !failed.exchange(true)) {
             LOG_ERROR(Render_Vulkan, "FSR 4: dispatch failed ({}), using FSR 3.1 from the next "
                                      "frame",
