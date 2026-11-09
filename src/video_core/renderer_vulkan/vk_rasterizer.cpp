@@ -2570,6 +2570,38 @@ void RasterizerVulkan::TracePendingCpuWrites(bool compute, std::span<const u64> 
 }
 
 // Outside EGLANTINE_STREAMLINE: Linux and macOS builds call it too.
+std::pair<const char*, const char*> RasterizerVulkan::UpscalerIdleReason() const {
+#ifndef _WIN32
+    return {"WINDOWS ONLY", "AMD FSR runs on Windows only: AMD ships its FSR runtime for Windows. "
+                            "On Linux and macOS the game uses its own upscaler."};
+#elif defined(EGLANTINE_STREAMLINE)
+    constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
+    if (program_id != ocarina_program) {
+        return {"OOT ONLY", "AMD FSR replaces the game's upscaler in The Legend of Zelda: Ocarina "
+                            "of Time only, for now. Other games use their own."};
+    }
+    if (!Settings::values.amd_fsr4.GetValue() && !AmdFrameGen::Requested() &&
+        !Settings::values.nvidia_dlss.GetValue()) {
+        return {"OFF", "AMD FSR is turned off (Graphics > AMD FSR & Frame Generation)."};
+    }
+    if (Settings::values.resolution_setup.GetValue() != Settings::ResolutionSetup::Res1X) {
+        return {"RES 1X", "Set Resolution to 1X: FSR only runs at the game's own resolution."};
+    }
+    if (!OcarinaDlssEnabled()) {
+        return {"UNAVAILABLE", "AMD FSR couldn't start on this GPU or driver (see the log for "
+                               "\"AMD FSR\"). The game uses its own upscaler."};
+    }
+    const char* const reason = oot_idle_reason.load(std::memory_order_relaxed);
+    if (reason != nullptr && std::string_view{reason} == "unexpected upscale images") {
+        return {"RES 1X", "The game's images aren't at its own resolution: set Resolution to 1X."};
+    }
+    return {"WAITING", "Waiting for gameplay: menus, cutscenes and loading screens are drawn "
+                       "without FSR."};
+#else
+    return {"UNAVAILABLE", "This build was made without AMD FSR."};
+#endif
+}
+
 std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() const {
 #ifndef _WIN32
     return {"WINDOWS ONLY", "AMD frame generation runs on Windows only. On Linux and macOS, pick "
@@ -3411,6 +3443,12 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
             oot_4k_guest_present = VK_NULL_HANDLE;
         }
         oot_dlss_frame = render_trace_frame;
+        oot_upscaled_frames.fetch_add(1, std::memory_order_relaxed);
+        const auto packed = [](VkExtent2D e) {
+            return (u64{e.width & 0xffff} << 16) | (e.height & 0xffff);
+        };
+        oot_upscale_sizes.store((packed(render_extent) << 32) | packed(output_extent),
+                                std::memory_order_relaxed);
         oot_scene_view = target.Handle(Shader::TextureType::Color2D);
         oot_scene_image = target.ImageHandle();
         oot_scene_frame = render_trace_frame;

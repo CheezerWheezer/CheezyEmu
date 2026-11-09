@@ -57,6 +57,8 @@ public:
     [[nodiscard]] static bool IsAvailable(const Device& device);
     /// Whether the upscaler IsAvailable picked is FSR 4 (else FSR 3.1 from AMD's runtime).
     [[nodiscard]] static bool IsFsr4(const Device& device);
+    /// The version of the last upscaler started ("4.1.2", "3.1.6"), empty before one starts.
+    [[nodiscard]] static std::string RunningVersion();
 
     /// Throws vk::Exception when FSR 4 can't start on this device.
     explicit Fsr4Upscaler(const Device& device, Scheduler& scheduler,

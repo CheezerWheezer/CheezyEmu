@@ -39,7 +39,19 @@ constexpr VkImageUsageFlags OUTPUT_USAGE = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE
                                            VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
+std::mutex running_version_mutex;
+std::string running_version; ///< For the status bar.
+
+[[maybe_unused]] void SetRunningVersion(std::string version) {
+    std::scoped_lock lock{running_version_mutex};
+    running_version = std::move(version);
+}
 } // Anonymous namespace
+
+std::string Fsr4Upscaler::RunningVersion() {
+    std::scoped_lock lock{running_version_mutex};
+    return running_version;
+}
 
 #ifdef _WIN32
 
@@ -302,6 +314,8 @@ bool Fsr4Upscaler::CreateContext(VkExtent2D render_size, VkExtent2D upscale_size
                                                 : context->provider.name.c_str(),
                            render_size.width, render_size.height, upscale_size.width,
                            upscale_size.height));
+    SetRunningVersion(provider.versionName ? std::string{provider.versionName}
+                                           : context->provider.name);
     LOG_INFO(Render_Vulkan, "AMD FSR: upscaler {} running, {}x{} -> {}x{} ({})",
              provider.versionName ? provider.versionName : context->provider.name.c_str(),
              render_size.width, render_size.height, upscale_size.width, upscale_size.height,

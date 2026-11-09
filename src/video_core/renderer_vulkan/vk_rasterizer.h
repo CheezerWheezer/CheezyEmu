@@ -262,6 +262,17 @@ private:
 public:
     /// AMD FSR frame generation is on but not generating: a short tag and the full reason.
     [[nodiscard]] std::pair<const char*, const char*> AmdFrameGenIdleReason() const;
+    /// Ocarina's FSR isn't upscaling: a short tag and the full reason.
+    [[nodiscard]] std::pair<const char*, const char*> UpscalerIdleReason() const;
+    /// Frames Ocarina's FSR upscaled so far.
+    [[nodiscard]] u64 UpscaledFrames() const noexcept {
+        return oot_upscaled_frames.load(std::memory_order_relaxed);
+    }
+    /// The last upscaled frame's sizes: render width, height, output width, height (16 bits
+    /// each, from the top).
+    [[nodiscard]] u64 UpscaleSizes() const noexcept {
+        return oot_upscale_sizes.load(std::memory_order_relaxed);
+    }
 
 private:
     /// EDEN_NX2_PENDING_WRITE_TRACE: logs bound buffer ranges with collected, unapplied CPU writes.
@@ -334,6 +345,8 @@ private:
     const char* oot_fallback_reason{};
     /// The last reason Ocarina's FSR path declined a frame, for the status bar (UI thread).
     std::atomic<const char*> oot_idle_reason{};
+    std::atomic<u64> oot_upscaled_frames{};
+    std::atomic<u64> oot_upscale_sizes{};
     u32 oot_fallback_repeats{};
     std::optional<u64> oot_dlss_frame;
     std::optional<u64> oot_4k_scene_frame;
