@@ -365,6 +365,7 @@ void ConfigureGraphics::Setup(const ConfigurationShared::Builder& builder) {
     const std::array fsr_fg_ids{
         Settings::values.amd_fsr4.Id(),
         Settings::values.oot_fsr_preset.Id(),
+        Settings::values.oot_docked_output.Id(),
         Settings::values.oot_anti_aliasing.Id(),
         Settings::values.frame_gen.Id(),
         Settings::values.frame_gen_type.Id(),

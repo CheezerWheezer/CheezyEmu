@@ -3356,12 +3356,17 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
     // that image (Performance 1920x1080, Ultra Performance 1280x720): FSR still renders from the
     // scene, writes 4K, and the 1440p image gets its downscaled copy as before.
     const bool target_1440p = target.size.width == 2560 && target.size.height == 1440;
-    const bool preset_scene_4k = upscale_4k && OcarinaFsrPresetActive() && target_1440p &&
-                                 extent.width <= target.size.width &&
-                                 extent.height <= target.size.height && !same_size;
-    const bool four_k = upscale_4k && target_1440p && (same_size || preset_scene_4k);
+    // "Ocarina docked output: 1440p": FSR writes the game's own 1440p image, in place, as in
+    // handheld, and no 4K image is made (lighter on the GPU).
+    const bool output_1440p = Settings::values.oot_docked_output.GetValue() ==
+                              Settings::OotDockedOutput::Output1440p;
+    const bool scene_fits = extent.width <= target.size.width && extent.height <= target.size.height;
+    const bool preset_scene_4k = upscale_4k && !output_1440p && OcarinaFsrPresetActive() &&
+                                 target_1440p && scene_fits && !same_size;
+    const bool four_k =
+        upscale_4k && !output_1440p && target_1440p && (same_size || preset_scene_4k);
     const bool valid_extents = upscale_4k
-        ? (same_size || preset_scene_4k)
+        ? (output_1440p ? target_1440p && scene_fits : (same_size || preset_scene_4k))
         : (target.size.width == extent.width * 4 / 3 &&
            target.size.height == extent.height * 4 / 3) ||
               // An FSR preset: a smaller scene, upscaled by another ratio.

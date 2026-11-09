@@ -172,6 +172,20 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     default:
         return;
     }
+    // Docked with 1440p output: the scene is that fraction of 1440p instead of 4K (two thirds of
+    // the scale; the game's docked base is 3840 wide). Native AA becomes the game's own 2560x1440,
+    // inside its clamp. The game draws no less than 1280x720 docked, so Ultra Performance stays
+    // at 1280x720 like Performance.
+    const bool docked_1440p =
+        Settings::IsDockedMode() &&
+        Settings::values.oot_docked_output.GetValue() == Settings::OotDockedOutput::Output1440p;
+    if (docked_1440p) {
+        const f32 scale = std::bit_cast<f32>(u32{scale_bits} << 16) * (2.0f / 3.0f);
+        // Rounded down: rounded up, Native AA drew 2565x1443, more than the 1440p image FSR
+        // writes, and the FSR path turned it down.
+        scale_bits = static_cast<u16>(std::bit_cast<u32>(scale) >> 16);
+        skip_clamp = false;
+    }
     const size_t header = sizeof(Loader::NSOHeader);
     const size_t branch_at = header + MAX_RESOLUTION_RECORDS[0].module_offset;
     const size_t scale_at = header + OCARINA_SCALE_OFFSET;
@@ -208,8 +222,9 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     for (size_t i = 0; i < 4; ++i) {
         out[scale_at + i] = static_cast<u8>(movz >> (8 * i));
     }
-    LOG_INFO(Loader, "    - Ocarina of Time FSR preset {}: 3D render scale {:.4f}", preset_name,
-             std::bit_cast<f32>(u32{scale_bits} << 16));
+    LOG_INFO(Loader, "    - Ocarina of Time FSR preset {}: 3D render scale {:.4f}{}", preset_name,
+             std::bit_cast<f32>(u32{scale_bits} << 16),
+             docked_1440p ? " (docked, 1440p output)" : "");
 }
 
 constexpr std::array BUILTIN_PATCHES{

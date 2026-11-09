@@ -201,6 +201,13 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "game's own), Balanced 2250x1266, Performance 1920x1080, Ultra Performance 1280x720.\n"
               "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
               "Resolution's fixed size. Takes effect when the game starts."));
+    INSERT(Settings, oot_docked_output, tr("Ocarina of Time docked output:"),
+           tr("Docked only. 4K: FSR upscales the 3D scene to 3840x2160 (sharpest, heaviest).\n"
+              "1440p: FSR writes the game's own 2560x1440 image instead and no 4K image is made, "
+              "which is lighter on the GPU. FSR presets then size the scene against 1440p: Native "
+              "AA about 2550x1434, Quality 1710x961, Balanced 1500x843, Performance and Ultra "
+              "Performance 1280x720 (the smallest the game draws docked).\nTakes effect when the "
+              "game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),
@@ -643,6 +650,11 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           {
                               PAIR(OotAntiAliasing, Game, tr("Game")),
                               PAIR(OotAntiAliasing, NoSharpening, tr("No sharpening")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::OotDockedOutput>::Index(),
+                          {
+                              PAIR(OotDockedOutput, Output4k, tr("4K")),
+                              PAIR(OotDockedOutput, Output1440p, tr("1440p (lighter)")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::OotFsrPreset>::Index(),
                           {

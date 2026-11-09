@@ -66,6 +66,7 @@ SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(OotAntiAliasing, false);
 SWITCHABLE(OotFsrPreset, false);
+SWITCHABLE(OotDockedOutput, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
 SWITCHABLE(AstcRecompression, true);
@@ -438,6 +439,10 @@ struct Values {
     // dynamic resolution path, patched at load) and FSR upscales it. Native leaves it alone.
     SwitchableSetting<OotFsrPreset> oot_fsr_preset{linkage, OotFsrPreset::Native, "oot_fsr_preset",
                                                    Category::Renderer};
+    // Ocarina of Time docked: FSR writes 4K (the default), or 1440p, the game's own docked image,
+    // which costs less. FSR presets size the scene against that output.
+    SwitchableSetting<OotDockedOutput> oot_docked_output{linkage, OotDockedOutput::Output4k,
+                                                         "oot_docked_output", Category::Renderer};
 
     SwitchableSetting<std::string> post_shader_chain{linkage,
                                                      std::string(),
