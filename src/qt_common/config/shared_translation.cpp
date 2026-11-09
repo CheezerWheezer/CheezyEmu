@@ -209,7 +209,9 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "1440p: FSR writes the game's own 2560x1440 image instead and no 4K image is made, "
               "which is lighter on the GPU. The FSR preset renders a fraction of the output you "
               "pick here, so 4K renders more for the same preset (Performance: 1920x1080 for 4K, "
-              "1280x720 for 1440p).\nTakes effect when the game starts."));
+              "1280x720 for 1440p).\nApplies with an FSR preset, or Native with the Max Resolution "
+              "add-on: Native without it keeps the game's own 1080p scene and 1440p image.\nTakes "
+              "effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),
