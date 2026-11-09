@@ -40,7 +40,9 @@ typedef struct Emulator {
             Common::FS::enumName##CacheDir                                                         \
     }
 
-static constexpr std::array<Emulator, 4> legacy_emus = {
+static constexpr std::array<Emulator, 5> legacy_emus = {
+    // CheezyEmu up to build 10, Lichii, Eglantine, Eden and Fritchii all keep their data here.
+    STRUCT_EMU(QT_TR_NOOP("Eden / Lichii / earlier CheezyEmu"), EdenLegacy),
     STRUCT_EMU(QT_TR_NOOP("Citron"), Citron),
     STRUCT_EMU(QT_TR_NOOP("Sudachi"), Sudachi),
     STRUCT_EMU(QT_TR_NOOP("Suyu"), Suyu),

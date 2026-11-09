@@ -8,7 +8,11 @@
 
 // yuzu data directories
 
-#define EDEN_DIR "eden"
+// CheezyEmu's own data directory (%APPDATA%\cheezyemu, ~/.config/cheezyemu ...), so Eden, Lichii and
+// Fritchii (which share "eden") don't overwrite its settings. The first start offers to import
+// the "eden" one (EDENLEGACY_DIR).
+#define EDEN_DIR "cheezyemu"
+#define EDENLEGACY_DIR "eden"
 #define PORTABLE_DIR "user"
 
 // Sub-directories contained within a yuzu data directory

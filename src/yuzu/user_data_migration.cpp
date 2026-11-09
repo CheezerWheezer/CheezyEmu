@@ -55,7 +55,7 @@ void UserDataMigrator::ShowMigrationPrompt(QMainWindow* main_window) {
     migration_prompt.addBox(name);
 
     BUTTON(QCheckBox, clear_shaders, QObject::tr("Clear Shader Cache"), MigrationTooltipClearShader,
-           true)
+           false)
 
 #define RADIO(name, text, tooltip, checkState, strategy)                                           \
     BUTTON(QRadioButton, name, text, tooltip, checkState)                                          \

@@ -55,6 +55,11 @@ enum EmuPath {
     SuyuConfigDir,
     SuyuCacheDir,
 
+    // Eden's directory, shared with Lichii, Eglantine and Fritchii (CheezyEmu used it until build 11)
+    EdenLegacyDir,
+    EdenLegacyConfigDir,
+    EdenLegacyCacheDir,
+
     // used exclusively for save data linking
     RyujinxDir,
 };

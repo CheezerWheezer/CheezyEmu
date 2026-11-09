@@ -10,6 +10,12 @@ upscaling, AMD frame generation, and the community's AMD performance work.
 
 How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.
 
+- **CheezyEmu has its own data folder**: `%APPDATA%\cheezyemu` on Windows, and `cheezyemu`
+  under `~/.config`, `~/.local/share` and `~/.cache` on Linux. Eden, Lichii and Fritchii all share
+  the `eden` folder, so their settings overwrote each other. The first start offers to import the
+  old folder: "Keep Old Data" copies it (saves, settings, keys, mods and saved shaders), "Clear Old
+  Data" moves it, "Link Old Directory" keeps sharing it. Saved shaders are kept unless you tick
+  "Clear Shader Cache". (GitHub issue #1)
 - **FSR and frame generation work again in docked mode with an FSR preset picked.** The presets
   were made for handheld (1080p): docked (4K output) they gave the wrong sizes (Native AA rendered
   a full 4K scene) and below Quality the scene no longer fit the 1440p to 4K path, so FSR and frame
@@ -164,7 +170,7 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
     **10-18 minutes on every boot to about 30 seconds**. A saved shader takes 0.2-0.4 ms
     instead of 2.5-5 ms (often seconds at boot).
   - Works for **every game**, one file per game:
-    `%APPDATA%\eden\cache\shader\<title id>\vulkan_binaries.fork-v54.bin`
+    `%APPDATA%\cheezyemu\cache\shader\<title id>\vulkan_binaries.fork-v54.bin`
   - On by default. Setting: *Graphics > Advanced > Save compiled shaders*. It is skipped on
     NVIDIA (its driver already caches) and on drivers without `VK_KHR_pipeline_binary`.
   - After a driver update the old file is replaced, not kept. Removing the game's pipeline
@@ -228,7 +234,7 @@ the main changes are:
 ## Setup
 
 1. Extract the whole archive and run `cheezyemu.exe` (keys, firmware and games are not included).
-2. Your existing saves, settings and caches in `%APPDATA%\eden` are used as they are.
+2. Your existing saves, settings and caches in `%APPDATA%\cheezyemu` are used as they are.
 
 ### Shader packs
 
@@ -236,7 +242,7 @@ Shader packs work the same way as before; now they work no matter which GPU they
 
 1. Close CheezyEmu.
 2. Copy the pack's files into the game's shader folder, for Ocarina of Time:
-   `%APPDATA%\eden\cache\shader\0400486024dec000\`
+   `%APPDATA%\cheezyemu\cache\shader\0400486024dec000\`
    - `vulkan.fork-v54.bin` (the shaders)
    - `vulkan_used.fork-v54.bin` (which ones the game uses first), if the pack has it
 3. Start the game. Shaders compile once on your PC and are saved; later boots load them.

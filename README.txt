@@ -20,7 +20,7 @@ Help, bug reports and new builds: the CheezyEmu Discord, https://discord.gg/vEK4
 Some options have no button in the settings yet. They live in a small text file:
 
   - nx2_switches.txt next to cheezyemu.exe, or
-  - %APPDATA%\eden\nx2_switches.txt
+  - %APPDATA%\cheezyemu\nx2_switches.txt
     (paste that into the File Explorer address bar). This one is kept when you update CheezyEmu
     and wins over the one next to cheezyemu.exe, so put your own changes here.
 
@@ -51,7 +51,7 @@ else's saved shaders: with it, those stutters never happen.
 Where shaders are kept
   Each game has its own folder. For Ocarina of Time:
 
-    %APPDATA%\eden\cache\shader\0400486024dec000\
+    %APPDATA%\cheezyemu\cache\shader\0400486024dec000\
 
     vulkan.fork-v54.bin            The shaders themselves (the pack)
     vulkan_used.fork-v54.bin       Which shaders the game used lately; these are built at boot
@@ -115,7 +115,7 @@ Which FSR you get:
   - FSR 3.1: every other GPU (older Radeon, NVIDIA, Intel), or with the FSR 4 option off while
     frame generation is on.
 
-The log (%APPDATA%\eden\log\eden_log.txt) says which one runs:
+The log (%APPDATA%\cheezyemu\log\eden_log.txt) says which one runs:
     AMD FSR: upscaler 4.x.x running   (FSR 4)
     AMD FSR: upscaler 3.1.x running   (FSR 3.1)
 
@@ -210,7 +210,7 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
 
   - Frame generation or FSR doesn't seem to work: look in the log for "AMD FSR: upscaler ...
     running" and "AMD frame generation: generating frames". Send the log
-    (%APPDATA%\eden\log\eden_log.txt) with your report.
+    (%APPDATA%\cheezyemu\log\eden_log.txt) with your report.
   - Crash soon after starting or while loading a save, with 16 GB of RAM or less (the log
     shows "error 1455" or images "over the memory budget"): the PC ran out of memory. Build 9
     uses much less of it at boot. If it still happens: make the page file bigger (System >
