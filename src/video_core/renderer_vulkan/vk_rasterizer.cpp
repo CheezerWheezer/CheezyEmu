@@ -3199,12 +3199,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         ? same_size
         : target.size.width == extent.width * 4 / 3 &&
             target.size.height == extent.height * 4 / 3;
-    // An FSR preset renders the scene (colour and depth) smaller; the target stays full size.
-    const bool scene_scaled =
-        Settings::values.resolution_info.scene_only_width != 0 && color.IsRescaled();
     if (!valid_extents || !color.BackingImage() || !target.BackingImage() ||
-        (color.IsRescaled() && !scene_scaled) || target.IsRescaled() ||
-        depth.IsRescaled() != color.IsRescaled() ||
+        color.IsRescaled() || target.IsRescaled() ||
         color.Samples() != VK_SAMPLE_COUNT_1_BIT || target.Samples() != VK_SAMPLE_COUNT_1_BIT ||
         color.range != VideoCommon::SubresourceRange{} || target.range != VideoCommon::SubresourceRange{} ||
         color.format != PixelFormat::E5B9G9R9_FLOAT || target.format != PixelFormat::B10G11R11_FLOAT ||
@@ -3255,14 +3251,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
             const char* const value = std::getenv("EDEN_NX2_AMD_FG_HUD_MASK");
             return !value || value[0] != '0';
         }();
-        // FSR renders from the scene's real size with a preset (larger for Native AA).
-        const auto& resolution = Settings::values.resolution_info;
-        const VkExtent2D render_extent =
-            scene_scaled ? VkExtent2D{resolution.ScaleUp(extent.width),
-                                      resolution.ScaleUp(extent.height)}
-                         : extent;
         const bool recorded = oot_live_dlss->Record(color_view, depth.DepthView(), target_view,
-                                                   render_extent, output_extent, target_extent, oot_motion.current,
+                                                   extent, output_extent, target_extent, oot_motion.current,
                                                    oot_motion.previous, meshes, depth.ImageHandle(),
                                                    render_trace_frame);
         if (!recorded) {

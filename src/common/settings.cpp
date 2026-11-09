@@ -47,7 +47,6 @@ SETTING(u16, false);
 SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(OotAntiAliasing, false);
-SWITCHABLE(OotFsrPreset, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
 SWITCHABLE(AstcRecompression, true);
@@ -396,52 +395,6 @@ void UpdateRescalingInfo() {
     const auto setup = values.resolution_setup.GetValue();
     auto& info = values.resolution_info;
     TranslateResolutionInfo(setup, info);
-    info.scene_only_width = 0;
-    info.scene_only_height = 0;
-    // Ocarina of Time's FSR presets: its 1080p path renders the 3D scene at 1440x810 and FSR
-    // upscales it to 1920x1080. A preset renders that scene smaller still; FSR upscales the rest.
-    constexpr u64 ocarina = 0x0400486024DEC000ULL;
-    const auto preset = values.oot_fsr_preset.GetValue();
-    if (GetCurrentProgramID() == ocarina && setup == ResolutionSetup::Res1X &&
-        preset != OotFsrPreset::Native && values.amd_fsr4.GetValue()) {
-        // Sixteenths of the game's 1440x810 scene, close to AMD's ratios to 1920x1080.
-        u32 sixteenths = 16;
-        const char* name = "";
-        switch (preset) {
-        case OotFsrPreset::NativeAa:
-            sixteenths = 21; // 1890x1063, 1.02x
-            name = "Native AA";
-            break;
-        case OotFsrPreset::Quality:
-            sixteenths = 14; // 1260x708, 1.52x
-            name = "Quality";
-            break;
-        case OotFsrPreset::Balanced:
-            sixteenths = 12; // 1080x608, 1.78x
-            name = "Balanced";
-            break;
-        case OotFsrPreset::Performance:
-            sixteenths = 11; // 990x557, 1.94x
-            name = "Performance";
-            break;
-        case OotFsrPreset::UltraPerformance:
-            sixteenths = 8; // 720x405, 2.67x
-            name = "Ultra Performance";
-            break;
-        default:
-            break;
-        }
-        info.up_scale = sixteenths;
-        info.down_shift = 4;
-        info.downscale = sixteenths < 16;
-        info.up_factor = static_cast<f32>(info.up_scale) / (1U << info.down_shift);
-        info.down_factor = static_cast<f32>(1U << info.down_shift) / info.up_scale;
-        info.active = true;
-        info.scene_only_width = 1440;
-        info.scene_only_height = 810;
-        LOG_INFO(Config, "Ocarina of Time FSR preset {}: the 3D scene renders at {}x{}", name,
-                 info.ScaleUp(1440u), info.ScaleUp(810u));
-    }
 }
 
 u32 FrameGenMultiplier() {

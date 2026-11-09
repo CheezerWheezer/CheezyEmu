@@ -33,10 +33,6 @@ struct ResolutionScalingInfo {
     f32 down_factor{1.0f};
     bool active{};
     bool downscale{};
-    /// Only images of this size scale (Ocarina of Time's 3D scene with an FSR preset); the rest,
-    /// the HUD and the output among them, stay at their own size. 0 x 0: every image may scale.
-    u32 scene_only_width{};
-    u32 scene_only_height{};
 
     s32 ScaleUp(s32 value) const {
         if (value == 0) {
@@ -69,7 +65,6 @@ SETTING(u16, false);
 SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(OotAntiAliasing, false);
-SWITCHABLE(OotFsrPreset, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
 SWITCHABLE(AstcRecompression, true);
@@ -438,10 +433,6 @@ struct Values {
     // pass, or the tonemapped image as the game renders it (video_core/oot_network.h).
     SwitchableSetting<OotAntiAliasing> oot_anti_aliasing{linkage, OotAntiAliasing::Game,
                                                          "oot_anti_aliasing", Category::Renderer};
-    // Ocarina of Time with AMD FSR: render the 3D scene at another size and let FSR upscale it to
-    // 1080p, as AMD's modes (Native AA ~1.0x ... Ultra Performance ~2.7x). Resolution 1X.
-    SwitchableSetting<OotFsrPreset> oot_fsr_preset{linkage, OotFsrPreset::Native, "oot_fsr_preset",
-                                                   Category::Renderer};
 
     SwitchableSetting<std::string> post_shader_chain{linkage,
                                                      std::string(),
