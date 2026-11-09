@@ -2565,7 +2565,7 @@ void RasterizerVulkan::TracePendingCpuWrites(bool compute, std::span<const u64> 
     });
 }
 
-#ifdef EGLANTINE_STREAMLINE
+// Outside EGLANTINE_STREAMLINE: Linux and macOS builds call it too.
 std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() const {
 #ifndef _WIN32
     return {"WINDOWS ONLY", "AMD frame generation runs on Windows only. On Linux and macOS, pick "
@@ -2602,6 +2602,7 @@ std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() co
 #endif
 }
 
+#ifdef EGLANTINE_STREAMLINE
 bool RasterizerVulkan::OcarinaDlssEnabled() const {
     constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
     return program_id == ocarina_program && !oot_live_failed &&
