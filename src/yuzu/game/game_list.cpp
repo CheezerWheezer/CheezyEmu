@@ -829,7 +829,8 @@ GameListPlaceholder::GameListPlaceholder(MainWindow* parent) : QWidget{parent} {
     image = new QLabel;
     text = new QLabel;
     layout->setAlignment(Qt::AlignCenter);
-    image->setPixmap(QIcon::fromTheme(QStringLiteral("plus_folder")).pixmap(200));
+    image->setPixmap(QPixmap(QStringLiteral(":/img/cheezyemu.png"))
+                         .scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
 
     RetranslateUI();
     QFont font = text->font();
@@ -858,5 +859,5 @@ void GameListPlaceholder::changeEvent(QEvent* event) {
 }
 
 void GameListPlaceholder::RetranslateUI() {
-    text->setText(tr("Double-click to add a new folder to the game list"));
+    text->setText(tr("Welcome to CheezyEmu!\nDouble-click to add a folder with your games"));
 }

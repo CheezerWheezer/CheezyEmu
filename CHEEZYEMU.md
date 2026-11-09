@@ -13,6 +13,11 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **Now its own emulator: CheezyEmu.** New name, new cheese icon, `cheezyemu.exe`. Saves, settings
   and shader caches stay where they were. In-app updates from build 9 can't find build 10 (the
   files have new names): download it once from the releases page.
+- **New look**: the CheezyEmu theme (warm charcoal and cheese yellow, rounded buttons, yellow
+  headers, menu and status bar lines) is the default. Players on the old default theme move to it
+  once; any theme picked in Configure > General > UI sticks.
+- **Updates install themselves from now on**: when a newer build is out, CheezyEmu offers it at
+  startup, downloads it, closes, installs and restarts (Windows zip and Linux AppImage).
 - **White fog fixed** (Hyrule Field drawbridge solid white, lines in Kokiri Forest's fog): reverts
   the perspective-correct interpolation of zortos293/Lichii#820, as Fritchii v5.1 did. It was also
   suspected in an RX 6600 crash at boot. The faint red line in the Royal Family's Tomb may return.

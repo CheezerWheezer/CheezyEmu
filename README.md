@@ -29,7 +29,8 @@ frame generation. It runs on NVIDIA and Intel GPUs too.
 > - Fixes a crash while shaders compile, less memory used when shaders precache, faster NUP loading.
 > - A missing or broken microphone no longer breaks games.
 > - In-app updates retry when GitHub has a hiccup.
-> - Now its own emulator: CheezyEmu, with a new name and icon.
+> - Now its own emulator: CheezyEmu, with a new name, icon and look.
+> - Future updates install from inside the emulator: no more downloading each build.
 
 CheezyEmu is not affiliated with Nintendo.
 
