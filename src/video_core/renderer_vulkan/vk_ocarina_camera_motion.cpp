@@ -104,8 +104,12 @@ constexpr std::array TEMPLATES{
                                     sizeof(DescriptorUpdateEntry), sizeof(DescriptorUpdateEntry)},
 };
 constexpr DescriptorBankInfo BANK{.textures = 1, .images = 1, .score = 2};
+struct CameraMotionParameters {
+    Matrix clip_to_previous_clip;
+    std::array<f32, 2> jitter; ///< The scene's viewport offset this frame (render pixels)
+};
 constexpr std::array PUSH_CONSTANTS{
-    VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Matrix)},
+    VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(CameraMotionParameters)},
 };
 constexpr VkImageSubresourceRange MOTION_RANGE{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
@@ -114,7 +118,7 @@ struct ActorTransforms {
     std::array<f32, 16> previous;
     std::array<f32, 4> current_origin;
     std::array<f32, 4> previous_origin;
-    std::array<f32, 4> extent;
+    std::array<f32, 4> extent; ///< Width, height, then the scene's jitter (x, y)
     std::array<u32, 4> counts; ///< Joint weights used: first group, second group
 };
 
@@ -305,9 +309,10 @@ public:
                       OCARINA_CAMERA_MOTION_COMP_SPV) {}
 
     /// Fill camera motion from depth, then overwrite visible actor pixels with skinned motion.
-    void Record(Scheduler& scheduler, const void* descriptors, const Matrix& transform,
-                VkImage motion, VkExtent2D size, ActorDraws overlays) {
-        scheduler.Record([this, descriptors, transform, motion, size,
+    void Record(Scheduler& scheduler, const void* descriptors,
+                const CameraMotionParameters& parameters, VkImage motion, VkExtent2D size,
+                ActorDraws overlays) {
+        scheduler.Record([this, descriptors, parameters, motion, size,
                           overlays = std::move(overlays)]
                          (vk::CommandBuffer cmdbuf) {
             const VkMemoryBarrier read_depth{
@@ -333,7 +338,7 @@ public:
             device.GetLogical().UpdateDescriptorSet(set, *descriptor_template, descriptors);
             cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
             cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *layout, 0, set, {});
-            cmdbuf.PushConstants(*layout, VK_SHADER_STAGE_COMPUTE_BIT, transform);
+            cmdbuf.PushConstants(*layout, VK_SHADER_STAGE_COMPUTE_BIT, parameters);
             cmdbuf.Dispatch((size.width + 7) / 8, (size.height + 7) / 8, 1);
             const VkMemoryBarrier to_overlay{
                 .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -352,8 +357,12 @@ public:
                 .framebuffer = overlays.framebuffer,
                 .renderArea = {{0, 0}, size},
             }, VK_SUBPASS_CONTENTS_INLINE);
-            const VkViewport viewport{0, static_cast<f32>(size.height), static_cast<f32>(size.width),
-                                      -static_cast<f32>(size.height), 0, 1};
+            // Offset like the game's jittered draws, so the replay rasterizes the same samples and
+            // its depth matches the scene depth (zero without FSR's camera jitter).
+            const VkViewport viewport{parameters.jitter[0],
+                                      static_cast<f32>(size.height) + parameters.jitter[1],
+                                      static_cast<f32>(size.width), -static_cast<f32>(size.height),
+                                      0, 1};
             const VkRect2D scissor{{0, 0}, size};
             cmdbuf.SetViewport(0, viewport);
             cmdbuf.SetScissor(0, scissor);
@@ -1128,7 +1137,8 @@ VkImageView OcarinaLiveDlss::CompositedView() const {
 bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView target, VkExtent2D extent,
                             VkExtent2D output_extent, VkExtent2D target_extent,
                             const Matrix& current, const Matrix& previous,
-                            std::span<const OcarinaActorMesh> meshes, VkImage depth_image, u64 frame) {
+                            std::span<const OcarinaActorMesh> meshes, VkImage depth_image, u64 frame,
+                            std::array<f32, 2> jitter, bool negate_upscaler_jitter) {
     auto& state = *impl;
     if (state.last_frame == frame || state.upscaler->Failed()) {
         return false;
@@ -1244,7 +1254,8 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
             buffers.last_frame = state.actor_frame;
             const ActorTransforms transforms{
                 current, previous, mesh.current_origin, mesh.previous_origin,
-                {static_cast<f32>(extent.width), static_cast<f32>(extent.height), 0, 0},
+                {static_cast<f32>(extent.width), static_cast<f32>(extent.height), jitter[0],
+                 jitter[1]},
                 {mesh.layout.weight_count, mesh.layout.extra_count, mesh.layout.rigid, 0},
             };
             const size_t bones = pose_bytes(mesh);
@@ -1281,8 +1292,9 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
     state.queue.AddSampledImage(depth, sampler);
     state.queue.AddImage(*resources.motion_view);
     resources.tick = state.scheduler.CurrentTick();
-    state.motion_pass.Record(state.scheduler, state.queue.UpdateData(), *transform,
-                             *resources.motion, extent, std::move(overlays));
+    state.motion_pass.Record(state.scheduler, state.queue.UpdateData(),
+                             CameraMotionParameters{*transform, jitter}, *resources.motion, extent,
+                             std::move(overlays));
     state.queue.Acquire(state.scheduler, 2);
     state.queue.AddSampledImage(color, sampler);
     state.queue.AddImage(*resources.color_view);
@@ -1299,7 +1311,8 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
                                COLOR_RANGE, VK_IMAGE_ASPECT_COLOR_BIT},
             .render_size = extent,
             .upscale_size = output_extent,
-            .jitter = {0.0f, 0.0f},
+            // The offset the scene was drawn with (zero without FSR's camera jitter).
+            .jitter = negate_upscaler_jitter ? std::array<f32, 2>{-jitter[0], -jitter[1]} : jitter,
             .motion_vector_scale = {1.0f, 1.0f},
             .reset = reset,
             .depth_inverted = false,
@@ -1363,6 +1376,7 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
         .render_size = extent,
         .view_projection = current,
         .reset = reset,
+        .jitter = jitter,
     });
     // A resize can submit the inputs before recording evaluation, so keep the later tick.
     resources.tick = state.scheduler.CurrentTick();

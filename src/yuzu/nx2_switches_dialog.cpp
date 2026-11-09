@@ -62,6 +62,14 @@ constexpr std::array switches{
                              "Keeps Ocarina of Time's HUD still in generated frames instead of "
                              "smearing it with the scene."),
            true, "1", "0"},
+    Switch{"EDEN_NX2_OOT_JITTER",
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "FSR camera jitter (sharper FSR, test)"),
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
+                             "Ocarina of Time: nudges the camera by less than a pixel every frame, "
+                             "which FSR needs to rebuild fine detail (less blocky and shimmery, "
+                             "most on Performance and below). New: turn it off again if the "
+                             "picture shakes or the HUD jitters, and tell us."),
+           false, "1", "0"},
     Switch{"EDEN_NX2_FSR4_CHECK",
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Fall back to FSR 3.1 when FSR 4 draws black"),
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog",

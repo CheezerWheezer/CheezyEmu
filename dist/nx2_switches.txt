@@ -41,6 +41,11 @@ EDEN_NX2_FENCE_BATCH=1
 # build 10, to test whether it causes a problem (for example wrong, too-bright lighting).
 #EDEN_NX2_SEM_MIRROR=0
 
+# FSR camera jitter for Ocarina of Time (new, being tested): FSR rebuilds fine detail from a camera
+# nudged by less than a pixel every frame. Sharper, less blocky FSR, most at low presets. Remove
+# the # to try it; put it back if the picture shakes.
+#EDEN_NX2_OOT_JITTER=1
+
 # FSR 4 output check: when FSR 4 draws black (AMD driver 2.0.406 on RX 9000), CheezyEmu switches to
 # FSR 3.1. =0 keeps FSR 4 regardless (if it switched while your picture looked fine).
 #EDEN_NX2_FSR4_CHECK=0

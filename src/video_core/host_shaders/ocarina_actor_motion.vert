@@ -25,6 +25,7 @@ layout(std140, binding = 2, row_major) uniform Transforms {
     vec4 current_origin;
     vec4 previous_origin;
     vec2 extent;
+    vec2 jitter; // the scene's viewport offset this frame, in render pixels
     uvec4 counts; // weights used from the first group and from the second; z: a solid object
 } transforms;
 

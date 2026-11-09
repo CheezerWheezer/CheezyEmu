@@ -82,6 +82,7 @@ struct PrepareInputs {
     VkExtent2D render_size;
     std::array<f32, 16> view_projection; ///< Row-major, [-1,1] clip depth.
     bool reset;
+    std::array<f32, 2> jitter{}; ///< Offset the scene (and so the depth) was drawn with, pixels.
 };
 
 /// Records AMD's prepare pass for one game frame on the scheduler.

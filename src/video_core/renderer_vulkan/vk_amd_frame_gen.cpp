@@ -790,7 +790,7 @@ void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
         prepare.flags = 0;
         prepare.commandList = reinterpret_cast<void*>(*cmdbuf);
         prepare.renderSize = {in.render_size.width, in.render_size.height};
-        prepare.jitterOffset = {0.0f, 0.0f};
+        prepare.jitterOffset = {in.jitter[0], in.jitter[1]};
         prepare.motionVectorScale = {1.0f, 1.0f}; // already in render pixels
         prepare.frameTimeDelta = frame_time_ms;
         prepare.reset = in.reset;

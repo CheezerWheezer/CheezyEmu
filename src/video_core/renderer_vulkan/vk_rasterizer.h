@@ -280,6 +280,14 @@ private:
     std::atomic<u64> oot_upscaled_frames{};
     std::atomic<u64> oot_upscale_sizes{};
 
+    /// FSR camera jitter (EDEN_NX2_OOT_JITTER=1, from zortos293/Lichii#1061): decides the
+    /// sub-pixel viewport offset of the draw about to be recorded.
+    void UpdateOcarinaJitter();
+    std::array<f32, 2> oot_jitter_applied{}; ///< Added to the viewports of the current draw
+    std::array<f32, 2> oot_jitter_offset{};  ///< The offset this frame's scene was drawn with
+    u64 oot_jitter_frame{~u64{0}};           ///< The frame oot_jitter_offset belongs to
+    u32 oot_jitter_phases{8};                ///< AMD's phase count for the last FSR frame's scale
+
     /// EDEN_NX2_PENDING_WRITE_TRACE: logs bound buffer ranges with collected, unapplied CPU writes.
     void TracePendingCpuWrites(bool compute, std::span<const u64> shader_hashes);
 #ifdef EGLANTINE_STREAMLINE

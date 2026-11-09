@@ -79,7 +79,8 @@ public:
     bool Record(VkImageView color, VkImageView depth, VkImageView target, VkExtent2D extent,
                 VkExtent2D output_extent, VkExtent2D target_extent, const std::array<f32, 16>& current,
                 const std::array<f32, 16>& previous, std::span<const OcarinaActorMesh> meshes,
-                VkImage depth_image, u64 frame);
+                VkImage depth_image, u64 frame, std::array<f32, 2> jitter = {},
+                bool negate_upscaler_jitter = false);
 
 private:
     void MakeHudMaskWith(bool four_k, VkImageView before_hud, VkImageView after_hud,
