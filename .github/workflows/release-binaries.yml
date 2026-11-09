@@ -426,11 +426,11 @@ jobs:
         run: |
           set -euo pipefail
           test -x build/release/bin/cheezyemu
-          test -x build/release/bin/eden-cli
-          strip build/release/bin/cheezyemu build/release/bin/eden-cli
+          test -x build/release/bin/cheezyemu-cli
+          strip build/release/bin/cheezyemu build/release/bin/cheezyemu-cli
           cp README.txt CHEEZYEMU.md LICENSE.txt NOTICE.txt build/release/bin/
           tar -czf "cheezyemu-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz" \
-            -C build/release/bin cheezyemu eden-cli nx2_switches.txt README.txt \
+            -C build/release/bin cheezyemu cheezyemu-cli nx2_switches.txt README.txt \
             CHEEZYEMU.md LICENSE.txt NOTICE.txt
           ls -la "cheezyemu-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz"
 
@@ -443,7 +443,7 @@ jobs:
         run: |
           set -euo pipefail
           test -x build/release/bin/cheezyemu
-          test -x build/release/bin/eden-cli
+          test -x build/release/bin/cheezyemu-cli
           tools="$RUNNER_TEMP/linuxdeploy"
           mkdir -p "$tools"
           arch=$(uname -m)   # aarch64 or x86_64
@@ -474,7 +474,7 @@ jobs:
           cp build/release/bin/nx2_switches.txt AppDir/usr/bin/
           "$tools/linuxdeploy-$arch.AppImage" --appdir AppDir \
             --executable build/release/bin/cheezyemu \
-            --executable build/release/bin/eden-cli \
+            --executable build/release/bin/cheezyemu-cli \
             --desktop-file dist/io.github.cheezerwheezer.cheezyemu.desktop \
             --icon-file "$icon" \
             --plugin qt \
@@ -486,7 +486,7 @@ jobs:
         if: startsWith(matrix.platform, 'windows')
         shell: pwsh
         run: |
-          foreach ($exe in 'cheezyemu.exe', 'eden-cli.exe') {
+          foreach ($exe in 'cheezyemu.exe', 'cheezyemu-cli.exe') {
             if (-not (Test-Path "build/release/bin/$exe")) {
               throw "build/release/bin/$exe was not produced"
             }
@@ -510,10 +510,10 @@ jobs:
           set -euo pipefail
           app=build/release/bin/cheezyemu.app
           test -x "$app/Contents/MacOS/cheezyemu"
-          test -x build/release/bin/eden-cli
-          cp build/release/bin/eden-cli "$app/Contents/MacOS/eden-cli"
+          test -x build/release/bin/cheezyemu-cli
+          cp build/release/bin/cheezyemu-cli "$app/Contents/MacOS/cheezyemu-cli"
           "$(brew --prefix qt@6)/bin/macdeployqt" "$app" \
-            -executable="$app/Contents/MacOS/eden-cli" -libpath="$(brew --prefix)/lib" \
+            -executable="$app/Contents/MacOS/cheezyemu-cli" -libpath="$(brew --prefix)/lib" \
             -always-overwrite -verbose=1
           # Qt's virtual keyboard input plugin pulls in the QML stack, which the emulator doesn't use.
           rm -f "$app/Contents/PlugIns/platforminputcontexts/libqtvirtualkeyboardplugin.dylib"
@@ -526,7 +526,7 @@ jobs:
               done
           done
           # Libraries that load their dependencies through @rpath find them in the bundle.
-          for program in cheezyemu eden-cli; do
+          for program in cheezyemu cheezyemu-cli; do
             install_name_tool -add_rpath @executable_path/../Frameworks \
               "$app/Contents/MacOS/$program" 2> /dev/null
           done
@@ -545,7 +545,7 @@ jobs:
           codesign --force --deep --sign - "$app"
           if [ -f dist/eglantine.entitlements ]; then
             codesign --force --sign - --entitlements dist/eglantine.entitlements \
-              "$app/Contents/MacOS/eden-cli"
+              "$app/Contents/MacOS/cheezyemu-cli"
             codesign --force --sign - --entitlements dist/eglantine.entitlements "$app"
           fi
           codesign --verify --deep --strict "$app"
@@ -719,7 +719,7 @@ jobs:
 
           ## Windows
 
-          Windows packages are in-place zip files: extract and run \`cheezyemu.exe\`, or \`eden-cli.exe\` from a terminal.
+          Windows packages are in-place zip files: extract and run \`cheezyemu.exe\`, or \`cheezyemu-cli.exe\` from a terminal.
 
           $({
             row "amd64 / x86_64" "$(link zip cheezyemu-windows-x86_64.zip)" "$(link "PGO zip" cheezyemu-windows-x86_64-pgo.zip)" "Both built with clang-cl and ThinLTO; the PGO zip adds a profile trained on Ocarina of Time"
@@ -727,7 +727,7 @@ jobs:
 
           ## macOS
 
-          $(row "arm64 (Apple Silicon)" "$(link zip cheezyemu-macos-arm64.zip)" "" "macOS 15 or newer. Not notarized: right-click and choose Open the first time, or run \`xattr -dr com.apple.quarantine cheezyemu.app\`. \`eden-cli\` is inside the app, in \`Contents/MacOS\`" | table)
+          $(row "arm64 (Apple Silicon)" "$(link zip cheezyemu-macos-arm64.zip)" "" "macOS 15 or newer. Not notarized: right-click and choose Open the first time, or run \`xattr -dr com.apple.quarantine cheezyemu.app\`. \`cheezyemu-cli\` is inside the app, in \`Contents/MacOS\`" | table)
 
           ${pgo_note}
           EOF

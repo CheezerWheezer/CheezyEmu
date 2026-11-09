@@ -190,6 +190,14 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "network, which sharpens heavily.\nNo sharpening: the image as the game renders it, "
               "without the network (faster; pairs well with a higher resolution). Has no effect while "
               "NVIDIA DLSS is on.\nTakes effect when the game starts."));
+    INSERT(Settings, oot_fsr_preset, tr("Ocarina of Time FSR preset:"),
+           tr("The Legend of Zelda: Ocarina of Time renders its 3D scene smaller and AMD FSR "
+              "upscales it (at 1080p):\n"
+              "Native: the game's own size, 1440x810.\n"
+              "Quality: 1260x708.\nBalanced: 1080x608.\nPerformance: 990x557.\n"
+              "Ultra Performance: 720x405 (fastest, softest).\n"
+              "The HUD and text stay sharp, and saved shaders still apply. Turns on Max "
+              "Resolution's fixed size. Takes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),
@@ -629,6 +637,14 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           {
                               PAIR(OotAntiAliasing, Game, tr("Game")),
                               PAIR(OotAntiAliasing, NoSharpening, tr("No sharpening")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::OotFsrPreset>::Index(),
+                          {
+                              PAIR(OotFsrPreset, Native, tr("Native (game's size)")),
+                              PAIR(OotFsrPreset, Quality, tr("Quality")),
+                              PAIR(OotFsrPreset, Balanced, tr("Balanced")),
+                              PAIR(OotFsrPreset, Performance, tr("Performance")),
+                              PAIR(OotFsrPreset, UltraPerformance, tr("Ultra Performance")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::AspectRatio>::Index(),
                           {

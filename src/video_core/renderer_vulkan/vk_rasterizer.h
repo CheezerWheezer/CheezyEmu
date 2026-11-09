@@ -321,6 +321,7 @@ private:
         GPUVAddr depth_address{};
         u32 depth_tic{};
         VkExtent2D extent{};
+        VkExtent2D render_extent{}; ///< the drawn top-left part (an FSR preset), else extent
         std::array<f32, 16> current{};
         std::array<f32, 16> previous{};
     } oot_motion;

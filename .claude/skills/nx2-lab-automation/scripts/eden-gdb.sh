@@ -1,5 +1,5 @@
 #!/bin/sh
-# eden-cli under gdb, for `lab_ctl launch --binary <this>`: SIGINT to eden-cli stops it and dumps
+# cheezyemu-cli under gdb, for `lab_ctl launch --binary <this>`: SIGINT to cheezyemu-cli stops it and dumps
 # every thread's stack to stdout (emulator.log). dynarmic uses SIGSEGV for guest memory: pass it.
 REPO=${REPO:-/home/kraibse/clones/Eglantine}
 exec gdb -q -batch -nx \
@@ -10,4 +10,4 @@ exec gdb -q -batch -nx \
   -ex 'handle SIG33 nostop noprint pass' -ex 'handle SIG34 nostop noprint pass' \
   -ex run \
   -ex 'echo \n=====GDB-THREADS=====\n' -ex 'thread apply all bt 25' -ex 'kill' \
-  --args "$REPO/build/bin/eden-cli" "$@"
+  --args "$REPO/build/bin/cheezyemu-cli" "$@"

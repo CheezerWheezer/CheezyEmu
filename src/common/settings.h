@@ -65,6 +65,7 @@ SETTING(u16, false);
 SWITCHABLE(AnisotropyMode, true);
 SWITCHABLE(AntiAliasing, false);
 SWITCHABLE(OotAntiAliasing, false);
+SWITCHABLE(OotFsrPreset, false);
 SWITCHABLE(AspectRatio, true);
 SWITCHABLE(AstcDecodeMode, true);
 SWITCHABLE(AstcRecompression, true);
@@ -433,6 +434,10 @@ struct Values {
     // pass, or the tonemapped image as the game renders it (video_core/oot_network.h).
     SwitchableSetting<OotAntiAliasing> oot_anti_aliasing{linkage, OotAntiAliasing::Game,
                                                          "oot_anti_aliasing", Category::Renderer};
+    // Ocarina of Time: the game renders its 3D scene at a fixed fraction of its own size (its
+    // dynamic resolution path, patched at load) and FSR upscales it. Native leaves it alone.
+    SwitchableSetting<OotFsrPreset> oot_fsr_preset{linkage, OotFsrPreset::Native, "oot_fsr_preset",
+                                                   Category::Renderer};
 
     SwitchableSetting<std::string> post_shader_chain{linkage,
                                                      std::string(),

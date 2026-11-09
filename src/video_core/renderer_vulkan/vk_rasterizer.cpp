@@ -2657,7 +2657,19 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         const auto& viewport = maxwell3d->regs.viewport_transform[0];
         const u32 drawn_width = static_cast<u32>(std::abs(viewport.scale_x) * 2.0f + 0.5f);
         const u32 drawn_height = static_cast<u32>(std::abs(viewport.scale_y) * 2.0f + 0.5f);
-        if (drawn_width + 2 < color.size.width || drawn_height + 2 < color.size.height) {
+        // With an FSR preset the scene is drawn into the top-left corner at a fixed size: FSR
+        // takes that corner as its input (it reads the render size from the top-left).
+        const bool preset = Settings::values.oot_fsr_preset.GetValue() !=
+                            Settings::OotFsrPreset::Native;
+        const f32 origin_x = viewport.translate_x - std::abs(viewport.scale_x);
+        const f32 origin_y = viewport.translate_y - std::abs(viewport.scale_y);
+        const bool top_left = std::abs(origin_x) < 1.0f && std::abs(origin_y) < 1.0f;
+        const bool scaled_scene =
+            preset && top_left && drawn_width >= color.size.width / 3 &&
+            drawn_height >= color.size.height / 3 &&
+            (drawn_width + 2 < color.size.width || drawn_height + 2 < color.size.height);
+        if (!scaled_scene &&
+            (drawn_width + 2 < color.size.width || drawn_height + 2 < color.size.height)) {
             static u32 logged = 0;
             if (logged++ % 300 == 0) {
                 LOG_INFO(Render_Vulkan,
@@ -2671,6 +2683,9 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         oot_camera_sample_frame = render_trace_frame;
         oot_motion.camera_channel = gpu_memory;
         oot_motion.extent = {color.size.width, color.size.height};
+        oot_motion.render_extent = scaled_scene ? VkExtent2D{std::min(drawn_width, color.size.width),
+                                                             std::min(drawn_height, color.size.height)}
+                                                : oot_motion.extent;
         std::copy_n(values.begin() + 0x30 / sizeof(f32), 16, oot_motion.current.begin());
         std::copy_n(values.begin() + 0x180 / sizeof(f32), 16, oot_motion.previous.begin());
     });
@@ -3251,8 +3266,19 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
             const char* const value = std::getenv("EDEN_NX2_AMD_FG_HUD_MASK");
             return !value || value[0] != '0';
         }();
+        // FSR reads the scene from the top-left corner at the size the game drew it (an FSR
+        // preset), else the whole image.
+        const VkExtent2D render_extent =
+            oot_motion.render_extent.width != 0 ? oot_motion.render_extent : extent;
+        static VkExtent2D logged_render{};
+        if (logged_render.width != render_extent.width ||
+            logged_render.height != render_extent.height) {
+            logged_render = render_extent;
+            LOG_INFO(Render_Vulkan, "Ocarina of Time: FSR renders from {}x{} of {}x{}",
+                     render_extent.width, render_extent.height, extent.width, extent.height);
+        }
         const bool recorded = oot_live_dlss->Record(color_view, depth.DepthView(), target_view,
-                                                   extent, output_extent, target_extent, oot_motion.current,
+                                                   render_extent, output_extent, target_extent, oot_motion.current,
                                                    oot_motion.previous, meshes, depth.ImageHandle(),
                                                    render_trace_frame);
         if (!recorded) {
