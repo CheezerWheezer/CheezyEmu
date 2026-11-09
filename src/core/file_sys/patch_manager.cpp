@@ -119,6 +119,12 @@ constexpr std::array FPS_UNLOCK_RECORDS{
 // images are sized for 1.0, so no preset goes above it. No shader changes: saved shaders stay valid.
 constexpr size_t OCARINA_SCALE_OFFSET = 0x806420;
 constexpr std::array<u8, 4> OCARINA_SCALE_ORIGINAL{0x09, 0xF0, 0xA7, 0x52};
+// Where the renderer turns the scale into its render ratio (main+0x31D3FD8) it clamps the ratio to
+// 1 / the mode's factor (0.75 at 1080p: 1440x810) unless a flag is set: `tbnz w9, #19, #20`.
+// Native AA skips the clamp, so scale 1.0 renders the scene at the output's 1920x1080.
+constexpr size_t OCARINA_CLAMP_OFFSET = 0x31D3FDC;
+constexpr std::array<u8, 4> OCARINA_CLAMP_ORIGINAL{0xA9, 0x00, 0x98, 0x37};
+constexpr std::array<u8, 4> OCARINA_CLAMP_SKIP{0x05, 0x00, 0x00, 0x14}; // b #20
 
 void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_view build_id,
                            std::vector<u8>& out) {
@@ -136,7 +142,13 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
     // The upper half of an f32 whose lower half is zero (movz w9, #imm16, lsl #16).
     u16 scale_bits = 0x3F80;
     const char* preset_name = "";
+    bool skip_clamp = false;
     switch (preset) {
+    case Settings::OotFsrPreset::NativeAa:
+        scale_bits = 0x3F80; // 1.0 without the clamp: 1920x1080, FSR as anti-aliasing
+        preset_name = "Native AA";
+        skip_clamp = true;
+        break;
     // The scene is 1920 * scale wide (1080 * scale high), kept between 640x360 and the game's own
     // 1440x810: 0.25 drew 640x360, 0.5 960x540. AMD's ratios to 1080p:
     case Settings::OotFsrPreset::Quality:
@@ -178,6 +190,16 @@ void ApplyOcarinaFsrPreset(u64 title_id, std::string_view module, std::string_vi
         LOG_WARNING(Loader, "    - Ocarina of Time FSR preset: a mod changed main+{:#x}, not applied",
                     OCARINA_SCALE_OFFSET);
         return;
+    }
+    const size_t clamp_at = header + OCARINA_CLAMP_OFFSET;
+    if (skip_clamp) {
+        if (out.size() < clamp_at + 4 || !matches(clamp_at, OCARINA_CLAMP_ORIGINAL)) {
+            LOG_WARNING(Loader, "    - Ocarina of Time FSR preset: unexpected bytes at main+{:#x}, "
+                                "not applied",
+                        OCARINA_CLAMP_OFFSET);
+            return;
+        }
+        std::memcpy(out.data() + clamp_at, OCARINA_CLAMP_SKIP.data(), OCARINA_CLAMP_SKIP.size());
     }
     std::memcpy(out.data() + branch_at, MAX_RESOLUTION_BRANCH.data(), MAX_RESOLUTION_BRANCH.size());
     const u32 movz = 0x52A00000U | (u32{scale_bits} << 5) | 9U; // movz w9, #scale_bits, lsl #16

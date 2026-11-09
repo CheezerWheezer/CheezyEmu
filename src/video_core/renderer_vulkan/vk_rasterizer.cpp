@@ -3148,7 +3148,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         using VideoCore::Surface::PixelFormat;
         if (in.format != PixelFormat::E5B9G9R9_FLOAT || out.format != PixelFormat::B10G11R11_FLOAT ||
             in.size.width != oot_motion.extent.width || in.size.height != oot_motion.extent.height ||
-            out.size.width <= in.size.width || out.size.height <= in.size.height) {
+            out.size.width < in.size.width || out.size.height < in.size.height ||
+            out.ImageHandle() == in.ImageHandle()) {
             return false;
         }
         static u64 logged_shader = 0;
@@ -3266,8 +3267,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         : (target.size.width == extent.width * 4 / 3 &&
            target.size.height == extent.height * 4 / 3) ||
               // An FSR preset: a smaller scene, upscaled by another ratio.
-              (OcarinaFsrPresetActive() && target.size.width > extent.width &&
-               target.size.height > extent.height);
+              (OcarinaFsrPresetActive() && target.size.width >= extent.width &&
+               target.size.height >= extent.height);
     if (!valid_extents || !color.BackingImage() || !target.BackingImage() ||
         color.IsRescaled() || target.IsRescaled() ||
         color.Samples() != VK_SAMPLE_COUNT_1_BIT || target.Samples() != VK_SAMPLE_COUNT_1_BIT ||

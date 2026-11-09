@@ -193,6 +193,7 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
     INSERT(Settings, oot_fsr_preset, tr("Ocarina of Time FSR preset:"),
            tr("The Legend of Zelda: Ocarina of Time renders its 3D scene smaller and AMD FSR "
               "upscales it (at 1080p):\n"
+              "Native AA: the full 1920x1080, FSR as anti-aliasing (sharpest, slowest).\n"
               "Native: the game's own size, 1440x810.\n"
               "Quality: 1280x720.\nBalanced: 1125x633.\nPerformance: 960x540.\n"
               "Ultra Performance: 640x360 (fastest, softest).\n"
@@ -640,6 +641,7 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           }});
     translations->insert({Settings::EnumMetadata<Settings::OotFsrPreset>::Index(),
                           {
+                              PAIR(OotFsrPreset, NativeAa, tr("Native AA")),
                               PAIR(OotFsrPreset, Native, tr("Native (game's size)")),
                               PAIR(OotFsrPreset, Quality, tr("Quality")),
                               PAIR(OotFsrPreset, Balanced, tr("Balanced")),
