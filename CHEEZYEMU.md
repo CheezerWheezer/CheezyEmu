@@ -16,11 +16,25 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   old folder: "Keep Old Data" copies it (saves, settings, keys, mods and saved shaders), "Clear Old
   Data" moves it, "Link Old Directory" keeps sharing it. Saved shaders are kept unless you tick
   "Clear Shader Cache". (GitHub issue #1)
-- **FSR and frame generation work again in docked mode with an FSR preset picked.** The presets
-  were made for handheld (1080p): docked (4K output) they gave the wrong sizes (Native AA rendered
-  a full 4K scene) and below Quality the scene no longer fit the 1440p to 4K path, so FSR and frame
-  generation turned off. Presets now apply in handheld mode only; docked runs as in build 9
-  (1440p, FSR to 4K, frame generation). Docked presets come in a later build.
+- **Frame generation works again on AMD's newer drivers** (docked and handheld). When AMD's
+  FSR 4 frame generation started without all the functions CheezyEmu needs, build 10 gave up and
+  frame generation stayed off; now it carries on, or falls back to the FSR 3.1 version.
+- **FSR presets work docked too.** Docked (4K output) the sizes double: Native AA 3840x2160,
+  Quality 2560x1440, Balanced 2250x1266, Performance 1920x1080, Ultra Performance 1280x720. In
+  build 10 a docked preset turned FSR and frame generation off.
+- **No more red flickering** (an upstream change build 10 had taken out is back).
+- **Fewer freezes and black screens after cutscenes**: two fixes from Lichii build 130 (GPU
+  wait handling and its 32-region limit).
+- **"Closing software..." no longer freezes CheezyEmu.** When a game gets stuck closing,
+  CheezyEmu used to kill the stuck part, which could freeze the whole window until Task Manager
+  ended it. Now it restarts itself instead (or just exits when you're quitting) and says so.
+- **FSR 4 black screen**: when FSR 4 draws black (older AMD drivers), CheezyEmu notices sooner
+  and switches to FSR 3.1. Updating the AMD driver fixes the cause.
+- **Crash reports**: a crash now writes a crash dump to `crash_dumps` in the data folder and a
+  line in the log saying where it happened. In Ocarina the log also says why FSR or frame
+  generation didn't turn on.
+- **New icon** (vector, sharp at any size).
+- More fixes from Lichii build 130.
 
 ## New in build 10
 

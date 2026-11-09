@@ -284,7 +284,7 @@ private:
     void BootGameFromList(const QString& filename, StartGameType with_config);
     void ShutdownGame();
     /// warn_player: tell the player to restart (Stop, not closing CheezyEmu).
-    void TerminateEmulationThread(bool warn_player = false);
+    void TerminateEmulationThread();
     /// After an update, shows the new build's changes from CHEEZYEMU.md once.
     void ShowWhatsNew();
 

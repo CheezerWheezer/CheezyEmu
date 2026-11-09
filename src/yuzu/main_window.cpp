@@ -8,6 +8,8 @@
 #undef VMA_IMPLEMENTATION
 #endif
 
+#include <cstdlib>
+#include <QProcess>
 #include <QSysInfo>
 #include <boost/algorithm/string/split.hpp>
 #include "common/fs/path_util.h"
@@ -2446,7 +2448,7 @@ void MainWindow::OnEmulationStopTimeExpired() {
 }
 
 void MainWindow::OnEmulationStopTimeout() {
-    TerminateEmulationThread(true);
+    TerminateEmulationThread();
     OnEmulationStopped();
 }
 
@@ -2522,23 +2524,33 @@ void MainWindow::ShowWhatsNew() {
     dialog.exec();
 }
 
-void MainWindow::TerminateEmulationThread(bool warn_player) {
-    if (QtCommon::emu_thread && QtCommon::emu_thread->isRunning()) {
-        LOG_ERROR(Frontend, "Emulation thread failed to stop, terminating it (the last "
-                            "\"Shutdown:\" line above is the step it was stuck in)");
-        Common::Log::Stop();
-        QtCommon::emu_thread->terminate();
-        QtCommon::emu_thread->wait();
-        // The stuck thread still held the game's memory and video memory: a new game in this
-        // process can run out of either. Restarting CheezyEmu frees them.
-        if (warn_player) {
-            QMessageBox::warning(this, tr("CheezyEmu"),
-                             tr("The game didn't close cleanly. Restart CheezyEmu before playing "
-                                "again so it can free the memory the game was using.\n\nIf this "
-                                "keeps happening, please share eden_log.txt (it says where the "
-                                "game got stuck)."));
-        }
+void MainWindow::TerminateEmulationThread() {
+    if (!QtCommon::emu_thread || !QtCommon::emu_thread->isRunning()) {
+        return;
     }
+    // The thread is not killed. Killing it (TerminateThread) left whatever lock it held locked
+    // forever: stuck freeing the game's memory, that was Windows' memory lock, and the next thing
+    // the window did froze on "Closing software..." until Task Manager ended it. The stuck thread
+    // also still holds the game's memory, so CheezyEmu restarts (or, when quitting, just exits)
+    // and Windows frees everything.
+    LOG_ERROR(Frontend, "Emulation thread failed to stop (the last \"Shutdown:\" line above is "
+                        "the step it was stuck in); {} CheezyEmu",
+              close_pending ? "exiting" : "restarting");
+    Common::Log::Stop();
+    UISettings::SaveWindowState();
+    if (!close_pending) {
+        QMessageBox::warning(this, tr("CheezyEmu"),
+                             tr("The game got stuck while closing, so CheezyEmu will restart to "
+                                "free the memory it was using.\n\nIf this keeps happening, "
+                                "please share eden_log.txt (it says where the game got stuck)."));
+        QProcess::startDetached(QCoreApplication::applicationFilePath(), {});
+    }
+    Common::Log::Stop();
+#ifdef _WIN32
+    // Not ExitProcess: its DLL cleanup can wait on the stuck thread too.
+    TerminateProcess(GetCurrentProcess(), 0);
+#endif
+    std::_Exit(0);
 }
 
 void MainWindow::OnEmulationStopped() {
