@@ -45,7 +45,6 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   CheezyEmu checks FSR 4's output against the game's picture; if FSR 4 keeps drawing black (seen on
   an RX 9070 XT with driver 2.0.406), it changes to FSR 3.1 for the session and says so in the log.
   Updating the graphics driver should bring FSR 4 back.
-- **Crash fix while shaders compile**: a data race in the SPIR-V emitter (zortos293/Lichii#902).
 - **Less memory while shaders precache**: a compute shader's IR is freed before the driver compiles
   it (zortos293/Lichii#878).
 - **Faster NUP loading**: NUP archives are decoded only as far as the game reads

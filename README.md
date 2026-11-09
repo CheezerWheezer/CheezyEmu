@@ -26,7 +26,7 @@ frame generation. It runs on NVIDIA and Intel GPUs too.
 > - Fog no longer turns solid white (Hyrule Field drawbridge, Kokiri Forest).
 > - No more stale or glowing geometry from old vertex data (Hyrule Field, the graveyard).
 > - FSR 4 that draws a black picture switches itself to FSR 3.1 instead.
-> - Fixes a crash while shaders compile, less memory used when shaders precache, faster NUP loading.
+> - Less memory used when shaders precache, faster NUP loading.
 > - A missing or broken microphone no longer breaks games.
 > - In-app updates retry when GitHub has a hiccup.
 > - Now its own emulator: CheezyEmu, with a new name, icon and look.
