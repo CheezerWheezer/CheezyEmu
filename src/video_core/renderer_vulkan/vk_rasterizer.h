@@ -275,6 +275,11 @@ public:
     }
 
 private:
+    // Ocarina's FSR upscales (status bar): outside EGLANTINE_STREAMLINE so every build has the
+    // getters; only builds with it count.
+    std::atomic<u64> oot_upscaled_frames{};
+    std::atomic<u64> oot_upscale_sizes{};
+
     /// EDEN_NX2_PENDING_WRITE_TRACE: logs bound buffer ranges with collected, unapplied CPU writes.
     void TracePendingCpuWrites(bool compute, std::span<const u64> shader_hashes);
 #ifdef EGLANTINE_STREAMLINE
@@ -345,8 +350,6 @@ private:
     const char* oot_fallback_reason{};
     /// The last reason Ocarina's FSR path declined a frame, for the status bar (UI thread).
     std::atomic<const char*> oot_idle_reason{};
-    std::atomic<u64> oot_upscaled_frames{};
-    std::atomic<u64> oot_upscale_sizes{};
     u32 oot_fallback_repeats{};
     std::optional<u64> oot_dlss_frame;
     std::optional<u64> oot_4k_scene_frame;
