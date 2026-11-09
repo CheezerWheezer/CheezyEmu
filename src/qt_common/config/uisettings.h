@@ -137,6 +137,9 @@ struct Values {
     Setting<bool> check_for_updates{linkage, true, "check_for_updates", Category::UiGeneral};
     // Release tag the user chose to skip, and the epoch second before which updates stay quiet.
     Setting<std::string> skipped_update_tag{linkage, {}, "skipped_update_tag", Category::Ui};
+    /// The release build (build-N) last started: a different one means an update was installed,
+    /// and its "What's new" is shown once.
+    Setting<std::string> last_seen_build{linkage, {}, "last_seen_build", Category::Ui};
     Setting<unsigned long long> update_remind_at{linkage, 0, "update_remind_at", Category::Ui};
 
     // Linux/MinGW may support (requires libdl support)

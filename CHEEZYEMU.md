@@ -23,6 +23,17 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   picture is fixed in tools/game_pictures/overrides.json. A player's own SteamGridDB key (right-click
   a game > Game Picture > Find Picture Online) also finds pictures for games the list lacks.
   Right-click > Game Picture picks another picture, uses your own image or resets it.
+- **Handheld PCs (Steam Deck, ROG Ally): no more black screen** in Ocarina when its anti-aliasing
+  network can't be built on the GPU: CheezyEmu draws the game without it (as "No sharpening") and
+  says so in the log.
+- **"What's new" after an update**: the first start of a new build shows its changes once.
+- **AMD FSR & Frame Generation box** at the top of Graphics (and in each game's settings): FSR 4,
+  Ocarina's anti-aliasing and every frame generation option in one place.
+- **Stopping a game**: each shutdown step is logged, so a stuck stop shows where it hung. If the
+  game still has to be forced to stop, CheezyEmu asks you to restart it before playing again (a
+  stuck game kept its memory and broke the next launch).
+- **GPU crash reports**: when the GPU crashes, the log now says what CheezyEmu was doing (4K mode,
+  FSR version and sizes, frame generation), and on Linux how to capture the hang (RADV_DEBUG=hang).
 - **Updates install themselves from now on**: when a newer build is out, CheezyEmu offers it at
   startup, downloads it, closes, installs and restarts (Windows zip and Linux AppImage).
 - **White fog fixed** (Hyrule Field drawbridge solid white, lines in Kokiri Forest's fog): reverts

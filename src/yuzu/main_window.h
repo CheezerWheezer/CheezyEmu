@@ -283,7 +283,10 @@ private:
                   StartGameType with_config = StartGameType::Normal);
     void BootGameFromList(const QString& filename, StartGameType with_config);
     void ShutdownGame();
-    void TerminateEmulationThread();
+    /// warn_player: tell the player to restart (Stop, not closing CheezyEmu).
+    void TerminateEmulationThread(bool warn_player = false);
+    /// After an update, shows the new build's changes from CHEEZYEMU.md once.
+    void ShowWhatsNew();
 
     void SetDiscordEnabled(bool state);
     void LoadAmiibo(const QString& filename);

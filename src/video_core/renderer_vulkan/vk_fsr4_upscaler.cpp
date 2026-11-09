@@ -11,6 +11,7 @@
 
 #include "common/logging.h"
 #include "common/settings.h"
+#include "video_core/gpu_crash_context.h"
 #include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
 #include "video_core/renderer_vulkan/vk_fsr4_upscaler.h"
 #include "video_core/renderer_vulkan/vk_ffx_runtime.h"
@@ -292,6 +293,12 @@ bool Fsr4Upscaler::CreateContext(VkExtent2D render_size, VkExtent2D upscale_size
     ffxQueryGetProviderVersion provider{};
     provider.header.type = FFX_API_QUERY_DESC_TYPE_GET_PROVIDER_VERSION;
     context->api->query(&context->handle, &provider.header);
+    VideoCommon::GpuCrashContext::Set(
+        "fsr", fmt::format("{} {}x{} -> {}x{}",
+                           provider.versionName ? provider.versionName
+                                                : context->provider.name.c_str(),
+                           render_size.width, render_size.height, upscale_size.width,
+                           upscale_size.height));
     LOG_INFO(Render_Vulkan, "AMD FSR: upscaler {} running, {}x{} -> {}x{} ({})",
              provider.versionName ? provider.versionName : context->provider.name.c_str(),
              render_size.width, render_size.height, upscale_size.width, upscale_size.height,

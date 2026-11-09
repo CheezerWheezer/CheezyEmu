@@ -261,6 +261,8 @@ public:
     /// dispatch of the game's network is skipped, or its output pass replaced by a copy of the
     /// tonemapped image.
     bool BypassOotNetwork(u64 program_id, u64 native_key);
+    /// Native program key of the dispatch being processed (0 until its shader is known).
+    u64 current_native_key{};
     void TraceDlssContract(u64 native_key, bool warn_unvalidated = true);
 
     /// GPU thread split with macros on its front half (gpu_split.h, EDEN_NX2_SPLIT=2), called by

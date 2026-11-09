@@ -48,9 +48,21 @@ struct BypassState {
     std::atomic<bool> output_replaced{}; ///< the latest output pass was replaced
 };
 
+/// Set when one of the network's passes can't be built on this GPU (handheld PCs on RADV): the
+/// output pass would never write the scene, so the picture stays black. No sharpening's copy
+/// draws it instead, for the rest of the session.
+inline std::atomic<bool> forced_bypass{false};
+
 inline bool BypassEnabled(u64 program_id) {
     return program_id == ProgramId &&
-           Settings::values.oot_anti_aliasing.GetValue() == Settings::OotAntiAliasing::NoSharpening;
+           (Settings::values.oot_anti_aliasing.GetValue() ==
+                Settings::OotAntiAliasing::NoSharpening ||
+            forced_bypass.load(std::memory_order_relaxed));
+}
+
+constexpr bool IsNetworkPass(u64 native_key) {
+    return native_key == PrepassProgramKey || native_key == NetworkProgramKey ||
+           native_key == OutputProgramKey;
 }
 
 } // namespace VideoCommon::OotNetwork

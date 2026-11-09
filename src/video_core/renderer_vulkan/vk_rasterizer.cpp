@@ -66,6 +66,7 @@
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_query_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
+#include "video_core/gpu_crash_context.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
 #include "video_core/renderer_vulkan/vk_state_tracker.h"
@@ -3276,6 +3277,11 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         }
         oot_fallback_reason = nullptr;
         oot_idle_reason.store(nullptr, std::memory_order_relaxed);
+        VideoCommon::GpuCrashContext::Set(
+            "ocarina", fmt::format("{} {}x{} -> {}x{}, frame generation {}",
+                                   four_k ? "4K" : "in place", extent.width, extent.height,
+                                   target.size.width, target.size.height,
+                                   AmdFrameGen::Requested() ? "on" : "off"));
         return true;
     } catch (const vk::Exception& error) {
         LOG_WARNING(Render_Vulkan, "Ocarina DLSS unavailable: {}", error.what());

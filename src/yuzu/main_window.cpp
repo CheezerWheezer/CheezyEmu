@@ -75,6 +75,11 @@
 
 #include <QActionGroup>
 #include <QCheckBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QTextBrowser>
+#include <QVBoxLayout>
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDir>
@@ -446,6 +451,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     UpdateWindowTitle();
 
     show();
+    ShowWhatsNew();
 
 #ifdef ENABLE_UPDATE_CHECKER
     if (UISettings::values.check_for_updates) {
@@ -2429,6 +2435,8 @@ void MainWindow::OnShutdownBeginDialog() {
 
 void MainWindow::OnEmulationStopTimeExpired() {
     if (QtCommon::emu_thread) {
+        LOG_WARNING(Frontend, "The game hasn't stopped after the grace period; forcing it to stop");
+        Common::Log::Stop();
         QtCommon::emu_thread->ForceStop();
         emu_terminate_timer.setSingleShot(true);
         emu_terminate_timer.start(EmuThreadStopTimeoutMs);
@@ -2438,15 +2446,98 @@ void MainWindow::OnEmulationStopTimeExpired() {
 }
 
 void MainWindow::OnEmulationStopTimeout() {
-    TerminateEmulationThread();
+    TerminateEmulationThread(true);
     OnEmulationStopped();
 }
 
-void MainWindow::TerminateEmulationThread() {
+void MainWindow::ShowWhatsNew() {
+    const QString build = QString::fromUtf8(Common::g_build_release_tag);
+    if (!build.startsWith(QStringLiteral("build-"))) {
+        return; // local builds have no release notes
+    }
+    const QString last = QString::fromStdString(UISettings::values.last_seen_build.GetValue());
+    if (last == build) {
+        return;
+    }
+    UISettings::values.last_seen_build = build.toStdString();
+    OnSaveConfig();
+    if (last.isEmpty()) {
+        return; // a first start, not an update
+    }
+    // CHEEZYEMU.md ships next to the program; its "## New in build N" section is this build's.
+    QFile file(QCoreApplication::applicationDirPath() + QStringLiteral("/CHEEZYEMU.md"));
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        return;
+    }
+    const QStringList lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'));
+    const QString number = build.mid(6);
+    // This build's section, else the newest one (the first in the file).
+    QStringList section;
+    QStringList first;
+    QStringList* current = nullptr;
+    QStringList scratch;
+    for (const QString& line : lines) {
+        if (line.startsWith(QStringLiteral("## "))) {
+            if (!section.isEmpty()) {
+                break;
+            }
+            current = nullptr;
+            if (line.startsWith(QStringLiteral("## New in build"))) {
+                if (line.trimmed() == QStringLiteral("## New in build ") + number) {
+                    current = &section;
+                } else if (first.isEmpty()) {
+                    current = &first;
+                } else {
+                    scratch.clear();
+                    current = &scratch;
+                }
+            }
+            continue;
+        }
+        if (current && !line.startsWith(QStringLiteral("How to use all of this"))) {
+            current->append(line);
+        }
+    }
+    if (section.isEmpty()) {
+        section = first;
+    }
+    if (section.join(QString{}).trimmed().isEmpty()) {
+        return;
+    }
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("What's new in CheezyEmu %1").arg(number));
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* header = new QLabel(tr("<b>CheezyEmu was updated to build %1.</b> Here's what changed:")
+                                  .arg(number),
+                              &dialog);
+    auto* notes = new QTextBrowser(&dialog);
+    notes->setOpenExternalLinks(true);
+    notes->setMarkdown(section.join(QLatin1Char('\n')));
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    layout->addWidget(header);
+    layout->addWidget(notes);
+    layout->addWidget(buttons);
+    dialog.resize(640, 520);
+    dialog.exec();
+}
+
+void MainWindow::TerminateEmulationThread(bool warn_player) {
     if (QtCommon::emu_thread && QtCommon::emu_thread->isRunning()) {
-        LOG_ERROR(Frontend, "Emulation thread failed to stop, terminating it");
+        LOG_ERROR(Frontend, "Emulation thread failed to stop, terminating it (the last "
+                            "\"Shutdown:\" line above is the step it was stuck in)");
+        Common::Log::Stop();
         QtCommon::emu_thread->terminate();
         QtCommon::emu_thread->wait();
+        // The stuck thread still held the game's memory and video memory: a new game in this
+        // process can run out of either. Restarting CheezyEmu frees them.
+        if (warn_player) {
+            QMessageBox::warning(this, tr("CheezyEmu"),
+                             tr("The game didn't close cleanly. Restart CheezyEmu before playing "
+                                "again so it can free the memory the game was using.\n\nIf this "
+                                "keeps happening, please share eden_log.txt (it says where the "
+                                "game got stuck)."));
+        }
     }
 }
 

@@ -530,6 +530,17 @@ struct System::Impl {
     }
 
     void ShutdownMainProcess() {
+        // Each step is logged and the log flushed before it starts: when stopping hangs
+        // ("Emulation thread failed to stop"), the log's last "Shutdown:" line names the step.
+        const auto shutdown_start = std::chrono::steady_clock::now();
+        const auto step = [shutdown_start](const char* what) {
+            LOG_INFO(Core, "Shutdown: {} (at {} ms)", what,
+                     std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now() - shutdown_start)
+                         .count());
+            Common::Log::Stop(); // flushes the log files
+        };
+        step("begin");
         debug_service.reset();
         SetShuttingDown(true);
         Common::ADPF::Shutdown();
@@ -544,23 +555,32 @@ struct System::Impl {
             gpu_core->NotifyShutdown();
 
         stop_event.request_stop();
+        step("pausing timing");
         core_timing.SyncPause(false);
         Network::CancelPendingSocketOperations();
+        step("suspending the guest");
         kernel.SuspendEmulation(true);
+        step("closing services");
         kernel.CloseServices();
+        step("stopping the CPU cores");
         kernel.ShutdownCores();
+        step("releasing services");
         services.reset();
         service_manager.reset();
         fs_controller.Reset();
         cheat_engine.reset();
         core_timing.ClearPendingEvents();
         app_loader.reset();
+        step("stopping audio");
         audio_core.reset();
+        step("stopping the GPU (renderer, shader builds)");
         gpu_core.reset();
         host1x_core.reset();
         perf_stats.reset();
+        step("stopping the CPU manager");
         cpu_manager.Shutdown();
         debugger.reset();
+        step("shutting down the kernel");
         kernel.Shutdown();
         stop_event = {};
         Network::RestartSocketOperations();
@@ -577,10 +597,11 @@ struct System::Impl {
         // 12 GiB), and the next Load reuses it. Switch 2 only: Switch 1 keeps its behaviour.
         // InitializeKernel creates it again, sized for the next game.
         if (Settings::CurrentProgramIsSwitch2()) {
+            step("releasing guest memory");
             device_memory.reset();
         }
 
-        LOG_DEBUG(Core, "Shutdown OK");
+        step("done");
     }
 
     bool IsShuttingDown() const {

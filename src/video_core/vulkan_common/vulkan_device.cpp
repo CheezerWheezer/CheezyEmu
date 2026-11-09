@@ -29,6 +29,7 @@
 #include "common/settings_enums.h"
 #include "video_core/vulkan_common/nsight_aftermath_tracker.h"
 #include "video_core/vulkan_common/vma.h"
+#include "video_core/gpu_crash_context.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 #include "video_core/gpu_logging/gpu_logging.h"
@@ -1032,7 +1033,14 @@ VkFormat Device::GetSupportedFormat(VkFormat wanted_format, VkFormatFeatureFlags
 
 void Device::ReportLoss() const {
     LOG_CRITICAL(Render_Vulkan, "Device loss occurred!");
+    VideoCommon::GpuCrashContext::Log();
     ReportDeviceFault();
+    if (GetDriverID() == VK_DRIVER_ID_MESA_RADV) {
+        LOG_CRITICAL(Render_Vulkan, "Linux (RADV): to capture this GPU hang, start CheezyEmu with "
+                                    "RADV_DEBUG=hang and share the folder it writes "
+                                    "(~/radv_dumps_*) with eden_log.txt");
+    }
+    Common::Log::Stop(); // flush before the driver takes the process down
 
     // Wait for the log to flush and for Nsight Aftermath to dump the results
     std::this_thread::sleep_for(std::chrono::seconds{15});

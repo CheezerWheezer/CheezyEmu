@@ -6,10 +6,14 @@
 
 #include <functional>
 #include <vector>
+#include <algorithm>
+#include <array>
+
 #include <QBoxLayout>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
+#include <QGroupBox>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
@@ -356,8 +360,45 @@ void ConfigureGraphics::Setup(const ConfigurationShared::Builder& builder) {
         }
     }
 
+    // AMD FSR and frame generation in one box at the top (also in each game's settings), instead
+    // of spread through the list.
+    const std::array fsr_fg_ids{
+        Settings::values.amd_fsr4.Id(),
+        Settings::values.oot_anti_aliasing.Id(),
+        Settings::values.frame_gen.Id(),
+        Settings::values.frame_gen_type.Id(),
+        Settings::values.amd_frame_gen_version.Id(),
+        Settings::values.frame_gen_multiplier.Id(),
+        Settings::values.frame_gen_target_rate.Id(),
+        Settings::values.frame_gen_flow_scale_auto.Id(),
+        Settings::values.frame_gen_flow_scale.Id(),
+        Settings::values.frame_gen_queue_target.Id(),
+    };
+    QGroupBox* fsr_fg_box = nullptr;
+    for (const u32 id : fsr_fg_ids) {
+        const auto it = hold_graphics.find(id);
+        if (it == hold_graphics.end()) {
+            continue;
+        }
+        if (fsr_fg_box == nullptr) {
+            fsr_fg_box = new QGroupBox(tr("AMD FSR && Frame Generation"), this);
+            auto* box_layout = new QVBoxLayout(fsr_fg_box);
+            auto* hint = new QLabel(
+                tr("Ocarina of Time: FSR upscales the game and AMD frame generation adds frames. "
+                   "Both need Resolution 1X. Pick \"AMD FSR Frame Generation\" as the type and "
+                   "restart CheezyEmu after changing it."),
+                fsr_fg_box);
+            hint->setWordWrap(true);
+            box_layout->addWidget(hint);
+            graphics_layout.addWidget(fsr_fg_box);
+        }
+        fsr_fg_box->layout()->addWidget(it->second);
+    }
+
     for (const auto& [id, widget] : hold_graphics) {
-        graphics_layout.addWidget(widget);
+        if (std::ranges::find(fsr_fg_ids, id) == fsr_fg_ids.end()) {
+            graphics_layout.addWidget(widget);
+        }
     }
 
     // Hide rather than disable, a disabled widget would read as using the global value
