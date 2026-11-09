@@ -222,8 +222,25 @@ jobs:
         if: startsWith(matrix.platform, 'windows')
         shell: pwsh
         run: |
+          # sccache only speeds the build up: retry its download (GitHub's release downloads time
+          # out now and then, 504), and build without it when it still fails.
           $zip = Join-Path $env:RUNNER_TEMP 'sccache.zip'
-          Invoke-WebRequest -OutFile $zip https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip
+          $url = 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip'
+          $ok = $false
+          foreach ($attempt in 1..5) {
+            try {
+              Invoke-WebRequest -OutFile $zip $url -TimeoutSec 120
+              $ok = $true
+              break
+            } catch {
+              Write-Host "sccache download attempt $attempt failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds (15 * $attempt)
+            }
+          }
+          if (-not $ok) {
+            Write-Host "::warning::sccache could not be downloaded; building without the compiler cache"
+            exit 0
+          }
           Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'sccache')
           $bin = (Get-ChildItem -Recurse -Filter sccache.exe (Join-Path $env:RUNNER_TEMP 'sccache')).DirectoryName
           $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
@@ -314,6 +331,10 @@ jobs:
             flags+=" -Wno-error=profile-instr-out-of-date -Wno-error=profile-instr-unprofiled"
             flags+=" -Wno-error=backend-plugin"
           fi
+          launcher=()
+          if command -v sccache > /dev/null; then
+            launcher=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
+          fi
           cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
@@ -328,8 +349,7 @@ jobs:
             -DLICHII_BUILD_PLATFORM=${{ matrix.platform }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            "${launcher[@]}" \
             "-DCMAKE_C_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
             "-DCMAKE_CXX_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
             "-DCMAKE_LINKER=$LLVM_ROOT/bin/lld-link.exe" \
@@ -371,16 +391,16 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if command -v ccache > /dev/null; then ccache --zero-stats; else sccache --zero-stats; fi
+          if command -v ccache > /dev/null; then ccache --zero-stats; elif command -v sccache > /dev/null; then sccache --zero-stats; fi
           targets="yuzu yuzu-cmd"
           if [[ "${{ matrix.platform }}" == windows* ]]; then targets="$targets lichii-updater"; fi
           cmake --build build/release --target $targets --parallel
-          if command -v ccache > /dev/null; then ccache --show-stats; else sccache --show-stats; fi
+          if command -v ccache > /dev/null; then ccache --show-stats; elif command -v sccache > /dev/null; then sccache --show-stats; fi
 
       - name: Stop sccache on Windows
         if: always() && startsWith(matrix.platform, 'windows') && steps.compiler-cache.outcome == 'success'
         shell: pwsh
-        run: sccache --stop-server
+        run: if (Get-Command sccache -ErrorAction SilentlyContinue) { sccache --stop-server }
 
       - name: Save compiler objects
         if: always() && steps.compiler-cache.outcome == 'success'
