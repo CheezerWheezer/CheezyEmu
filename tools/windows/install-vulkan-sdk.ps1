@@ -35,7 +35,16 @@ if (Test-Path $VULKAN_SDK) {
 
 echo "Downloading Vulkan SDK $VulkanSDKVer from $Uri"
 $WebClient = New-Object System.Net.WebClient
-$WebClient.DownloadFile($Uri, $Destination)
+foreach ($attempt in 1..6) {
+    try {
+        $WebClient.DownloadFile($Uri, $Destination)
+        break
+    } catch {
+        if ($attempt -eq 6) { throw }
+        Write-Host "Vulkan SDK download attempt $attempt failed: $($_.Exception.Message)"
+        Start-Sleep -Seconds (15 * $attempt)
+    }
+}
 echo "Finished downloading $ExeFile"
 
 $Arguments = "--root `"$VULKAN_SDK`" --accept-licenses --default-answer --confirm-command install"
