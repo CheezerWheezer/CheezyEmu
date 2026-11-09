@@ -521,30 +521,44 @@ VkSwapchainKHR CreateSwapchain(const Device& device, std::mutex& submit_mutex,
         result = state.api->create_context(&state.swapchain_context, &desc.header, nullptr);
         const std::string name = attempt ? attempt->second : std::string{"default"};
         if (result == FFX_API_RETURN_OK && swapchain != VK_NULL_HANDLE) {
-            LOG_INFO(Render_Vulkan, "AMD frame generation: swapchain {} started", name);
-            break;
+            // The functions frames go through. Destroy is optional (checked where it is called):
+            // AMD's FSR 4 swapchain (driver 2.0.416, RX 7000) answered without it and frame
+            // generation stayed off for everyone on that driver. Without the others, the next
+            // offered version (FSR 3.1's) is tried instead of giving up.
+            state.functions = {};
+            state.functions.header.type = FFX_API_QUERY_DESC_TYPE_FGSWAPCHAIN_FUNCTIONS_VK;
+            const ffxReturnCode_t query =
+                state.api->query(&state.swapchain_context, &state.functions.header);
+            if (query == FFX_API_RETURN_OK && state.functions.pOutQueuePresentKHR &&
+                state.functions.pOutAcquireNextImageKHR &&
+                state.functions.pOutGetSwapchainImagesKHR) {
+                LOG_INFO(Render_Vulkan, "AMD frame generation: swapchain {} started{}", name,
+                         state.functions.pOutDestroySwapchainFFXAPI
+                             ? ""
+                             : " (no destroy function: the context destroys it)");
+                break;
+            }
+            LOG_WARNING(Render_Vulkan,
+                        "AMD frame generation: swapchain {} gave no functions ({}: present {}, "
+                        "acquire {}, images {}), trying the next version",
+                        name, query, state.functions.pOutQueuePresentKHR != nullptr,
+                        state.functions.pOutAcquireNextImageKHR != nullptr,
+                        state.functions.pOutGetSwapchainImagesKHR != nullptr);
+            result = FFX_API_RETURN_ERROR;
+        } else {
+            LOG_WARNING(Render_Vulkan, "AMD frame generation: swapchain {} failed ({})", name,
+                        result);
         }
-        LOG_WARNING(Render_Vulkan, "AMD frame generation: swapchain {} failed ({})", name, result);
         if (state.swapchain_context) {
             state.api->destroy_context(&state.swapchain_context, nullptr);
         }
         state.swapchain_context = nullptr;
+        swapchain = VK_NULL_HANDLE;
     }
     if (result != FFX_API_RETURN_OK || swapchain == VK_NULL_HANDLE) {
-        LOG_ERROR(Render_Vulkan, "AMD frame generation: swapchain creation failed ({}), using "
+        LOG_ERROR(Render_Vulkan, "AMD frame generation: no swapchain version worked ({}), using "
                                  "a normal swapchain",
                   result);
-        state.swapchain_context = nullptr;
-        return VK_NULL_HANDLE;
-    }
-    state.functions = {};
-    state.functions.header.type = FFX_API_QUERY_DESC_TYPE_FGSWAPCHAIN_FUNCTIONS_VK;
-    result = state.api->query(&state.swapchain_context, &state.functions.header);
-    if (result != FFX_API_RETURN_OK || !state.functions.pOutQueuePresentKHR ||
-        !state.functions.pOutAcquireNextImageKHR || !state.functions.pOutGetSwapchainImagesKHR ||
-        !state.functions.pOutDestroySwapchainFFXAPI) {
-        LOG_ERROR(Render_Vulkan, "AMD frame generation: no swapchain functions ({})", result);
-        state.api->destroy_context(&state.swapchain_context, nullptr);
         state.swapchain_context = nullptr;
         return VK_NULL_HANDLE;
     }
