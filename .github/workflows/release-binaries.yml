@@ -62,6 +62,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
           tag="build-${BUILD_NUMBER}"
           if tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null); then
             if [ "$tag_sha" != "$GITHUB_SHA" ]; then
@@ -69,7 +70,7 @@ jobs:
               exit 1
             fi
           else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            retry gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
           fi
 
@@ -120,8 +121,9 @@ jobs:
         if: startsWith(matrix.platform, 'linux')
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry sudo apt-get -o Acquire::Retries=5 update
+          retry sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev \
             libpulse-dev libtool libudev-dev libxkbcommon-x11-0 \
             mesa-common-dev nasm ninja-build qt6-base-private-dev \
@@ -141,7 +143,8 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: |
-          brew install autoconf automake boost ffmpeg fmt glslang hidapi libtool libusb lz4 ninja \
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry brew install autoconf automake boost ffmpeg fmt glslang hidapi libtool libusb lz4 ninja \
             nlohmann-json openssl pkg-config qt@6 sdl3 speexdsp zlib zstd cmake catch2 molten-vk \
             vulkan-loader spirv-tools vulkan-utility-libraries ccache
 
@@ -180,8 +183,9 @@ jobs:
             sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$PGO_LLVM_VERSION main" |
             sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry sudo apt-get -o Acquire::Retries=5 update
+          retry sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
             "clang-$PGO_LLVM_VERSION" "lld-$PGO_LLVM_VERSION"
           "clang-$PGO_LLVM_VERSION" --version
 
@@ -315,7 +319,8 @@ jobs:
               "-DCMAKE_CXX_FLAGS=$profile"
             )
           fi
-          cmake -S . -B build/release -G Ninja "${flags[@]}"
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry cmake -S . -B build/release -G Ninja "${flags[@]}"
 
       # A profile older than the source only warns: functions changed since training lose their
       # profile data and are optimized as in the ThinLTO build. clang-cl 22 reads LLVM's indexed
@@ -335,7 +340,8 @@ jobs:
           if command -v sccache > /dev/null; then
             launcher=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
           fi
-          cmake -S . -B build/release -G Ninja \
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
             -DYUZU_TESTS=OFF \
@@ -362,7 +368,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake -S . -B build/release -G Ninja \
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          retry cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=OFF \
             -DYUZU_TESTS=OFF \
@@ -627,7 +634,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-${BUILD_NUMBER}" --jq '.object.sha')
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          tag_sha=$(retry gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-${BUILD_NUMBER}" --jq '.object.sha')
           if [ "$tag_sha" != "$GITHUB_SHA" ]; then
             echo "Release tag build-${BUILD_NUMBER} points to $tag_sha instead of $GITHUB_SHA"
             exit 1
@@ -720,8 +728,9 @@ jobs:
         run: |
           set -euo pipefail
           expected="build-${BUILD_NUMBER}"
-          published_tag=$(gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName')
-          published_title=$(gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json name --jq '.name')
+          retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
+          published_tag=$(retry gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName')
+          published_title=$(retry gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json name --jq '.name')
           if [ "$published_tag" != "$expected" ] || [[ "$published_title" != *" build ${BUILD_NUMBER} ("* ]]; then
             echo "Release is tagged '$published_tag' and titled '$published_title', expected tag $expected and a title naming build ${BUILD_NUMBER}"
             exit 1
