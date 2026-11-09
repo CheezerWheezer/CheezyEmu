@@ -145,8 +145,8 @@ Low frame rate? (FSR 4 on RX 6000 / RX 7000)
 
 Frame generation shows one extra, generated frame after each real one: 30 FPS on screen
 becomes 60. It is AMD's FSR frame generation, the same as in PC games. It works on any GPU on
-Windows: FSR 4 frame generation where AMD's driver offers it (Radeon RX 9000, and RX 7000 with a
-recent driver), FSR 3.1 frame generation on the others. Not on Linux or macOS.
+Windows: FSR 4 frame generation on Radeon RX 9000, FSR 3.1 frame generation on every other GPU.
+Not on Linux or macOS.
 
 Turning it on
   1. Emulation > Configure > Graphics: turn on "Enable Frame Generation".
@@ -177,10 +177,10 @@ The FPS counter and a locked 60
 FSR 4 or FSR 3.1 frame generation
   "AMD Frame Generation Version" (under the frame generation options, restart CheezyEmu after
   changing it):
-  - Auto: the newest AMD offers for your GPU. FSR 4 frame generation where the driver offers
-    it (RX 9000, RX 7000 with a recent driver), FSR 3.1 on the others.
-  - FSR 3.1 (faster): lighter on the GPU. Pick it if FSR 4 frame generation costs too much
-    performance. Where FSR 4 isn't offered it changes nothing.
+  - Auto: FSR 4 frame generation on RX 9000 (it needs their FP8 support), FSR 3.1 on every
+    other GPU, picked for you.
+  - FSR 3.1 (faster): lighter on the GPU. Pick it on an RX 9000 if FSR 4 frame generation
+    costs too much performance. On other GPUs it's what Auto already uses.
 
 Good to know
   - Ocarina of Time only for now. It needs the game's motion data, which CheezyEmu reads from

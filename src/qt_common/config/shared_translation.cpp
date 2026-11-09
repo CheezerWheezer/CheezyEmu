@@ -265,10 +265,10 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "Lossless Scaling are CheezyEmu's other frame generators, for any game."));
     INSERT(Settings, amd_frame_gen_version, tr("AMD Frame Generation Version"),
            tr("Which AMD FSR frame generation runs (with the AMD FSR frame generation type).\n"
-              "Auto: the newest AMD offers for this GPU (FSR 4 frame generation where the driver "
-              "offers it: Radeon RX 9000, RX 7000 with a recent driver; FSR 3.1 on others).\n"
-              "FSR 3.1: lighter on the GPU; use it if FSR 4 frame generation costs too much "
-              "performance.\nTakes effect when CheezyEmu restarts."));
+              "Auto: FSR 4 frame generation on Radeon RX 9000 (it needs their FP8 support), "
+              "FSR 3.1 on every other GPU.\n"
+              "FSR 3.1: lighter on the GPU; use it on an RX 9000 if FSR 4 frame generation costs "
+              "too much performance.\nTakes effect when CheezyEmu restarts."));
     INSERT(Settings, frame_gen_multiplier, tr("Frame Generation Multiplier"), QString());
     INSERT(Settings, frame_gen_target_rate, tr("Target Frame Rate"),
            tr("CheezyEmu's own frame generators (Optical Flow, Lossless Scaling) add frames up to this "

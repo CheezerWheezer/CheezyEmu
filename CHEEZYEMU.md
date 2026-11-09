@@ -22,6 +22,9 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **FSR presets work docked too.** Docked (4K output) the sizes double: Native AA 3840x2160,
   Quality 2560x1440, Balanced 2250x1266, Performance 1920x1080, Ultra Performance 1280x720. In
   build 10 a docked preset turned FSR and frame generation off.
+- **Frame generation's Auto setting picks FSR 3.1 on cards that can't run FSR 4's** (everything
+  but the RX 9000 series). AMD's runtime offered FSR 4 frame generation to other cards too, where
+  it never made a frame, so players had to pick FSR 3.1 by hand.
 - **No more red flickering** (an upstream change build 10 had taken out is back).
 - **Fewer freezes and black screens after cutscenes**: two fixes from Lichii build 130 (GPU
   wait handling and its 32-region limit).

@@ -570,6 +570,11 @@ FN_MAX_LIMIT_LIST
         return features.vulkan_memory_model.vulkanMemoryModel;
     }
 
+    /// Returns true if the device has FP8 shader math (RDNA 4): what AMD's FSR 4 needs.
+    bool IsFloat8Supported() const {
+        return extensions.shader_float8 && features.shader_float8.shaderFloat8;
+    }
+
     /// Returns true if the device supports int8 natively.
     bool IsInt8Supported() const {
         return features.shader_float16_int8.shaderInt8;

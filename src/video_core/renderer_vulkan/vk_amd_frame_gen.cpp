@@ -157,10 +157,23 @@ void RetireFrameGenContext(State& state) {
     state.generating = false;
 }
 
-/// The AMD frame generation version setting asks for FSR 3.1 (lighter than FSR 4's).
-bool WantFsr31() {
-    return Settings::values.amd_frame_gen_version.GetValue() ==
-           Settings::AmdFrameGenVersion::Fsr31;
+/// FSR 3.1 frame generation: chosen in the settings, or (Auto) on a GPU without FP8 shader math.
+/// FSR 4's frame generation is for RDNA 4; AMD's runtime still offers it first on other GPUs,
+/// where it started but never made a frame, so Auto used to leave frame generation off there
+/// until a player picked FSR 3.1 by hand.
+bool WantFsr31(const Device& device) {
+    if (Settings::values.amd_frame_gen_version.GetValue() ==
+        Settings::AmdFrameGenVersion::Fsr31) {
+        return true;
+    }
+    const bool fsr4_capable = device.IsFloat8Supported();
+    static std::once_flag logged;
+    std::call_once(logged, [&] {
+        LOG_INFO(Render_Vulkan, "AMD frame generation: Auto picks FSR {} on {} ({})",
+                 fsr4_capable ? "4" : "3.1", device.GetModelName(),
+                 fsr4_capable ? "has FP8 shader math" : "no FP8 shader math, so not FSR 4's");
+    });
+    return !fsr4_capable;
 }
 
 /// The newest 3.x version AMD's runtime offers for `create_type` on this device, if any.
@@ -211,14 +224,13 @@ bool CreateFrameGenContext(State& state, const Device& device, VkExtent2D displa
     version.header.pNext = &backend.header;
     ffxOverrideVersion override_version{};
     override_version.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
-    if (WantFsr31()) {
+    if (WantFsr31(device)) {
         if (const auto fsr3 = NewestFsr3(*state.api, vk_context,
                                          FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATION)) {
             override_version.versionId = fsr3->first;
             override_version.header.pNext = &backend.header;
             version.header.pNext = &override_version.header;
-            LOG_INFO(Render_Vulkan, "AMD frame generation: FSR {} chosen in the settings",
-                     fsr3->second);
+            LOG_INFO(Render_Vulkan, "AMD frame generation: using FSR {}", fsr3->second);
         }
     }
     const ffxReturnCode_t result =
@@ -495,7 +507,7 @@ VkSwapchainKHR CreateSwapchain(const Device& device, std::mutex& submit_mutex,
     for (const auto& entry : offered) {
         attempts.emplace_back(entry);
     }
-    if (WantFsr31()) {
+    if (WantFsr31(device)) {
         // FSR 3.1's swapchain, to match its frame generator (the default may be FSR 4's).
         std::vector<std::optional<std::pair<u64, std::string>>> fsr3;
         for (const auto& entry : offered) {
