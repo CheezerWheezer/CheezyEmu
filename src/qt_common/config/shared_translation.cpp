@@ -190,6 +190,17 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QObject* parent) {
               "network, which sharpens heavily.\nNo sharpening: the image as the game renders it, "
               "without the network (faster; pairs well with a higher resolution). Has no effect while "
               "NVIDIA DLSS is on.\nTakes effect when the game starts."));
+    INSERT(Settings, oot_fsr_preset, tr("Ocarina of Time FSR preset:"),
+           tr("The Legend of Zelda: Ocarina of Time with AMD FSR on, Resolution 1X, 1080p. The 3D "
+              "scene renders at:\n"
+              "Native AA: 1890x1063, FSR as anti-aliasing (sharpest, slowest).\n"
+              "Native (game's size): 1440x810, as the game draws it.\n"
+              "Quality: 1260x708.\n"
+              "Balanced: 1080x608.\n"
+              "Performance: 990x557.\n"
+              "Ultra Performance: 720x405 (fastest, softest).\n"
+              "FSR upscales it to 1080p; the HUD and text stay sharp. Docked 4K mode isn't "
+              "affected.\nTakes effect when the game starts."));
     INSERT(Settings, post_shader_chain, QString(), QString());
     INSERT(Settings, post_shader_preset, QString(), QString());
     INSERT(Settings, post_shader_enabled, tr("Enable post-processing effects"),
@@ -629,6 +640,15 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           {
                               PAIR(OotAntiAliasing, Game, tr("Game")),
                               PAIR(OotAntiAliasing, NoSharpening, tr("No sharpening")),
+                          }});
+    translations->insert({Settings::EnumMetadata<Settings::OotFsrPreset>::Index(),
+                          {
+                              PAIR(OotFsrPreset, NativeAa, tr("Native AA")),
+                              PAIR(OotFsrPreset, Native, tr("Native (game's size)")),
+                              PAIR(OotFsrPreset, Quality, tr("Quality")),
+                              PAIR(OotFsrPreset, Balanced, tr("Balanced")),
+                              PAIR(OotFsrPreset, Performance, tr("Performance")),
+                              PAIR(OotFsrPreset, UltraPerformance, tr("Ultra Performance")),
                           }});
     translations->insert({Settings::EnumMetadata<Settings::AspectRatio>::Index(),
                           {

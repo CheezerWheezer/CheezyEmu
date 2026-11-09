@@ -2658,7 +2658,14 @@ bool TextureCache<P>::ImageCanRescale(ImageBase& image) {
     if (!image.info.rescaleable) {
         return false;
     }
-    if (Settings::values.resolution_info.downscale && !image.info.downscaleable) {
+    if (const auto& resolution = Settings::values.resolution_info;
+        resolution.scene_only_width != 0 &&
+        (image.info.type != ImageType::e2D || image.info.size.width != resolution.scene_only_width ||
+         image.info.size.height != resolution.scene_only_height)) {
+        return false; // an FSR preset scales the 3D scene only
+    }
+    if (Settings::values.resolution_info.downscale && !image.info.downscaleable &&
+        Settings::values.resolution_info.scene_only_width == 0) {
         return false;
     }
     if (Settings::values.resolution_info.downscale) {
