@@ -14,6 +14,12 @@ on:
   push:
     branches:
       - nx2-experimental
+    # A test build for testers: push a lightweight tag named test-<anything> (for example
+    # test-21ab4c1). Every platform is built and published as a pre-release under that tag. The
+    # in-app update checker only reads build-<n> tags, so players are never offered a test build,
+    # and a test build does not offer updates itself.
+    tags:
+      - "test-*"
     # A binary only changes when build inputs change; docs-only pushes skip the build.
     paths:
       - "src/**"
@@ -41,6 +47,8 @@ env:
   # The release's build number: the run number unless the run was given one (a rerun of a
   # failed release keeps its name).
   BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+  # The release's tag: build-<number>, or the pushed test-* tag for a test build.
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/test-') && github.ref_name || format('build-{0}', inputs.build_number || github.run_number) }}
 
 # A running build is never cancelled: it finishes and publishes. A push meanwhile queues one build;
 # a later push replaces it, so the newest commit builds as soon as the running one is done.
@@ -63,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
-          tag="build-${BUILD_NUMBER}"
+          tag="${RELEASE_TAG}"
           if tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$tag" --jq '.object.sha' 2>/dev/null); then
             if [ "$tag_sha" != "$GITHUB_SHA" ]; then
               echo "Release tag $tag points to $tag_sha instead of $GITHUB_SHA"
@@ -301,7 +309,7 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON
             -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
             -DENABLE_UPDATE_CHECKER=ON
-            -DCHEEZYEMU_BUILD_TAG=build-${{ env.BUILD_NUMBER }}
+            -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }}
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }}
             -DUSE_DISCORD_PRESENCE=OFF
             -DYUZU_USE_BUNDLED_SIRIT=OFF
@@ -351,7 +359,7 @@ jobs:
             -DYUZU_USE_BUNDLED_QT=OFF \
             -DYUZU_USE_BUNDLED_SDL3=ON \
             -DENABLE_UPDATE_CHECKER=ON \
-            -DCHEEZYEMU_BUILD_TAG=build-${{ env.BUILD_NUMBER }} \
+            -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }} \
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
@@ -382,7 +390,7 @@ jobs:
             -DVulkanHeaders_FORCE_BUNDLED=ON \
             -DVulkanUtilityLibraries_FORCE_BUNDLED=ON \
             -DENABLE_UPDATE_CHECKER=ON \
-            -DCHEEZYEMU_BUILD_TAG=build-${{ env.BUILD_NUMBER }} \
+            -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }} \
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }} \
             -DUSE_DISCORD_PRESENCE=OFF \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
@@ -466,7 +474,7 @@ jobs:
           export EXTRA_QT_MODULES=waylandcompositor
           export EXTRA_PLATFORM_PLUGINS='libqwayland-egl.so;libqwayland-generic.so'
           # Embedded in the AppImage metadata; matches the release tag (build-N) plus the commit.
-          export LDAI_VERSION="build-${BUILD_NUMBER}-${GITHUB_SHA::7}"
+          export LDAI_VERSION="${RELEASE_TAG}-${GITHUB_SHA::7}"
           export LDAI_OUTPUT="cheezyemu-${GITHUB_SHA}-${{ matrix.platform }}.AppImage"
           export OUTPUT="$LDAI_OUTPUT"
           export ARCH="$arch"
@@ -656,12 +664,20 @@ jobs:
         run: |
           set -euo pipefail
           retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
-          tag_sha=$(retry gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/build-${BUILD_NUMBER}" --jq '.object.sha')
+          tag_sha=$(retry gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')
           if [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "Release tag build-${BUILD_NUMBER} points to $tag_sha instead of $GITHUB_SHA"
+            echo "Release tag ${RELEASE_TAG} points to $tag_sha instead of $GITHUB_SHA"
             exit 1
           fi
-          tag="build-${BUILD_NUMBER}"
+          tag="${RELEASE_TAG}"
+          if [[ "$tag" == test-* ]]; then
+            title="CheezyEmu TEST build ${tag} (${GITHUB_SHA::7})"
+            test_note="> [!WARNING]
+          > **This is a test build for testers**, not a release. It may have bugs the released build does not. The in-app updater does not offer it, and a test build does not update itself: download the next build by hand."
+          else
+            title="CheezyEmu ${GITHUB_REF_NAME} build ${BUILD_NUMBER} (${GITHUB_SHA::7})"
+            test_note=""
+          fi
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
 
           link() { [[ -e "dist/$2" ]] && echo "[$1](${base}/$2)" || true; }
@@ -699,6 +715,8 @@ jobs:
 
           cat > notes.md <<EOF
           Automatic build of \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}.
+
+          ${test_note}
 
           > [!IMPORTANT]
           > **Read \`README.txt\`** (next to \`cheezyemu.exe\` after you unzip, or [on GitHub](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/README.txt)): how to turn switches on and off, install and move shader packs, and use AMD FSR upscaling and AMD frame generation. Changes and credits: [CHEEZYEMU.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/CHEEZYEMU.md).
@@ -738,7 +756,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --verify-tag \
             --prerelease \
-            --title "CheezyEmu ${GITHUB_REF_NAME} build ${BUILD_NUMBER} (${GITHUB_SHA::7})" \
+            --title "${title}" \
             --notes-file notes.md
 
       # CHEEZYEMU_BUILD_TAG is baked into every binary as build-<run number>, and the update checker
@@ -750,11 +768,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          expected="build-${BUILD_NUMBER}"
+          expected="${RELEASE_TAG}"
           retry() { local n; for n in 1 2 3 4; do "$@" && return 0; echo "::warning::attempt $n of '$*' failed; retrying" >&2; sleep $((n * 30)); done; return 1; }
           published_tag=$(retry gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName')
           published_title=$(retry gh release view "$expected" --repo "${GITHUB_REPOSITORY}" --json name --jq '.name')
-          if [ "$published_tag" != "$expected" ] || [[ "$published_title" != *" build ${BUILD_NUMBER} ("* ]]; then
+          if [[ "$expected" == test-* ]]; then
+            # A test build: the update checker ignores its tag, so only the tag itself is checked.
+            if [ "$published_tag" != "$expected" ]; then
+              echo "Test release is tagged '$published_tag', expected $expected"
+              exit 1
+            fi
+          elif [ "$published_tag" != "$expected" ] || [[ "$published_title" != *" build ${BUILD_NUMBER} ("* ]]; then
             echo "Release is tagged '$published_tag' and titled '$published_title', expected tag $expected and a title naming build ${BUILD_NUMBER}"
             exit 1
           fi
