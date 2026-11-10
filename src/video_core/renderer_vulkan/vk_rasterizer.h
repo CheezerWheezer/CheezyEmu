@@ -401,7 +401,7 @@ private:
         s32 base_vertex{};
         u32 index_count{};
         std::array<f32, 4> origin{};
-        std::array<f32, 280 * 12> bones{};
+        std::array<f32, 320 * 12> bones{}; ///< Link has 282 (two past 280 were left out)
 
         bool SameMesh(const OcarinaActorPose& other) const {
             return channel == other.channel && vertex == other.vertex &&
@@ -419,7 +419,7 @@ private:
     std::unordered_map<u64, std::vector<OcarinaActorPose>> oot_previous_rigid;
     static constexpr size_t MaxOcarinaRigid = 4096;
     u64 oot_actors_frame{};
-    static constexpr size_t MaxOcarinaActors = 64;
+    static constexpr size_t MaxOcarinaActors = 160; ///< 64 was reached in busy scenes
     static constexpr size_t MaxOcarinaMovingObjects = 64; ///< Their own slots: characters filled all
 #endif
     u64 render_trace_frame = 0;

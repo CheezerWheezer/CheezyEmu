@@ -3145,6 +3145,18 @@ void RasterizerVulkan::TrackOcarinaCamera() {
 }
 
 /// Capture a solid object's transform (constant buffer 4: a 3x4 matrix, then an origin at 0x40).
+namespace {
+/// Why character draws got no motion of their own, per log interval.
+struct OcarinaActorDrops {
+    u64 gpu_pose{};    ///< Its pose or origin buffer holds GPU-written data
+    u64 no_pose{};     ///< No pose or origin buffer bound
+    u64 full{};        ///< More than MaxOcarinaActors in the frame
+    u64 new_mesh{};    ///< Not drawn in the frame before
+    u64 unread{};      ///< Its vertices or indices could not be read (GPU-written or being written)
+    u64 too_big{};
+} g_oot_actor_drops;
+} // Anonymous namespace
+
 void RasterizerVulkan::TrackOcarinaRigid(const OcarinaVertexLayout& position_layout) {
     // EDEN_NX2_OOT_OBJECT_MOTION=1: off by default. Large objects whose transform the game writes
     // every frame got motion as if they moved, and generated frames dragged patches of them
@@ -3202,7 +3214,7 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     if (oot_actors_frame != render_trace_frame) {
         oot_previous_rigid.clear();
         if (oot_actors_frame + 1 == render_trace_frame) {
-            // Swapped, not moved: a pose is 13 KB (280 bones), and a moved-from vector grew
+            // Swapped, not moved: a pose is 15 KB (320 bones), and a moved-from vector grew
             // again from nothing every frame, copying megabytes as it doubled.
             oot_previous_actors.swap(oot_actors);
             for (auto& pose : oot_rigid) {
@@ -3223,9 +3235,83 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     const auto& regs = maxwell3d->regs;
     const auto& stream = regs.vertex_streams[0];
     const u32 index_count = draw.index_buffer.count;
+    // EDEN_NX2_OOT_ACTOR_DIAG=1: every kind of indexed draw that gets no motion of its own, once,
+    // with its vertex attributes and the constant buffers its vertex stage has bound.
+    static const bool actor_diag = std::getenv("EDEN_NX2_OOT_ACTOR_DIAG") != nullptr;
+    const auto diag = [&](const char* reason) {
+        if (!actor_diag) {
+            return;
+        }
+        static std::set<std::string> seen;
+        if (seen.size() >= 80) {
+            return;
+        }
+        bool has_uint = false;
+        bool has_pose = false;
+        std::string key = fmt::format("{}: stride {} index {}B", reason, stream.stride.Value(),
+                                      draw.index_buffer.FormatSizeInBytes());
+        for (u32 location = 0; location < 16; ++location) {
+            const auto& attrib = regs.vertex_attrib_format[location];
+            if (attrib.constant) {
+                continue;
+            }
+            const VkFormat format = MaxwellToVK::VertexFormat(device, attrib.type, attrib.size);
+            has_uint |= format == VK_FORMAT_R8G8B8A8_UINT || format == VK_FORMAT_R16G16B16A16_UINT ||
+                        format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R16G16_UINT ||
+                        format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R16_UINT ||
+                        format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32G32B32A32_UINT;
+            key += fmt::format(" a{}:b{}+{}:{}", location, attrib.buffer.Value(),
+                               attrib.offset.Value(), static_cast<int>(format));
+        }
+        buffer_cache.ForEachBoundBuffer(false, [&](u32 stage, bool storage, u32 index, bool,
+                                                    const auto& binding, u32 size, const auto*,
+                                                    u32) {
+            if (stage == 0 && !storage) {
+                has_pose |= index >= 5 && size >= 96;
+                key += fmt::format(" c{}:{}{}", index, size,
+                                   buffer_cache.IsRegionGpuModified(binding.device_addr, size)
+                                       ? "(gpu)"
+                                       : "");
+            }
+        });
+        if (std::string_view{reason} == "layout" && !has_uint && !has_pose) {
+            return;
+        }
+        if (seen.insert(key).second) {
+            LOG_INFO(Render_Vulkan, "Ocarina actor diag: {} | indices {} instanced {}", key,
+                     index_count, regs.vertex_stream_instances.IsInstancingEnabled(0));
+            // A mesh with a pose buffer but no weights: what its constant buffers hold.
+            if (std::string_view{reason} == "layout" && has_pose) {
+                buffer_cache.ForEachBoundBuffer(
+                    false, [&](u32 stage, bool storage, u32 index, bool, const auto& binding,
+                               u32 size, const auto*, u32) {
+                        if (stage != 0 || storage || (index != 4 && index != 5 && index != 6) ||
+                            buffer_cache.IsRegionGpuModified(binding.device_addr, size)) {
+                            return;
+                        }
+                        std::array<u32, 32> words{};
+                        device_memory.ReadBlockUnsafe(binding.device_addr, words.data(),
+                                                      (std::min<size_t>)(size, sizeof(words)));
+                        std::string text;
+                        for (size_t i = 0; i < (std::min<size_t>)(size / 4, words.size()); ++i) {
+                            f32 value;
+                            std::memcpy(&value, &words[i], sizeof(value));
+                            const bool small_int = words[i] != 0 && words[i] < 4096;
+                            text += small_int ? fmt::format(" #{}", words[i])
+                                              : fmt::format(" {:.3f}", value);
+                        }
+                        LOG_INFO(Render_Vulkan, "Ocarina actor diag:    c{} ({} B):{}", index,
+                                 size, text);
+                    });
+            }
+        }
+    };
     if (index_count < 3 || index_count % 3 != 0 || index_count > 196608 ||
         draw.index_buffer.FormatSizeInBytes() != 2 || !stream.IsEnabled() || stream.stride < 12 ||
         stream.stride > 128 || regs.vertex_stream_instances.IsInstancingEnabled(0)) {
+        if (index_count >= 3 && index_count <= 196608) {
+            diag("basic");
+        }
         return;
     }
     // The skinned layouts the game draws characters with: a float position at location 0, joint
@@ -3269,13 +3355,29 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     if (!read_attribute(0, layout.position, layout.position_offset) ||
         (layout.position != VK_FORMAT_R32G32B32_SFLOAT &&
          layout.position != VK_FORMAT_R16G16B16A16_SFLOAT) ||
-        !read_attribute(4, layout.weights, layout.weights_offset) || !is_weight(layout.weights) ||
         !read_attribute(6, layout.joints, layout.joints_offset) || !is_joint(layout.joints)) {
+        diag("layout");
         TrackOcarinaRigid(layout);
         return;
     }
-    layout.weight_count = (std::min)(components(layout.weights), components(layout.joints));
-    if (read_attribute(5, layout.extra_weights, layout.extra_weights_offset) &&
+    // Parts bound to one bone per vertex have a joint index and no weights: Link's arms, legs and
+    // boots, and other characters' the same. Without them only the body had motion of its own,
+    // the limbs got the scenery's, and generated frames tore them (ghost hands, broken boots).
+    const bool weighted =
+        read_attribute(4, layout.weights, layout.weights_offset) && is_weight(layout.weights);
+    if (!weighted) {
+        layout.single_joint = 1;
+        layout.weights = layout.extra_weights = VK_FORMAT_R8G8B8A8_UNORM;
+        layout.weights_offset = layout.extra_weights_offset = layout.position_offset;
+        layout.extra_joints = layout.joints;
+        layout.extra_joints_offset = layout.joints_offset;
+        layout.weight_count = layout.extra_count = 0;
+    } else {
+        layout.weight_count = (std::min)(components(layout.weights), components(layout.joints));
+    }
+    if (!weighted) {
+        // No second group either.
+    } else if (read_attribute(5, layout.extra_weights, layout.extra_weights_offset) &&
         is_weight(layout.extra_weights) &&
         read_attribute(7, layout.extra_joints, layout.extra_joints_offset) &&
         is_joint(layout.extra_joints)) {
@@ -3289,6 +3391,7 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
         layout.extra_count = 0;
     }
     if (oot_actors.size() >= MaxOcarinaActors) {
+        ++g_oot_actor_drops.full;
         return;
     }
     // The same mesh drawn twice in a frame (a shadow pass) keeps its first pose.
@@ -3311,10 +3414,15 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     pose.base_vertex = base_vertex;
     pose.index_count = index_count;
     bool origin_found{}, bones_found{};
+    bool gpu_written{};
+    std::array<std::pair<DAddr, u32>, 2> palettes{}; // constant buffers 6 and 7
     buffer_cache.ForEachBoundBuffer(false, [&](u32 stage, bool storage, u32 index, bool,
                                                 const auto& binding, u32 size, const auto*, u32) {
-        if (stage != 0 || storage || (index != 4 && index != 6) ||
-            buffer_cache.IsRegionGpuModified(binding.device_addr, size)) {
+        if (stage != 0 || storage || (index != 4 && index != 6 && index != 7)) {
+            return;
+        }
+        if (buffer_cache.IsRegionGpuModified(binding.device_addr, size)) {
+            gpu_written |= index != 7;
             return;
         }
         if (index == 4 && size >= 0x40 + 3 * sizeof(f32)) {
@@ -3322,14 +3430,99 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
                                           3 * sizeof(f32));
             origin_found = true;
         }
-        if (index == 6 && size >= 12 * sizeof(f32)) {
-            const size_t bytes = (std::min<size_t>)(size, sizeof(pose.bones)) / 48 * 48;
-            device_memory.ReadBlockUnsafe(binding.device_addr, pose.bones.data(), bytes);
-            bones_found = true;
+        if ((index == 6 || index == 7) && size >= 12 * sizeof(f32)) {
+            palettes[index - 6] = {binding.device_addr, size};
         }
     });
+    // The pose is constant buffer 6 in most of the game's character shaders and 7 in some (Link's
+    // largest mesh, 31,608 indices, has material data in 6): take the one whose first entry is a
+    // transform. Reading 6 regardless gave that mesh no usable motion, and generated frames tore
+    // Link's middle while he moved.
+    const auto is_transform = [&](DAddr address) {
+        std::array<f32, 12> m{};
+        device_memory.ReadBlockUnsafe(address, m.data(), sizeof(m));
+        f32 lengths[3];
+        for (size_t row = 0; row < 3; ++row) {
+            const f32* const r = m.data() + row * 4;
+            lengths[row] = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+            if (!std::isfinite(lengths[row]) || !std::isfinite(r[3]) || lengths[row] < 1e-3f ||
+                lengths[row] > 1e3f) {
+                return false;
+            }
+        }
+        for (size_t a = 0; a < 3; ++a) {
+            for (size_t b = a + 1; b < 3; ++b) {
+                const f32* const ra = m.data() + a * 4;
+                const f32* const rb = m.data() + b * 4;
+                const f32 dot = ra[0] * rb[0] + ra[1] * rb[1] + ra[2] * rb[2];
+                if (std::abs(dot) > 0.25f * lengths[a] * lengths[b]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    const size_t chosen = palettes[0].second != 0 && is_transform(palettes[0].first)   ? 0
+                          : palettes[1].second != 0 && is_transform(palettes[1].first) ? 1
+                          : palettes[0].second != 0                                    ? 0
+                                                                                       : 1;
+    if (palettes[chosen].second != 0) {
+        const size_t bytes =
+            (std::min<size_t>)(palettes[chosen].second, sizeof(pose.bones)) / 48 * 48;
+        device_memory.ReadBlockUnsafe(palettes[chosen].first, pose.bones.data(), bytes);
+        bones_found = true;
+    }
     if (!origin_found || !bones_found) {
+        ++(gpu_written ? g_oot_actor_drops.gpu_pose : g_oot_actor_drops.no_pose);
+        diag(!origin_found ? "no origin" : "no bones");
         oot_actors.pop_back();
+    } else {
+        diag("tracked");
+        // What space the positions are in and what the bone they follow looks like.
+        static std::set<GPUVAddr> described;
+        if (actor_diag && described.size() < 16 && described.insert(vertex_address).second) {
+            const u32 sampled = 96;
+            std::vector<u8> vertices(size_t{sampled} * layout.stride);
+            gpu_memory->ReadBlockUnsafe(vertex_address +
+                                            static_cast<u64>((std::max)(base_vertex, 0)) *
+                                                layout.stride,
+                                        vertices.data(), vertices.size());
+            std::array<f32, 3> low{1e9f, 1e9f, 1e9f}, high{-1e9f, -1e9f, -1e9f};
+            u32 joint = 0;
+            for (u32 v = 0; v < sampled; ++v) {
+                const u8* const vertex = vertices.data() + size_t{v} * layout.stride;
+                std::array<f32, 3> position{};
+                if (layout.position == VK_FORMAT_R32G32B32_SFLOAT) {
+                    std::memcpy(position.data(), vertex + layout.position_offset, 12);
+                }
+                for (size_t axis = 0; axis < 3; ++axis) {
+                    low[axis] = (std::min)(low[axis], position[axis]);
+                    high[axis] = (std::max)(high[axis], position[axis]);
+                }
+                if (v == 0) {
+                    u16 value{};
+                    std::memcpy(&value, vertex + layout.joints_offset,
+                                layout.joints == VK_FORMAT_R8_UINT ||
+                                        layout.joints == VK_FORMAT_R8G8B8A8_UINT ||
+                                        layout.joints == VK_FORMAT_R8G8_UINT
+                                    ? 1
+                                    : 2);
+                    joint = value;
+                }
+            }
+            const size_t bone = (std::min<size_t>)(joint, pose.bones.size() / 12 - 1) * 12;
+            LOG_INFO(Render_Vulkan,
+                     "Ocarina actor diag: mesh {:#x} indices {} single joint {}: positions x "
+                     "{:.1f}..{:.1f} y {:.1f}..{:.1f} z {:.1f}..{:.1f}; vertex 0 joint {} bone "
+                     "{:.2f} {:.2f} {:.2f} {:.2f} | {:.2f} {:.2f} {:.2f} {:.2f} | {:.2f} {:.2f} "
+                     "{:.2f} {:.2f}; origin {:.1f} {:.1f} {:.1f}",
+                     vertex_address, index_count, layout.single_joint, low[0], high[0], low[1],
+                     high[1], low[2], high[2], joint, pose.bones[bone], pose.bones[bone + 1],
+                     pose.bones[bone + 2], pose.bones[bone + 3], pose.bones[bone + 4],
+                     pose.bones[bone + 5], pose.bones[bone + 6], pose.bones[bone + 7],
+                     pose.bones[bone + 8], pose.bones[bone + 9], pose.bones[bone + 10],
+                     pose.bones[bone + 11], pose.origin[0], pose.origin[1], pose.origin[2]);
+        }
     }
 }
 
@@ -3442,6 +3635,7 @@ u64 OcarinaMeshKey(GPUVAddr vertex, GPUVAddr indices, u32 index_count, s32 base_
     mix(index_count);
     mix(static_cast<u32>(base_vertex));
     mix(layout.stride | (u64{layout.position_offset} << 16) | (u64{layout.rigid} << 32) |
+        (u64{layout.single_joint} << 33) |
         (u64{static_cast<u32>(layout.position)} << 40));
     mix(u64{layout.weight_count} | (u64{layout.extra_count} << 8) |
         (u64{layout.joints_offset} << 16) | (u64{layout.weights_offset} << 32));
@@ -3472,6 +3666,7 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
         const auto before = std::ranges::find_if(
             oot_previous_actors, [&](const auto& actor) { return actor.SameMesh(now); });
         if (now.channel != gpu_memory || before == oot_previous_actors.end()) {
+            ++g_oot_actor_drops.new_mesh;
             continue;
         }
         const u64 key = OcarinaMeshKey(now.vertex, now.indices, now.index_count, now.base_vertex,
@@ -3483,16 +3678,19 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
         }
         std::vector<u16> indices(now.index_count);
         if (!read(now.indices, indices.data(), indices.size() * sizeof(u16))) {
+            ++g_oot_actor_drops.unread;
             continue;
         }
         const auto [minimum, maximum] = std::ranges::minmax(indices);
         const s64 first = static_cast<s64>(now.base_vertex) + minimum;
         const u32 vertex_count = static_cast<u32>(maximum) - minimum + 1;
         if (first < 0 || first > (1 << 20) || vertex_count > 65536) {
+            ++g_oot_actor_drops.too_big;
             continue;
         }
         std::vector<u8> vertices(vertex_count * stride);
         if (!read(now.vertex + first * stride, vertices.data(), vertices.size())) {
+            ++g_oot_actor_drops.unread;
             continue;
         }
         for (u16& index : indices) {
@@ -3572,10 +3770,22 @@ void RasterizerVulkan::ReadOcarinaActors(std::vector<OcarinaActorMesh>& meshes) 
     static u64 logged_frame = 0;
     if (render_trace_frame >= logged_frame + 600) {
         logged_frame = render_trace_frame;
+        const auto single = [](const auto& list) {
+            return std::ranges::count_if(
+                list, [](const auto& entry) { return entry.layout.single_joint != 0; });
+        };
         LOG_INFO(Render_Vulkan,
-                 "Ocarina of Time: {} characters with their own motion ({} drawn), {} moving "
-                 "objects ({} solid draws)",
-                 characters, oot_actors.size(), meshes.size() - characters, oot_rigid.size());
+                 "Ocarina of Time: {} characters with their own motion ({} drawn; of them {} and "
+                 "{} are parts bound to one bone per vertex), {} moving objects ({} solid draws)",
+                 characters, oot_actors.size(), single(meshes), single(oot_actors),
+                 meshes.size() - characters, oot_rigid.size());
+        const OcarinaActorDrops drops = std::exchange(g_oot_actor_drops, {});
+        LOG_INFO(Render_Vulkan,
+                 "Ocarina of Time: character draws left without motion in the last 600 frames: "
+                 "{} pose buffer GPU-written, {} no pose buffer, {} over the limit of {}, {} not "
+                 "drawn the frame before, {} unreadable vertices or indices, {} too large",
+                 drops.gpu_pose, drops.no_pose, drops.full, MaxOcarinaActors, drops.new_mesh,
+                 drops.unread, drops.too_big);
     }
 }
 

@@ -21,6 +21,13 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   measures. Upstream's fix for that (#337) had been taken out of the line this fork is built on,
   for speed; it is back, with the upstream work above paying for it. Not yet confirmed over a long
   play session: please report a flash with the log.
+- **Frame generation: Link no longer tears while he moves.** Generated frames doubled and broke
+  his limbs, sword and middle (ghost hands, torn boots) because only part of him was given
+  motion of his own; the rest got the scenery's. Three causes, found by saving the generated
+  frames and the motion they were made from: parts bound to a single bone per vertex (sword,
+  scabbard, hat) were not recognised; his largest mesh keeps its pose in another slot than the
+  rest; and two of his 282 bones and, in busy scenes, any character past the 64th were left out.
+  Still open: his bare forearms and thighs in a fast sideways run.
 - **Fewer freezes on new ground.** A shader the game needs for the first time was built with the
   whole frame held whenever its draw went to a target the game never clears, which is most of
   them: 8 to 51 ms each, and now and then over a second. Draws into targets used every frame are

@@ -1168,7 +1168,7 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
     ActorDraws overlays;
     ++state.actor_frame;
     if (!meshes.empty()) {
-        constexpr u32 MaxDraws = 128; // 64 characters and 64 moving objects
+        constexpr u32 MaxDraws = 224; // 160 characters and 64 moving objects
         if (!state.actor_renderer) {
             state.actor_renderer = std::make_unique<ActorOverlayRenderer>(state.device);
         }
@@ -1259,7 +1259,8 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
                 current, previous, mesh.current_origin, mesh.previous_origin,
                 {static_cast<f32>(extent.width), static_cast<f32>(extent.height), jitter[0],
                  jitter[1]},
-                {mesh.layout.weight_count, mesh.layout.extra_count, mesh.layout.rigid, 0},
+                {mesh.layout.weight_count, mesh.layout.extra_count, mesh.layout.rigid,
+                 mesh.layout.single_joint},
             };
             const size_t bones = pose_bytes(mesh);
             buffer_infos.push_back({put(mesh.current_bones.data(), bones),

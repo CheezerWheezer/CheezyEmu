@@ -28,6 +28,7 @@ struct OcarinaVertexLayout {
     u32 weight_count{}; ///< Weights used from the first group (joints with them)
     u32 extra_count{};  ///< and from the second (0 without one)
     u32 rigid{};        ///< A solid object: bone 0 is its whole transform, no weights
+    u32 single_joint{}; ///< One joint index per vertex and no weights: it follows that bone whole
 
     bool operator==(const OcarinaVertexLayout&) const = default;
 };
@@ -39,8 +40,8 @@ struct OcarinaActorMesh {
     std::vector<u16> indices;
     std::array<f32, 4> current_origin;
     std::array<f32, 4> previous_origin;
-    std::array<f32, 280 * 12> current_bones;
-    std::array<f32, 280 * 12> previous_bones;
+    std::array<f32, 320 * 12> current_bones;
+    std::array<f32, 320 * 12> previous_bones;
 };
 
 #ifdef EGLANTINE_STREAMLINE

@@ -26,7 +26,9 @@ layout(std140, binding = 2, row_major) uniform Transforms {
     vec4 previous_origin;
     vec2 extent;
     vec2 jitter; // the scene's viewport offset this frame, in render pixels
-    uvec4 counts; // weights used from the first group and from the second; z: a solid object
+    // weights used from the first group and from the second; z: a solid object; w: one joint per
+    // vertex and no weights
+    uvec4 counts;
 } transforms;
 
 void blend_joint(vec4 local, uint joint, float weight, inout vec3 current, inout vec3 previous) {
@@ -45,6 +47,10 @@ void main() {
         // A solid object: its transform is the only bone.
         current = current_pose.bones[0] * local;
         previous = previous_pose.bones[0] * local;
+    }
+    if (transforms.counts.w != 0) {
+        // A part bound to one bone per vertex (Link's arms and legs): no weight attribute.
+        blend_joint(local, joints[0], 1.0, current, previous);
     }
     for (int i = 0; i < int(transforms.counts.x); ++i) {
         blend_joint(local, joints[i], weights[i], current, previous);

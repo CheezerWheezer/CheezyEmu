@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -124,9 +126,218 @@ VkResult SubmitToGameQueue(uint32_t count, const VkSubmitInfo* submits, VkFence 
     return state.queue_submit(state.game_queue, count, submits, fence);
 }
 
+// EDEN_NX2_AMD_FG_CAPTURE=<directory> (debugging ghosting): each time debug knob 1 is switched
+// on (debug server "knobs"), saves what AMD's generator was given and what it made, as raw files
+// named <n>_<what>_<width>x<height>_<VkFormat>_id<frame>.raw: the motion vectors and depth of
+// one game frame, that frame, the next one, and the frame generated between the two. The images
+// are copied on the GPU in the same command lists and written out half a second later.
+namespace FgCapture {
+struct Shot {
+    VkBuffer buffer{};
+    VkDeviceMemory memory{};
+    VkDeviceSize size{};
+    std::string name;
+    std::chrono::steady_clock::time_point recorded;
+};
+std::mutex mutex;
+std::vector<Shot> shots;
+u32 session{};
+int stage{}; ///< 0 idle, 1 wants a frame's inputs, 2 that frame, 3 the next and the generated one
+bool knob_was_on{};
+
+const std::string& Directory() {
+    static const std::string directory = [] {
+        const char* const value = std::getenv("EDEN_NX2_AMD_FG_CAPTURE");
+        return std::string{value ? value : ""};
+    }();
+    return directory;
+}
+
+VkImageLayout LayoutOf(u32 ffx_state) {
+    if (ffx_state & FFX_API_RESOURCE_STATE_PRESENT) {
+        return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    }
+    if (ffx_state & FFX_API_RESOURCE_STATE_RENDER_TARGET) {
+        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
+    if (ffx_state & FFX_API_RESOURCE_STATE_UNORDERED_ACCESS) {
+        return VK_IMAGE_LAYOUT_GENERAL;
+    }
+    if (ffx_state & (FFX_API_RESOURCE_STATE_COMPUTE_READ | FFX_API_RESOURCE_STATE_PIXEL_READ)) {
+        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    if (ffx_state & FFX_API_RESOURCE_STATE_COPY_SRC) {
+        return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    }
+    if (ffx_state & FFX_API_RESOURCE_STATE_COPY_DEST) {
+        return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    }
+    return VK_IMAGE_LAYOUT_GENERAL;
+}
+
+/// Records a copy of `image` (in `layout`) into a new host buffer. Caller holds `mutex`.
+void Record(const Device& device, VkCommandBuffer cmdbuf, VkImage image, VkImageLayout layout,
+            VkImageAspectFlags aspect, u32 width, u32 height, u32 bytes_per_pixel,
+            std::string name) {
+    const auto& dld = device.GetDispatchLoader();
+    const VkDevice logical = *device.GetLogical();
+    Shot shot;
+    shot.size = VkDeviceSize{width} * height * bytes_per_pixel;
+    shot.name = std::move(name);
+    const VkBufferCreateInfo buffer_ci{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .size = shot.size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+    };
+    if (dld.vkCreateBuffer(logical, &buffer_ci, nullptr, &shot.buffer) != VK_SUCCESS) {
+        return;
+    }
+    const VkBufferMemoryRequirementsInfo2 info{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
+        .pNext = nullptr,
+        .buffer = shot.buffer,
+    };
+    VkMemoryRequirements2 requirements{};
+    requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+    dld.vkGetBufferMemoryRequirements2(logical, &info, &requirements);
+    const auto properties = device.GetPhysical().GetMemoryProperties().memoryProperties;
+    u32 type = VK_MAX_MEMORY_TYPES;
+    constexpr VkMemoryPropertyFlags wanted =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (u32 index = 0; index < properties.memoryTypeCount; ++index) {
+        if (((requirements.memoryRequirements.memoryTypeBits >> index) & 1) != 0 &&
+            (properties.memoryTypes[index].propertyFlags & wanted) == wanted) {
+            type = index;
+            break;
+        }
+    }
+    const VkMemoryAllocateInfo allocate{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = requirements.memoryRequirements.size,
+        .memoryTypeIndex = type,
+    };
+    if (type == VK_MAX_MEMORY_TYPES ||
+        dld.vkAllocateMemory(logical, &allocate, nullptr, &shot.memory) != VK_SUCCESS ||
+        dld.vkBindBufferMemory(logical, shot.buffer, shot.memory, 0) != VK_SUCCESS) {
+        dld.vkDestroyBuffer(logical, shot.buffer, nullptr);
+        return;
+    }
+    const auto barrier = [&](VkImageLayout from, VkImageLayout to) {
+        const VkImageMemoryBarrier image_barrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
+            .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            .oldLayout = from,
+            .newLayout = to,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange{aspect, 0, 1, 0, 1},
+        };
+        dld.vkCmdPipelineBarrier(cmdbuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                 &image_barrier);
+    };
+    barrier(layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    const VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource{aspect, 0, 0, 1},
+        .imageOffset{0, 0, 0},
+        .imageExtent{width, height, 1},
+    };
+    dld.vkCmdCopyImageToBuffer(cmdbuf, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, shot.buffer, 1,
+                               &region);
+    barrier(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, layout);
+    shot.recorded = std::chrono::steady_clock::now();
+    shots.push_back(std::move(shot));
+}
+
+/// Arms a capture when the knob goes on; returns the stage to capture now. Caller holds `mutex`.
+int Poll() {
+    const bool on = Settings::GetDebugKnobAt(1);
+    if (on && !knob_was_on && stage == 0) {
+        stage = 1;
+        ++session;
+    }
+    knob_was_on = on;
+    return stage;
+}
+
+/// Writes out the copies recorded half a second ago and frees them.
+void Flush(const Device& device) {
+    if (Directory().empty()) {
+        return;
+    }
+    std::scoped_lock lock{mutex};
+    const auto& dld = device.GetDispatchLoader();
+    const VkDevice logical = *device.GetLogical();
+    const auto now = std::chrono::steady_clock::now();
+    std::erase_if(shots, [&](Shot& shot) {
+        if (now - shot.recorded < std::chrono::milliseconds{500}) {
+            return false;
+        }
+        void* data = nullptr;
+        if (dld.vkMapMemory(logical, shot.memory, 0, shot.size, 0, &data) == VK_SUCCESS) {
+            std::ofstream file{Directory() + "/" + shot.name, std::ios::binary};
+            file.write(static_cast<const char*>(data), static_cast<std::streamsize>(shot.size));
+            dld.vkUnmapMemory(logical, shot.memory);
+            LOG_INFO(Render_Vulkan, "AMD frame generation capture: wrote {}", shot.name);
+        }
+        dld.vkDestroyBuffer(logical, shot.buffer, nullptr);
+        dld.vkFreeMemory(logical, shot.memory, nullptr);
+        return true;
+    });
+}
+} // namespace FgCapture
+
 ffxReturnCode_t DispatchFrameGeneration(ffxDispatchDescFrameGeneration* params, void* user) {
     State& state = *static_cast<State*>(user);
-    return state.api->dispatch(&state.frame_gen_context, &params->header);
+    const ffxReturnCode_t result =
+        state.api->dispatch(&state.frame_gen_context, &params->header);
+    if (!FgCapture::Directory().empty() && state.owner != nullptr) {
+        std::scoped_lock lock{FgCapture::mutex};
+        const int stage = FgCapture::stage;
+        if (stage == 2 || stage == 3) {
+            const auto shoot = [&](const char* what, const FfxApiResource& resource) {
+                if (resource.resource == nullptr) {
+                    return;
+                }
+                FgCapture::Record(
+                    *state.owner, static_cast<VkCommandBuffer>(params->commandList),
+                    static_cast<VkImage>(resource.resource), FgCapture::LayoutOf(resource.state),
+                    VK_IMAGE_ASPECT_COLOR_BIT, resource.description.width,
+                    resource.description.height, 4,
+                    fmt::format("{}_{}_{}x{}_{}_id{}.raw", FgCapture::session, what,
+                                resource.description.width, resource.description.height,
+                                static_cast<u32>(state.format), params->frameID));
+            };
+            LOG_INFO(Render_Vulkan,
+                     "AMD frame generation capture {}: dispatch frame {} present colour state "
+                     "{:#x}, output state {:#x}, {} generated, reset {}",
+                     FgCapture::session, params->frameID, params->presentColor.state,
+                     params->outputs[0].state, params->numGeneratedFrames, params->reset);
+            if (stage == 2) {
+                shoot("real0", params->presentColor);
+                FgCapture::stage = 3;
+            } else {
+                shoot("real1", params->presentColor);
+                if (params->numGeneratedFrames > 0) {
+                    shoot("generated", params->outputs[0]);
+                }
+                FgCapture::stage = 0;
+            }
+        }
+    }
+    return result;
 }
 
 void DestroyRetired(State& state, bool all) {
@@ -677,6 +888,9 @@ VkResult Present(VkQueue queue, const VkPresentInfoKHR& info, const PresentTarge
     std::scoped_lock lock{state.mutex};
     ++state.present_count;
     DestroyRetired(state, false);
+    if (state.owner != nullptr) {
+        FgCapture::Flush(*state.owner);
+    }
     // A rebuild in a burst of window resizes can fail while older contexts are still alive: try
     // again once they're gone (about once a second, a few times).
     if (!state.frame_gen_context && state.swapchain && state.owner && !state.prepare_failed &&
@@ -816,6 +1030,34 @@ void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
         std::copy(camera.forward.begin(), camera.forward.end(), prepare.cameraForward);
         const ffxReturnCode_t result =
             state.api->dispatch(&state.frame_gen_context, &prepare.header);
+        if (!FgCapture::Directory().empty() && state.owner != nullptr) {
+            std::scoped_lock capture_lock{FgCapture::mutex};
+            if (FgCapture::Poll() == 1) {
+                const auto name = [&](const char* what, VkFormat format) {
+                    return fmt::format("{}_{}_{}x{}_{}_id{}.raw", FgCapture::session, what,
+                                       in.render_size.width, in.render_size.height,
+                                       static_cast<u32>(format), frame_id);
+                };
+                FgCapture::Record(*state.owner, *cmdbuf, in.motion_vectors.image,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  in.motion_vectors.aspect, in.render_size.width,
+                                  in.render_size.height, 4,
+                                  name("motion", in.motion_vectors.format));
+                FgCapture::Record(*state.owner, *cmdbuf, in.depth.image,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  (in.depth.aspect & VK_IMAGE_ASPECT_DEPTH_BIT) != 0
+                                      ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
+                                      : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
+                                  in.render_size.width, in.render_size.height, 4,
+                                  name("depth", in.depth.format));
+                LOG_INFO(Render_Vulkan,
+                         "AMD frame generation capture {}: frame {} reset {} frame time {:.1f} ms "
+                         "near {} far {} fov {:.1f}",
+                         FgCapture::session, frame_id, in.reset, frame_time_ms,
+                         camera.near_plane, camera.far_plane, camera.fov * 57.2958f);
+                FgCapture::stage = 2;
+            }
+        }
 
         const std::array to_general{
             Barrier(in.depth, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT | WRITES,
