@@ -1099,7 +1099,7 @@ private:
     /// one dispatch, is compared with guest memory from right before it (known GPU writes and
     /// unapplied CPU writes left out). The same: the proof holds at these dims (and at smaller
     /// ones). Different: the program is marked in full for the session and logged, naming it.
-    /// EDEN_NX2_EXTENT_CHECK=0 trusts the proof as before.
+    /// Experimental: only with EDEN_NX2_EXTENT_CHECK=1 (see ExtentCheckEnabled).
     ///
     /// The offenders write far only now and then, so one clean check proves little (a player's
     /// session, 2026-11-10: two programs were caught 12 and 16 minutes in, after the flash had
@@ -1168,10 +1168,17 @@ private:
         return it->second;
     }
 
+    /// Off unless EDEN_NX2_EXTENT_CHECK=1. Marking a native binding in full (which the check
+    /// does while it tests a program, and for good once it caught one) makes its whole window,
+    /// up to 8 MiB, GPU-written: the next download writes the buffer's copy of those pages over
+    /// guest memory, also where the program wrote nothing and the guest has newer bytes. With
+    /// eleven programs marked in full from the start, Ocarina of Time froze on a black screen at
+    /// load, its channels waiting on a semaphore whose value never arrived (2026-11-10). It needs
+    /// marks no wider than what was really written before it can be on by default.
     [[nodiscard]] static bool ExtentCheckEnabled() {
         static const bool enabled = [] {
             const char* value = std::getenv("EDEN_NX2_EXTENT_CHECK");
-            return value == nullptr || value[0] != '0';
+            return value != nullptr && value[0] == '1';
         }();
         return enabled;
     }

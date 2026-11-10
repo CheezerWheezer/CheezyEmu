@@ -246,8 +246,9 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
     EDEN_NX2_FORCE_MESH_FALLBACK=1 (below). The first start after that builds shaders for
     several minutes.
   - A white flash across the whole picture, or huge glowing triangles, after playing a while:
-    build 11 closes a known cause by itself. If you still see one, set EDEN_NX2_FLASH_WATCH to
-    a folder (below), play until it happens, then send that folder and the log.
+    restarting the game clears it. The cause is known and a fix is being worked on. To help,
+    set EDEN_NX2_FLASH_WATCH to a folder (below), play until it happens, then send that folder
+    and the log.
 
 
 6. OTHER SWITCHES

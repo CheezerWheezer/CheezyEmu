@@ -53,9 +53,10 @@ EDEN_NX2_FENCE_BATCH=1
 # hangs; the first boot then builds shaders for a while), =0 never uses it.
 #EDEN_NX2_FORCE_MESH_FALLBACK=1
 
-# Build 11 checks once how far each compute shader really writes (a cause of white flashes and
-# huge glowing triangles in Ocarina of Time). =0 turns that check off, to compare.
-#EDEN_NX2_EXTENT_CHECK=0
+# Experimental, off by default: checks how far each compute shader really writes (a cause of
+# white flashes and huge glowing triangles in Ocarina of Time). It can freeze the game on a
+# black screen, so only turn it on to test, and remove the line again if that happens.
+#EDEN_NX2_EXTENT_CHECK=1
 
 # A white flash ("flashbang")? Set a folder here, play until it happens, then send that folder and
 # the log: every frame's passes are measured and the flash is traced to the pass that caused it.
