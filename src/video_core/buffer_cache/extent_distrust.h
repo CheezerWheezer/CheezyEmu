@@ -5,6 +5,7 @@
 
 #include <array>
 #include <charconv>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -55,6 +56,11 @@ inline void Load(State& state) {
         return;
     }
     state.loaded = true;
+    // EDEN_NX2_EXTENT_KNOWN=0: start with no known programs (tests of the checks themselves).
+    if (const char* value = std::getenv("EDEN_NX2_EXTENT_KNOWN"); value != nullptr && value[0] == '0') {
+        LOG_INFO(HW_GPU, "Compute write extents: EDEN_NX2_EXTENT_KNOWN=0, no program is known");
+        return;
+    }
     state.known.insert(BuiltIn.begin(), BuiltIn.end());
     size_t saved = 0;
     std::ifstream file{FilePath()};

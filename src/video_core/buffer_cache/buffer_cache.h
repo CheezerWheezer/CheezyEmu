@@ -2298,6 +2298,7 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
     // binding is up to 8 MiB past it, and marking all of it defers the CPU's later writes to those
     // pages until the next fence and has fences copy the over-marked range back.
     u64 mark = binding.size;
+    u64 known_write = is_written ? u64{binding.size} : 0;
     if (native_pointer && is_written && binding.size != 0) {
         switch (Settings::values.native_compute_write_mark.GetValue()) {
         case Settings::NativeComputeWriteMark::Auto: {
@@ -2318,6 +2319,7 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
                 const u64 pad = pointer >= binding.gpu_addr ? pointer - binding.gpu_addr : 0;
                 const u64 proven = std::min<u64>(binding.size, pad + *extent);
                 mark = proven;
+                known_write = proven;
                 // Not yet checked at these dims, or caught writing past it: mark in full (see
                 // ExtentTrust), and check this dispatch.
                 if (!IS_OPENGL && proven < binding.size && ExtentCheckEnabled()) {
@@ -2356,6 +2358,7 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
         }
     }
     channel_state->compute_storage_write_marks[ssbo_index] = static_cast<u32>(mark);
+    extent_known_writes[ssbo_index] = known_write;
 }
 
 template <class P>
@@ -3423,6 +3426,7 @@ void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
         const u64 span = (std::min<u64>)(room, 2_MiB);
         ExtentProbe probe{
             .shader_hash = compute_shader_hash,
+            .index = index,
             .buffer_id = buffer_id,
             .device_addr = tail,
             .binding_size = binding.size,
@@ -3455,6 +3459,21 @@ void BufferCache<P>::RecordComputeExtentProbes() {
             if (probe.after || !slot_buffers.contains(probe.buffer_id)) {
                 continue;
             }
+            // What the dispatch's other storage bindings are known to write is not this
+            // binding's doing.
+            ForEachEnabledBit(channel_state->written_compute_storage_buffers, [&](u32 other) {
+                if (other == probe.index ||
+                    ((channel_state->enabled_compute_storage_buffers >> other) & 1) == 0) {
+                    return;
+                }
+                const Binding& binding = channel_state->compute_storage_buffers[other];
+                const DAddr begin = (std::max)(binding.device_addr, probe.device_addr);
+                const DAddr end = (std::min)(binding.device_addr + extent_known_writes[other],
+                                             probe.device_addr + probe.span);
+                if (binding.device_addr != 0 && begin < end) {
+                    probe.skip.emplace_back(begin - probe.device_addr, end - probe.device_addr);
+                }
+            });
             Buffer& buffer = slot_buffers[probe.buffer_id];
             probe.after = runtime.DownloadStagingBuffer(probe.span, true);
             const BufferCopy copy{

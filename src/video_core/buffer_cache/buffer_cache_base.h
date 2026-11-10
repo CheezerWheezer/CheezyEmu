@@ -1128,6 +1128,7 @@ private:
     };
     struct ExtentProbe {
         u64 shader_hash{};
+        u32 index{}; ///< The storage binding it checks
         BufferId buffer_id{};
         DAddr device_addr{}; ///< The tail's start (in buffer_id)
         u64 binding_size{};
@@ -1137,8 +1138,10 @@ private:
         /// bytes into guest memory, so only a copy made before the dispatch shows what the CPU
         /// would have read without the mark.
         std::vector<u8> guest;
-        /// Tail offsets [begin, end) left out of the compare: known GPU writes and CPU writes not
-        /// applied to the buffer yet.
+        /// Tail offsets [begin, end) left out of the compare: known GPU writes, CPU writes not
+        /// applied to the buffer yet, and what the dispatch's other storage bindings are known to
+        /// write (native pointers have no size, so their windows overlap this one's tail: without
+        /// this a program was caught for bytes it wrote, rightly, through another binding).
         std::vector<std::pair<u64, u64>> skip;
         std::optional<Async_Buffer> after;
         u64 tick{};
@@ -1146,6 +1149,9 @@ private:
     u64 compute_shader_hash{};
     std::unordered_map<u64, ExtentTrust> extent_trust;
     std::array<ExtentProbeRequest, NUM_STORAGE_BUFFERS> extent_probe_requests{};
+    /// How much of each compute storage binding the cache would mark without the check (the
+    /// proof where there is one), 0 for a binding that is not written.
+    std::array<u64, NUM_STORAGE_BUFFERS> extent_known_writes{};
     std::vector<ExtentProbe> extent_probes;
     u64 extent_probes_trusted{};
     u64 extent_probes_distrusted{};
