@@ -1803,21 +1803,32 @@ void Device::RemoveUnsuitableExtensions() {
     features.mesh_shader.meshShaderQueries = VK_FALSE;
     extensions.mesh_shader = features.mesh_shader.taskShader && features.mesh_shader.meshShader;
     // EDEN_NX2_FORCE_MESH_FALLBACK=1: leave VK_EXT_mesh_shader disabled, so task/mesh draws take
-    // the compute fallback a device without it uses; =0: never. Unset, the fallback is used on
-    // RADV with an integrated GPU: an Xbox Ally X on SteamOS showed a black screen after Ocarina
-    // of Time's opening cutscene with the extension and plays with the fallback (a player's
-    // report; handheld PCs were the black screen reports).
+    // the compute fallback a device without it uses; =0: never. Unset, the fallback is used where
+    // native task/mesh draws hang AMD GPUs:
+    // - RADV, every GPU: resets on RX 6000, 7000 and 9000 cards with Mesa 26.0 to 27.0-devel
+    //   (zortos293/Lichii#316, #670, #672, #871; Fritchii v5.6 does the same), which is what this
+    //   fork's Linux players reported as "gfx ring timeout ... VulkanWorker" and a GPU reset. An
+    //   Xbox Ally X on SteamOS showed a black screen after Ocarina of Time's opening cutscene and
+    //   plays with the fallback.
+    // - AMD's own driver on an integrated GPU: the Radeon 780M times out after the intro or a
+    //   save load (#871).
+    // Desktop Radeons on AMD's Windows driver keep the extension: it runs there, and the fallback
+    // is slower in foliage and builds its own pipelines (a long first boot).
     if (extensions.mesh_shader) {
         const char* const forced = std::getenv("EDEN_NX2_FORCE_MESH_FALLBACK");
-        const bool radv_integrated =
-            properties.driver.driverID == VK_DRIVER_ID_MESA_RADV &&
+        const VkDriverId mesh_driver = properties.driver.driverID;
+        const bool radv = mesh_driver == VK_DRIVER_ID_MESA_RADV;
+        const bool amd_integrated =
+            (mesh_driver == VK_DRIVER_ID_AMD_PROPRIETARY ||
+             mesh_driver == VK_DRIVER_ID_AMD_OPEN_SOURCE) &&
             properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-        if (forced != nullptr ? forced[0] != '0' : radv_integrated) {
+        if (forced != nullptr ? forced[0] != '0' : (radv || amd_integrated)) {
             LOG_WARNING(Render_Vulkan,
                         "VK_EXT_mesh_shader disabled ({}): task/mesh draws go through compute. "
                         "EDEN_NX2_FORCE_MESH_FALLBACK=0 keeps the extension",
                         forced != nullptr ? "EDEN_NX2_FORCE_MESH_FALLBACK"
-                                          : "RADV on an integrated GPU");
+                        : radv            ? "RADV: native mesh draws reset AMD GPUs"
+                                          : "AMD integrated GPU: native mesh draws time out");
             extensions.mesh_shader = false;
         }
     }

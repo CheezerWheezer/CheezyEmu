@@ -35,9 +35,19 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   targets). Same fresh route in Hyrule Field: worst frame 97 ms instead of 1.1 to 1.7 s, no
   frame over 100 ms instead of three. Tiny targets (brightness measurement) always wait.
   `EDEN_NX2_TRANSIENT_TARGETS=0` brings the old rule back.
-- **Handheld black screen after the opening cutscene (SteamOS, AMD)**: on RADV with an integrated
-  GPU the mesh shader fallback is used by itself (a player's fix on an Xbox Ally X;
-  `EDEN_NX2_FORCE_MESH_FALLBACK=0` turns it off, `=1` forces it on any GPU).
+- **AMD GPU hangs and resets on Linux, and the handheld black screen after the opening
+  cutscene**: the mesh shader fallback is now used by itself on every AMD GPU under Linux's RADV
+  driver, and on integrated Radeons under AMD's Windows driver. Native mesh shader draws reset
+  RX 6000, 7000 and 9000 cards on RADV and time out the Radeon 780M (zortos293/Lichii#871, as in
+  Fritchii v5.6; a player's Xbox Ally X fix first showed it here). Desktop Radeons on Windows keep
+  the native path, which runs there. The first boot with the fallback builds its own shaders.
+  `EDEN_NX2_FORCE_MESH_FALLBACK=0` turns it off, `=1` forces it on any GPU.
+- **About 1 GB less RAM** in Ocarina: memory the game cleared to zero is given back to the system
+  sooner (zortos293/Lichii#961 with Fritchii v5.6's faster page check).
+- **Ocarina runs faster**: zortos293/Lichii#1161 by Lucas Borges is in (the game's GPU command
+  stream waits less for itself, images are reused, reports are cheaper). On the test PC
+  (i5-12600K, RX 6750 XT, no upscaler) Hyrule Field went from about 51 to 59 fps standing and
+  from 43 to about 50 fps running around.
 - **Linux, AMD (RADV): GPU reset with "Illegal opcode in command stream"** when the first
   tessellated terrain was drawn. The primitive topology set at draw time did not match the
   tessellation pipeline's patch list; Windows drivers let it pass. Not yet confirmed fixed on the

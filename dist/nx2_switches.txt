@@ -47,9 +47,10 @@ EDEN_NX2_FENCE_BATCH=1
 # something stays missing or wrong after walking into a new area.
 #EDEN_NX2_TRANSIENT_TARGETS=0
 
-# Black screen after the opening cutscene on a handheld (Linux / SteamOS, AMD): the mesh shader
-# fallback fixes it (a player's Xbox Ally X). Build 11 uses it by itself on RADV with an integrated
-# GPU; =1 forces it anywhere, =0 never uses it.
+# GPU hang or reset on AMD, or a black screen after the opening cutscene on a handheld: the mesh
+# shader fallback fixes it. Build 11 uses it by itself on Linux (RADV) with any AMD GPU and on
+# integrated Radeons on Windows; =1 forces it anywhere (try it on a desktop Radeon on Windows that
+# hangs; the first boot then builds shaders for a while), =0 never uses it.
 #EDEN_NX2_FORCE_MESH_FALLBACK=1
 
 # A white flash ("flashbang")? Set a folder here, play until it happens, then send that folder and
