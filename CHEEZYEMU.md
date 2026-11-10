@@ -35,13 +35,17 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   targets). Same fresh route in Hyrule Field: worst frame 97 ms instead of 1.1 to 1.7 s, no
   frame over 100 ms instead of three. Tiny targets (brightness measurement) always wait.
   `EDEN_NX2_TRANSIENT_TARGETS=0` brings the old rule back.
+- **Handheld black screen after the opening cutscene (SteamOS, AMD)**: on RADV with an integrated
+  GPU the mesh shader fallback is used by itself (a player's fix on an Xbox Ally X;
+  `EDEN_NX2_FORCE_MESH_FALLBACK=0` turns it off, `=1` forces it on any GPU).
 - **Linux, AMD (RADV): GPU reset with "Illegal opcode in command stream"** when the first
   tessellated terrain was drawn. The primitive topology set at draw time did not match the
   tessellation pipeline's patch list; Windows drivers let it pass. Not yet confirmed fixed on the
   reporter's machine.
 - From the sister fork: Ocarina's periodic texture stalls on 10+ GB cards (#1129), the Castle
   Town guard house freeze (#976), the Song of Time crackle (#1073).
-- **`.nx` game archives load** (upstream #923, #1078, #1127), and Tools can convert to them.
+- **`.nx` game archives load** (upstream #923, #1078, #1127); right-click a game in the list and
+  pick "Convert to NX..." to make one.
 - A texture made where the memory collector had dropped an older one could start without its
   data (upstream #818's last fix): candidate for shadows and textures going wrong after a while.
 

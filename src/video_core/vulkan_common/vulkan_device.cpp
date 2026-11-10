@@ -1789,10 +1789,23 @@ void Device::RemoveUnsuitableExtensions() {
     features.mesh_shader.meshShaderQueries = VK_FALSE;
     extensions.mesh_shader = features.mesh_shader.taskShader && features.mesh_shader.meshShader;
     // EDEN_NX2_FORCE_MESH_FALLBACK=1: leave VK_EXT_mesh_shader disabled, so task/mesh draws take
-    // the compute fallback a device without it uses.
-    if (extensions.mesh_shader && std::getenv("EDEN_NX2_FORCE_MESH_FALLBACK") != nullptr) {
-        LOG_WARNING(Render_Vulkan, "EDEN_NX2_FORCE_MESH_FALLBACK: VK_EXT_mesh_shader disabled");
-        extensions.mesh_shader = false;
+    // the compute fallback a device without it uses; =0: never. Unset, the fallback is used on
+    // RADV with an integrated GPU: an Xbox Ally X on SteamOS showed a black screen after Ocarina
+    // of Time's opening cutscene with the extension and plays with the fallback (a player's
+    // report; handheld PCs were the black screen reports).
+    if (extensions.mesh_shader) {
+        const char* const forced = std::getenv("EDEN_NX2_FORCE_MESH_FALLBACK");
+        const bool radv_integrated =
+            properties.driver.driverID == VK_DRIVER_ID_MESA_RADV &&
+            properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+        if (forced != nullptr ? forced[0] != '0' : radv_integrated) {
+            LOG_WARNING(Render_Vulkan,
+                        "VK_EXT_mesh_shader disabled ({}): task/mesh draws go through compute. "
+                        "EDEN_NX2_FORCE_MESH_FALLBACK=0 keeps the extension",
+                        forced != nullptr ? "EDEN_NX2_FORCE_MESH_FALLBACK"
+                                          : "RADV on an integrated GPU");
+            extensions.mesh_shader = false;
+        }
     }
     RemoveExtensionFeatureIfUnsuitable(extensions.mesh_shader, features.mesh_shader,
                                        VK_EXT_MESH_SHADER_EXTENSION_NAME);

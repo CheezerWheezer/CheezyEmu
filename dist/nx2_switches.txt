@@ -47,6 +47,16 @@ EDEN_NX2_FENCE_BATCH=1
 # something stays missing or wrong after walking into a new area.
 #EDEN_NX2_TRANSIENT_TARGETS=0
 
+# Black screen after the opening cutscene on a handheld (Linux / SteamOS, AMD): the mesh shader
+# fallback fixes it (a player's Xbox Ally X). Build 11 uses it by itself on RADV with an integrated
+# GPU; =1 forces it anywhere, =0 never uses it.
+#EDEN_NX2_FORCE_MESH_FALLBACK=1
+
+# A white flash ("flashbang")? Set a folder here, play until it happens, then send that folder and
+# the log: every frame's passes are measured and the flash is traced to the pass that caused it.
+# Costs some speed, so leave it off otherwise.
+#EDEN_NX2_FLASH_WATCH=C:\cheezyemu-flash
+
 # FSR camera jitter for Ocarina of Time (new, being tested): FSR rebuilds fine detail from a camera
 # nudged by less than a pixel every frame. Sharper, less blocky FSR, most at low presets. Remove
 # the # to try it; put it back if the picture shakes.
