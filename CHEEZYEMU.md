@@ -10,6 +10,21 @@ upscaling, AMD frame generation, and the community's AMD performance work.
 
 How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.
 
+- **Upstream Lichii's newest GPU work is merged** (zortos293/Lichii `nx2` up to #1056, without its
+  shader cache v2, which would not carry over saved AMD pipelines and means a 30+ minute first
+  boot). The two GPU threads take turns less: macros that read memory run on the second thread,
+  command lists wait only for the work the console would wait for, and read-backs no longer hold
+  the GPU thread. Ocarina of Time, Hyrule Field, i5-12600K + RX 6750 XT, no upscaler: about 45 to
+  49-50 FPS, and the slowest frames drop from 42-51 ms to 24-29 ms (far fewer hitches).
+- **White flashes ("flashbang") in Ocarina of Time**: the game sizes its glare from occlusion
+  query reports, and a report could reach it before the graphics card had finished the work it
+  measures. Upstream's fix for that (#337) had been taken out of the line this fork is built on,
+  for speed; it is back, with the upstream work above paying for it. Not yet confirmed over a long
+  play session: please report a flash with the log.
+- **`.nx` game archives load** (upstream #923, #1078, #1127), and Tools can convert to them.
+- A texture made where the memory collector had dropped an older one could start without its
+  data (upstream #818's last fix): candidate for shadows and textures going wrong after a while.
+
 - **CheezyEmu has its own data folder**: `%APPDATA%\cheezyemu` on Windows, and `cheezyemu`
   under `~/.config`, `~/.local/share` and `~/.cache` on Linux. Eden, Lichii and Fritchii all share
   the `eden` folder, so their settings overwrote each other. The first start offers to import the
