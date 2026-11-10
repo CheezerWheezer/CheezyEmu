@@ -41,6 +41,12 @@ EDEN_NX2_FENCE_BATCH=1
 # build 10, to test whether it causes a problem (for example wrong, too-bright lighting).
 #EDEN_NX2_SEM_MIRROR=0
 
+# New in build 11: while a shader the game needs for the first time is built, its draws into
+# targets used every frame are left out for a few frames instead of freezing the picture (before,
+# only targets the game clears every frame). =0 brings the old rule back, to test whether
+# something stays missing or wrong after walking into a new area.
+#EDEN_NX2_TRANSIENT_TARGETS=0
+
 # FSR camera jitter for Ocarina of Time (new, being tested): FSR rebuilds fine detail from a camera
 # nudged by less than a pixel every frame. Sharper, less blocky FSR, most at low presets. Remove
 # the # to try it; put it back if the picture shakes.

@@ -348,11 +348,14 @@ public:
     /// on the images it fully clears.
     void NoteRenderTargetsCleared(bool color, bool depth);
 
-    /// Whether the bound render targets are redrawn every frame (all fully cleared in this frame
-    /// and the one before), so a draw into them may be skipped once: 0 when they are, 1 none bound,
-    /// 2 one was not fully cleared in this frame, 3 one was cleared in this frame but not the one
-    /// before (for the runtime pipeline log).
+    /// Whether the bound render targets are redrawn every frame (each fully cleared in this frame
+    /// and the one before, or bound in this frame and the three before it; none 64x64 or
+    /// smaller), so a draw into them may be skipped once: 0 when they are, 1 none bound, 2 one
+    /// was not fully cleared in this frame (or is tiny), 3 one was cleared in this frame but not
+    /// the one before (for the runtime pipeline log).
     [[nodiscard]] int RenderTargetsRedrawnReason();
+    /// Records that the image behind `id` is a render target in this frame.
+    void NoteRenderTarget(ImageViewId id);
 
     /// Mark images in a range as modified from the CPU
     void WriteMemory(DAddr cpu_addr, size_t size);

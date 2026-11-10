@@ -122,6 +122,10 @@ struct ImageBase {
     /// render target: one cleared in both this frame and the one before is redrawn every frame.
     u64 clear_frame = ~u64{0};
     u64 previous_clear_frame = ~u64{0};
+    /// The last frame it was bound as a render target, and the frames before that one in which
+    /// it was too (bit n: n frames earlier; bit 0 is target_frame itself).
+    u64 target_frame = ~u64{0};
+    u32 target_history = 0;
 
     /// The channel and GPU address space whose page table RegisterImage put the image in.
     size_t channel = 0;

@@ -1240,16 +1240,51 @@ void TextureCache<P>::NoteRenderTargetsCleared(bool color, bool depth) {
 }
 
 template <class P>
+void TextureCache<P>::NoteRenderTarget(ImageViewId id) {
+    if (!id) {
+        return;
+    }
+    ImageBase& image = slot_images[slot_image_views[id].image_id];
+    if (image.target_frame == frame_tick) {
+        return;
+    }
+    const u64 gap = frame_tick - image.target_frame; // huge for a first use
+    image.target_history = gap < 32 ? (image.target_history << gap) | 1 : 1;
+    image.target_frame = frame_tick;
+}
+
+template <class P>
 int TextureCache<P>::RenderTargetsRedrawnReason() {
+    // EDEN_NX2_TRANSIENT_TARGETS=0: only targets cleared two frames running count as redrawn
+    // (the rule before build 11).
+    static const bool every_frame_targets = [] {
+        const char* const value = std::getenv("EDEN_NX2_TRANSIENT_TARGETS");
+        return value == nullptr || value[0] != '0';
+    }();
     int reason = 1;
     const auto check = [&](ImageViewId id) {
         if (!id) {
             return;
         }
         const ImageBase& image = slot_images[slot_image_views[id].image_id];
-        const int own = image.clear_frame != frame_tick                     ? 2
-                        : image.previous_clear_frame + 1 != frame_tick ? 3
-                                                                        : 0;
+        // A tiny target holds state the game reads back, such as Ocarina's 16x16 brightness
+        // measurement: a draw dropped there left the picture blinding white until a reset
+        // (Skip and Bounded already wait for these, PipelineCache::BuiltPipeline).
+        const bool tiny = image.info.size.width <= 64 && image.info.size.height <= 64;
+        const bool cleared = image.clear_frame == frame_tick &&
+                             image.previous_clear_frame + 1 == frame_tick;
+        // Many of a game's per-frame targets are never cleared (the scene is drawn over all of
+        // them), so a new pipeline for a draw into one was translated on the GPU thread with the
+        // frame held: 8 to 51 ms each, 26 to 33 of them every 10 s while running through new
+        // ground in Ocarina's Hyrule Field, most of its stutters there. A target bound in this
+        // frame and each of the three before it is drawn again next frame too. History buffers
+        // (bound every other frame) and images rendered once don't qualify.
+        const bool every_frame = every_frame_targets && image.target_frame == frame_tick &&
+                                 (image.target_history & 0xf) == 0xf;
+        const int own = tiny                               ? 2
+                        : cleared || every_frame          ? 0
+                        : image.clear_frame != frame_tick ? 2
+                                                          : 3;
         reason = reason == 1 ? own : (std::max)(reason, own);
     };
     for (const ImageViewId id : render_targets.color_buffer_ids) {
@@ -1274,9 +1309,11 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
         for (size_t index = 0; index < NUM_RT; ++index) {
             ImageViewId& color_buffer_id = render_targets.color_buffer_ids[index];
             PrepareImageView(color_buffer_id, true, is_clear && IsFullClear(color_buffer_id));
+            NoteRenderTarget(color_buffer_id);
         }
         const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
         PrepareImageView(depth_buffer_id, true, is_clear && IsFullClear(depth_buffer_id));
+        NoteRenderTarget(depth_buffer_id);
         return;
     }
 
@@ -1295,6 +1332,10 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
     const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
 
     PrepareImageView(depth_buffer_id, true, is_clear && IsFullClear(depth_buffer_id));
+    for (const ImageViewId color_buffer_id : render_targets.color_buffer_ids) {
+        NoteRenderTarget(color_buffer_id);
+    }
+    NoteRenderTarget(depth_buffer_id);
 
     rt_active_mask = 0;
     rt_image_id = {};

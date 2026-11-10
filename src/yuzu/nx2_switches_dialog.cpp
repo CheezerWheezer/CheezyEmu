@@ -46,6 +46,14 @@ constexpr std::array switches{
                              "build 11). Fixes freezes and black screens after cutscenes. Turn it "
                              "off to test whether it causes a graphics problem."),
            true, "1", "0"},
+    Switch{"EDEN_NX2_TRANSIENT_TARGETS",
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "Skip new shaders' draws in every-frame targets"),
+           QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
+                             "While a shader the game needs for the first time is built, leaves "
+                             "its object out for a few frames instead of freezing the picture "
+                             "(new in build 11). Turn it off if something stays missing or wrong "
+                             "after walking into a new area."),
+           true, "1", "0"},
     Switch{"EDEN_NX2_SPLIT", QT_TRANSLATE_NOOP("Nx2SwitchesDialog", "GPU thread split"),
            QT_TRANSLATE_NOOP("Nx2SwitchesDialog",
                              "Runs GPU commands on a second thread. Up to 50% more FPS in Switch 2 "

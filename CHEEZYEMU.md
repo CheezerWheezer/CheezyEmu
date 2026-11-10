@@ -21,6 +21,19 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   measures. Upstream's fix for that (#337) had been taken out of the line this fork is built on,
   for speed; it is back, with the upstream work above paying for it. Not yet confirmed over a long
   play session: please report a flash with the log.
+- **Fewer freezes on new ground.** A shader the game needs for the first time was built with the
+  whole frame held whenever its draw went to a target the game never clears, which is most of
+  them: 8 to 51 ms each, and now and then over a second. Draws into targets used every frame are
+  now left out for the few frames the shader takes instead (as was already done for cleared
+  targets). Same fresh route in Hyrule Field: worst frame 97 ms instead of 1.1 to 1.7 s, no
+  frame over 100 ms instead of three. Tiny targets (brightness measurement) always wait.
+  `EDEN_NX2_TRANSIENT_TARGETS=0` brings the old rule back.
+- **Linux, AMD (RADV): GPU reset with "Illegal opcode in command stream"** when the first
+  tessellated terrain was drawn. The primitive topology set at draw time did not match the
+  tessellation pipeline's patch list; Windows drivers let it pass. Not yet confirmed fixed on the
+  reporter's machine.
+- From the sister fork: Ocarina's periodic texture stalls on 10+ GB cards (#1129), the Castle
+  Town guard house freeze (#976), the Song of Time crackle (#1073).
 - **`.nx` game archives load** (upstream #923, #1078, #1127), and Tools can convert to them.
 - A texture made where the memory collector had dropped an older one could start without its
   data (upstream #818's last fix): candidate for shadows and textures going wrong after a while.

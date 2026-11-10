@@ -18,6 +18,15 @@ the scripts are this PC's: edit them elsewhere.
 - `leaf.py <map> <raw> <thread>`: for time spent outside the exe (waits, driver, CRT), which of
   our functions called it. `stacks.py <map> <raw> <function>`: the call chains into a function.
 
+- `ab.py [--knob N]`: flips a debug knob of the running game on and off and pairs the frame
+  times (whole runs move by 10% or more with what else the PC is doing).
+- `move_test.py [--route 2]`: runs and turns for about 75 s along a fixed path and prints the
+  frame times of that stretch. Stutter shows while moving, not standing: start the game with
+  `--env EDEN_NX2_STUTTER_TRACE=1` and read the `Nx2Stutter` lines for what made each long frame.
+  The second pass over a route is warm (its pipelines are saved): to compare two builds on fresh
+  ground use a route neither has run, and do not copy the shader folder to reset it (the copy
+  changes a file time and the next boot precompiles compute programs for eight minutes).
+
 Also useful: `EDEN_NX2_GPU_PROFILE=1` (per-second zones of the GPU thread, and why the split's
 front waited for its back), `EDEN_NX2_MME_DMA_STATS=1` (semaphore acquire statistics).
 
