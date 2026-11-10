@@ -53,6 +53,11 @@ EDEN_NX2_FENCE_BATCH=1
 # hangs; the first boot then builds shaders for a while), =0 never uses it.
 #EDEN_NX2_FORCE_MESH_FALLBACK=1
 
+# A test fix for blocky stair-step edges where water haze or particles are cut off in squares
+# (Ocarina of Time on AMD's Windows driver). Not confirmed yet. It changes nearly every shader, so
+# the first start with it rebuilds all saved shaders once (about 30 minutes on an RX 6750 XT).
+#EDEN_NX2_NAN_SATURATE=1
+
 # A test for the white flashes: checks whether a compute shader writes further than the emulator
 # tracks, and tracks exactly what it wrote if so. It found nothing so far. The log says "Compute
 # write extent too small" if it does.

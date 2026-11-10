@@ -83,6 +83,9 @@ struct Profile {
 
     /// OpFClamp is broken and OpFMax + OpFMin should be used instead
     bool has_broken_spirv_clamp{};
+    /// NMin(NMax(NaN, 0), 1) is 1 instead of 0 (AMD's Windows driver): see Clamp in
+    /// emit_spirv_floating_point.cpp.
+    bool has_broken_nan_clamp{};
     /// The Position builtin needs to be wrapped in a struct when used as an input
     bool has_broken_spirv_position_input{};
     /// Offset image operands with an unsigned type do not work
