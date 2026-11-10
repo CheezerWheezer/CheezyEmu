@@ -78,9 +78,12 @@ private:
         }
         const u32 logical = std::thread::hardware_concurrency();
         u32 physical = logical / 2;
+#ifdef ARCHITECTURE_x86_64
+        // Only defined for x86-64 here (common/cpu_features.cpp); other hosts keep the estimate.
         if (const auto cores = Common::GetProcessorCount(); cores && *cores > 0) {
             physical = static_cast<u32>(*cores);
         }
+#endif
         const u32 spare = physical > 6 ? physical - 6 : 0;
         return (std::min)({4U, logical / 4, spare});
     }
