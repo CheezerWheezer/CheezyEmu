@@ -50,6 +50,10 @@ enum class LoadCallbackStage {
 };
 using DiskResourceLoadCallback = std::function<void(LoadCallbackStage, std::size_t, std::size_t)>;
 
+/// Set while the query cache signals the fence that writes a fence-flagged report, so the fence
+/// manager makes that fence even when it is empty (FenceManager::SignalFence).
+inline thread_local bool g_signaling_query_report_fence = false;
+
 class RasterizerInterface {
 public:
     virtual ~RasterizerInterface() = default;
@@ -110,6 +114,24 @@ public:
     virtual void FlushRegion(DAddr addr, u64 size,
                              VideoCommon::CacheType which = VideoCommon::CacheType::All) = 0;
 
+    /// FlushRegion for a guest CPU read of the region (GPU::OnCPURead), on the GPU thread: a
+    /// cache may submit its downloads without waiting for the host GPU, for FinishRead to write.
+    virtual void FlushRegionForRead(DAddr addr, u64 size) {
+        FlushRegion(addr, size);
+    }
+
+    /// Writes to guest memory what FlushRegionForRead submitted over the region (and anything
+    /// submitted before it), waiting for the host GPU if it must. Any thread: the reading one
+    /// before it reads, and the GPU's side before it writes guest memory there.
+    virtual void FinishRead([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {}
+
+    /// A query result the query cache writes to guest memory later, at a fence or sync point.
+    /// When this returns true, FinishReport once it wrote or dropped it.
+    virtual bool NoteReportPending([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {
+        return false;
+    }
+    virtual void FinishReport([[maybe_unused]] DAddr addr, [[maybe_unused]] u64 size) {}
+
     /// Switch 2, from the GPU thread's front: where a GPU-written command list's words are.
     enum class GpuWrittenList {
         Unknown, ///< Neither: the caller drains, flushes the page and notes it synced
@@ -152,15 +174,17 @@ public:
     virtual RasterizerDownloadArea GetFlushArea(DAddr addr, u64 size) = 0;
 
     /// Whether reports in the range wait for host query results not yet in guest memory.
-    /// Whether the query cache holds a report in the region; callable from the split's front.
-    [[nodiscard]] virtual bool HasCachedQueries([[maybe_unused]] DAddr addr,
-                                                [[maybe_unused]] u64 size) {
-        return true;
-    }
-
     [[nodiscard]] virtual bool HasPendingQueries([[maybe_unused]] DAddr addr,
                                                  [[maybe_unused]] u64 size) {
         return false;
+    }
+
+    /// Any thread: whether the query cache holds reports that can still land in the range, as
+    /// FlushQueryResults writes them out or once their host results come in. Without a query
+    /// cache that can tell, assume so.
+    [[nodiscard]] virtual bool HoldsQueries([[maybe_unused]] DAddr addr,
+                                            [[maybe_unused]] u64 size) {
+        return true;
     }
 
     /// Notify rasterizer that any caches of the specified region should be invalidated

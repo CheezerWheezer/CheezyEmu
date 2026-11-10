@@ -7,12 +7,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <fmt/ranges.h>
 #include "common/assert.h"
 #include "common/bit_util.h"
 #include "common/scope_exit.h"
@@ -26,6 +28,7 @@
 #include "video_core/gpu_split.h"
 #include "video_core/memory_manager.h"
 #include "video_core/nx2.h"
+#include "video_core/nx2_async_readback.h"
 #include "video_core/nx2_cmdpage_diag.h"
 #include "video_core/nx2_fast_draw.h"
 #include "video_core/nx2_perf.h"
@@ -1156,19 +1159,6 @@ struct Maxwell3D::FrontState {
     bool sink_pending{};
     u32 split_start{}; ///< GpuSplit::Starts() when this copy was made
     bool skip_same{}; ///< SkipSameValueWrites() && FrontSkipSame(), read once
-    u32 dma_reads{};
-    /// Constant buffer words sent inline, keyed by device address like the split's write
-    /// tracking (so GPU addresses aliasing one word meet): value and the ring position after
-    /// the upload.
-    struct ShadowWord {
-        u32 value;
-        u64 position;
-    };
-    std::unordered_map<DAddr, ShadowWord> cb_shadow;
-    /// The inline-to-memory upload being sent writes [upload_begin, upload_end).
-    bool upload_tracked{};
-    GPUVAddr upload_begin{};
-    GPUVAddr upload_end{};
     /// The back's draw manager is in an instance loop (DrawMode::Instance): draw.end does nothing.
     bool instance_loop{};
 };
@@ -1180,6 +1170,53 @@ namespace {
 bool FrontVerifyEnabled() {
     static const bool verify = std::getenv("EDEN_NX2_SPLIT_VERIFY") != nullptr;
     return verify;
+}
+
+/// A macro DMA read of `words` at `source`: whether the caches held them (`drained`), and else
+/// whether it waited for queued writers and what it read before the drain (`undrained`).
+void CheckDmaRead(u32 macro, GPUVAddr source, bool drained, bool waited,
+                  std::span<const u32> undrained, std::span<const u32> words) {
+    static u64 reads{};
+    static u64 undrained_reads{};
+    static u64 waits{};
+    static u64 differences{};
+    static u64 total_differences{};
+    static std::chrono::steady_clock::time_point last_report{};
+    ++reads;
+    if (!drained) {
+        ++undrained_reads;
+        waits += waited ? 1 : 0;
+        if (!std::ranges::equal(undrained, words)) {
+            ++differences;
+            if (++total_differences <= 16) {
+                const size_t shown = std::min<size_t>(words.size(), 8);
+                LOG_WARNING(HW_GPU,
+                            "Macro DMA read check: macro {:#x} read {} words at {:#x} as {:08x} "
+                            "without draining the split, as {:08x} after it",
+                            macro, words.size(), source, fmt::join(undrained.first(shown), ","),
+                            fmt::join(words.first(shown), ","));
+            }
+        }
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (last_report == std::chrono::steady_clock::time_point{}) {
+        last_report = now;
+        return;
+    }
+    const double seconds = std::chrono::duration<double>(now - last_report).count();
+    if (seconds < 10.0) {
+        return;
+    }
+    last_report = now;
+    LOG_INFO(HW_GPU,
+             "Macro DMA read checks (EDEN_NX2_DMA_READ_VERIFY) in {:.1f} s: {} reads, {} "
+             "without draining the split ({} waited for queued writers), {} of those with other "
+             "words than after a drain ({} in all)",
+             seconds, reads, undrained_reads, waits, differences, total_differences);
+    reads = 0;
+    undrained_reads = 0;
+    waits = 0;
+    differences = 0;
 }
 
 // Executable methods ProcessMethodCall handles itself; the rest go to the draw manager.
@@ -1305,16 +1342,6 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
         }
         fs.regs[method] = value;
     } else {
-        // Draw macros write these for every instance (~500,000 same values a second in Ocarina of
-        // Time). They only store the value, so an unchanged one is the same as a state write.
-        // topology_override is not part of an instance loop: any write to it ends a deferred draw.
-        if (IsStoreOnlyExecutable(method) && DrawManager::IsInstanceLoopMethod(method) &&
-            fs.regs[method] == value && shadow_kept && fs.skip_same) {
-            if (Profile::Enabled()) [[unlikely]] {
-                Profile::Add(Profile::Counter::SameValueWrites, 1);
-            }
-            return;
-        }
         fs.regs[method] = value;
         constexpr u32 cb_data = MAXWELL3D_REG_INDEX(const_buffer.buffer);
         switch (method) {
@@ -1351,123 +1378,43 @@ void Maxwell3D::FrontWrite(VideoCommon::GpuSplit& split, FrontState& fs, u32 met
             break;
         }
     }
+    using Writes = VideoCommon::GpuSplit::Writes;
     if (from_macro) {
         // Direct writes consume the sink first.
-        split.MacroWrite(this, method, argument);
+        split.MacroWrite(this, method, argument, Writes::Noted);
         fs.sink_pending = false;
     } else {
-        split.Method(this, method, argument, is_last_call, nullptr);
+        split.Method(this, method, argument, is_last_call, nullptr, Writes::Noted);
         fs.sink_pending = !execution_mask[method];
     }
-    if (execution_mask[method]) {
-        FrontNoteWrites(split, fs, method, 1, &argument);
+    // A write the back only keeps for later (its method sink) runs nothing there yet.
+    if (from_macro || execution_mask[method]) {
+        FrontNoteWrites(split, fs, method, 1);
+    }
+    if (method == MAXWELL3D_REG_INDEX(report_semaphore.query)) {
+        FrontNoteReport(split, fs);
     }
 }
 
-template <typename Func>
-bool Maxwell3D::DeviceWords(GPUVAddr begin, u32 count, Func&& func) {
-    GPUVAddr page = ~GPUVAddr{};
-    std::optional<DAddr> page_device;
-    for (u32 i = 0; i < count; ++i) {
-        const GPUVAddr address = begin + u64{i} * sizeof(u32);
-        if ((address & ~GPUVAddr{0xfff}) != page) {
-            page = address & ~GPUVAddr{0xfff};
-            page_device = memory_manager.GpuToCpuAddress(page);
-        }
-        const std::optional<DAddr> device =
-            page_device ? std::optional<DAddr>{*page_device + (address & 0xfff)} : std::nullopt;
-        if (!func(i, device)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-void Maxwell3D::FrontNoteWrites(VideoCommon::GpuSplit& split, FrontState& fs, u32 method,
-                                u32 amount, const u32* values) {
-    constexpr u32 cb_data = MAXWELL3D_REG_INDEX(const_buffer.buffer);
-    const auto covers = [method, amount](u32 index) {
-        return method <= index && index < method + amount;
-    };
-    const auto address = [&fs](u32 high, u32 low) {
-        return (GPUVAddr{fs.regs[high]} << 32) | fs.regs[low];
-    };
-    const auto note = [&split, this](GPUVAddr begin, GPUVAddr end) {
-        split.NoteMemoryWrite(&memory_manager, begin, end, true);
-    };
-    if (method >= cb_data && method < cb_data + 16) {
-        const GPUVAddr base = address(MAXWELL3D_REG_INDEX(const_buffer.address_high),
-                                      MAXWELL3D_REG_INDEX(const_buffer.address_low));
-        const u64 offset_end = fs.regs[MAXWELL3D_REG_INDEX(const_buffer.offset)];
-        const u64 bytes = u64{amount} * sizeof(u32);
-        if (offset_end < bytes) {
-            split.NoteMemoryBarrier(0x30001);
-            return;
-        }
-        const GPUVAddr begin = base + offset_end - bytes;
-        // In Replay the back writes the shadow RAM values, not these words: reads wait for it.
-        const bool replay = fs.control == Regs::ShadowRamControl::Replay;
-        split.NoteMemoryWrite(&memory_manager, begin, base + offset_end, replay);
-        if (replay) {
-            return;
-        }
-        // The words themselves, for MME DMA reads of them while the back has not written them.
-        if (fs.cb_shadow.size() >= 16384) {
-            const u64 done = split.Consumed();
-            std::erase_if(fs.cb_shadow, [done](const auto& entry) { return entry.second.position <= done; });
-            if (fs.cb_shadow.size() >= 16384) {
-                fs.cb_shadow.clear();
-            }
-        }
-        // Only the words ProcessCBMultiData writes: it drops those past the buffer's end.
-        const u64 offset = offset_end - bytes;
-        const u64 size = fs.regs[MAXWELL3D_REG_INDEX(const_buffer.size)];
-        const u64 room = offset < size ? size - offset : 0;
-        const u32 count = static_cast<u32>(std::min<u64>(amount, room / sizeof(u32)));
-        const u64 position = split.Position();
-        DeviceWords(begin, count, [&](u32 i, std::optional<DAddr> device) {
-            if (device) {
-                fs.cb_shadow[*device] = {values[i], position};
-            }
-            return true;
-        });
+void Maxwell3D::FrontNoteReport(VideoCommon::GpuSplit& split, const FrontState& fs) {
+    // What ProcessQueryGet will write on the back: a payload report writes the payload, a counter
+    // what the GPU counted.
+    Regs::ReportSemaphore report;
+    std::memcpy(&report, &fs.regs[MAXWELL3D_REG_INDEX(report_semaphore)], sizeof(report));
+    const auto operation = report.query.operation.Value();
+    if (operation != Regs::ReportSemaphore::Operation::Release &&
+        operation != Regs::ReportSemaphore::Operation::ReportOnly) {
         return;
     }
-    if (covers(MAXWELL3D_REG_INDEX(launch_dma))) {
-        // Inline-to-memory: a pitch-linear upload writes its lines from the destination address;
-        // a block-linear one or a release on completion is not tracked.
-        const u32 launch = fs.regs[MAXWELL3D_REG_INDEX(launch_dma)];
-        const bool pitch_layout = (launch & 1) != 0;   // memory_layout: Pitch
-        const bool release = ((launch >> 4) & 3) == 2; // completion_type: Release
-        const u64 line_length = fs.regs[MAXWELL3D_REG_INDEX(upload.line_length_in)];
-        const u64 lines = fs.regs[MAXWELL3D_REG_INDEX(upload.line_count)];
-        const u64 pitch = fs.regs[MAXWELL3D_REG_INDEX(upload.dest.pitch)];
-        fs.upload_tracked = pitch_layout && !release && lines != 0;
-        if (fs.upload_tracked) {
-            fs.upload_begin = address(MAXWELL3D_REG_INDEX(upload.dest.address_high),
-                                      MAXWELL3D_REG_INDEX(upload.dest.address_low));
-            fs.upload_end = fs.upload_begin + (std::max)(pitch, line_length) * (lines - 1) + line_length;
-        } else {
-            split.NoteMemoryBarrier(0x30002);
-        }
+    const auto device = memory_manager.GpuToCpuAddress(report.Address());
+    if (!device) {
+        return;
     }
-    if (covers(MAXWELL3D_REG_INDEX(inline_data))) {
-        if (fs.upload_tracked) {
-            note(fs.upload_begin, fs.upload_end);
-        } else {
-            split.NoteMemoryBarrier(0x30003);
-        }
-    }
-    if (covers(MAXWELL3D_REG_INDEX(report_semaphore.query))) {
-        // A release writes its payload, or a 16-byte report, at the semaphore address.
-        const GPUVAddr begin = address(MAXWELL3D_REG_INDEX(report_semaphore.address_high),
-                                       MAXWELL3D_REG_INDEX(report_semaphore.address_low));
-        note(begin, begin + 16);
-        for (const GPUVAddr page : {begin, begin + 15}) {
-            if (const auto device = memory_manager.GpuToCpuAddress(page)) {
-                Tegra::Nx2MarkReportPages(*device, 1);
-            }
-        }
+    const bool payload = report.query.report == Regs::ReportSemaphore::Report::Payload;
+    split.NoteSemaphoreWrite(*device, report.payload, payload);
+    if (report.query.short_query == 0) {
+        // 64 bits (a timestamp follows).
+        split.NoteSemaphoreWrite(*device + 4, 0, payload);
     }
 }
 
@@ -1575,9 +1522,13 @@ void Maxwell3D::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit
             }
         }
     }
-    split.MultiMethod(this, method, base_start, amount, methods_pending, nullptr);
-    FrontNoteWrites(split, fs, method, amount, base_start);
+    split.MultiMethod(this, method, base_start, amount, methods_pending, nullptr,
+                      VideoCommon::GpuSplit::Writes::Noted);
     fs.sink_pending = false; // The back consumes the sink before a run.
+    FrontNoteWrites(split, fs, method, amount);
+    if (method == MAXWELL3D_REG_INDEX(report_semaphore.query) && amount != 0) {
+        FrontNoteReport(split, fs);
+    }
 }
 
 void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split,
@@ -1634,9 +1585,7 @@ void Maxwell3D::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split
     }
 }
 
-// Not inlined: GCC 13 -O3 unswitches FrontCallMultiMethod's loop on this switch and drops the
-// macro upload cases from the loop the other methods take (an empty macro RAM on the front).
-[[gnu::noinline]] void Maxwell3D::FrontTrackInstanceLoop(FrontState& fs, u32 method, u32 value) {
+void Maxwell3D::FrontTrackInstanceLoop(FrontState& fs, u32 method, u32 value) {
     switch (method) {
     case MAXWELL3D_REG_INDEX(draw.begin):
         // Instance id, bits 27:26: First leaves an instance loop, Subsequent enters one.
@@ -1678,10 +1627,76 @@ bool Maxwell3D::FrontSkipsLoopWrite(FrontState& fs, u32 method, u32 value, bool 
     return method != MAXWELL3D_REG_INDEX(draw.end) || fs.instance_loop;
 }
 
+// What the back can write to guest memory running the entry just sent, `amount` words of `method`
+// (GpuSplit::Writes::Noted), for the macro DMA reads after it (FrontDmaRead). The executable
+// methods (IsMethodExecutable) not named here change registers and host state only: bindings,
+// barriers, counter resets, the WFI's host query copies, shadow RAM and macro code.
+void Maxwell3D::FrontNoteWrites(VideoCommon::GpuSplit& split, const FrontState& fs, u32 method,
+                                u32 amount) {
+    constexpr u32 cb_data = MAXWELL3D_REG_INDEX(const_buffer.buffer);
+    const auto address = [&fs](u32 high) {
+        return (GPUVAddr{fs.regs[high]} << 32) | fs.regs[high + 1];
+    };
+    if (fs.draw_pending) {
+        // A draw, or one an instance loop deferred to this entry (ProcessDirtyRegisters): where
+        // its shaders store, and what the caches download for it, only the back knows.
+        split.NoteAnyWrite();
+        return;
+    }
+    if (method >= cb_data && method < cb_data + 16) {
+        // FrontWrite and FrontCallMultiMethod advanced the offset past these words already.
+        const u32 bytes = amount * static_cast<u32>(sizeof(u32));
+        const u32 offset = fs.regs[MAXWELL3D_REG_INDEX(const_buffer.offset)] - bytes;
+        split.NoteWrite(memory_manager,
+                        address(MAXWELL3D_REG_INDEX(const_buffer.address_high)) + offset, bytes);
+        return;
+    }
+    switch (method) {
+    case MAXWELL3D_REG_INDEX(report_semaphore.query):
+        // CounterReport: the value and its timestamp, now or once the host result is in.
+        split.NoteWrite(memory_manager, address(MAXWELL3D_REG_INDEX(report_semaphore.address_high)),
+                        16);
+        break;
+    case MAXWELL3D_REG_INDEX(inline_data): {
+        // Upload::State::ProcessData: lines of line_length_in bytes, pitch apart.
+        const auto launch =
+            std::bit_cast<Regs::LaunchDMA>(fs.regs[MAXWELL3D_REG_INDEX(launch_dma)]);
+        const u32 lines = fs.regs[MAXWELL3D_REG_INDEX(upload.line_count)];
+        const u32 length = fs.regs[MAXWELL3D_REG_INDEX(upload.line_length_in)];
+        if (launch.memory_layout != Regs::LaunchDMA::Layout::Pitch) {
+            split.NoteAnyWrite(); // Swizzled into the destination surface
+        } else if (lines != 0 && length != 0) {
+            split.NoteWrite(memory_manager, address(MAXWELL3D_REG_INDEX(upload.dest.address_high)),
+                            u64{fs.regs[MAXWELL3D_REG_INDEX(upload.dest.pitch)]} * (lines - 1) +
+                                length);
+        }
+        break;
+    }
+    case MAXWELL3D_REG_INDEX(render_enable.mode): {
+        // A condition read from memory (ProcessQueryCondition) flushes every cache over it.
+        const auto mode =
+            static_cast<Regs::RenderEnable::Mode>(fs.regs[MAXWELL3D_REG_INDEX(render_enable.mode)]);
+        if (static_cast<Regs::RenderEnable::Override>(
+                fs.regs[MAXWELL3D_REG_INDEX(render_enable_override)]) ==
+                Regs::RenderEnable::Override::UseRenderEnable &&
+            (mode == Regs::RenderEnable::Mode::Conditional ||
+             mode == Regs::RenderEnable::Mode::IfEqual ||
+             mode == Regs::RenderEnable::Mode::IfNotEqual)) {
+            split.NoteAnyWrite();
+        }
+        break;
+    }
+    case MAXWELL3D_REG_INDEX(sync_info):
+        // A syncpoint increment: macros read syncpoints through memory too (MemoryManager::Read).
+        split.NoteAnyWrite();
+        break;
+    default:
+        break;
+    }
+}
+
 void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 macro,
                              u32 method, u32 count) {
-    // The words may be written by methods still queued for the back (indirect draw arguments
-    // from a culling dispatch), and the caches that may hold newer ones belong to it.
     const GPUVAddr source = (GPUVAddr{fs.regs[0x154] & 0x1ffffff} << 32) | fs.regs[0x155];
     const u32 ram = fs.regs[0x156];
     const u32 words = std::min<u32>(count, 0x1000);
@@ -1692,175 +1707,73 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
         memory_manager.ReadBlockUnsafe(source, diag_before.data(), read_bytes);
     }
     VideoCommon::Nx2Profile::CountDmaRead(macro);
-    // Wait only for queued work that may write the words: compute, copies, untracked
-    // writes and overlapping inline constant buffer data. Ocarina of Time reads ~20,000 times a
-    // second; a full drain each time kept the two GPU threads waiting on each other. Every 4096th
-    // read still drains and checks for GPU-written data, which turns the precise reads off.
-    static bool precise_disabled{};
-    const bool precise = !precise_disabled &&
-                         !VideoCommon::QueryDma::TraceEnabled() &&
-                         !Tegra::Nx2CmdPageDiag::g_enabled &&
-                         fs.regs[MAXWELL3D_REG_INDEX(transform_feedback_enabled)] == 0 &&
-                         (++fs.dma_reads & 4095) != 0;
-    static thread_local std::vector<u32> shadow_words;
-    shadow_words.clear();
-    if (precise) {
-        const u64 target = split.ReadReadyPosition(&memory_manager, source, source + read_bytes);
-        const u64 consumed = split.Consumed();
-        // Constant buffer words sent inline after any other write to them are known here:
-        // read them without waiting for the back to store them.
-        if (target > consumed) {
-            const u64 opaque =
-                split.OpaqueReadyPosition(&memory_manager, source, source + read_bytes);
-            shadow_words.clear();
-            const bool complete = DeviceWords(source, words, [&](u32, std::optional<DAddr> device) {
-                const auto it = device ? fs.cb_shadow.find(*device) : fs.cb_shadow.end();
-                // Only words still queued: memory has the others, maybe rewritten by the CPU.
-                if (it == fs.cb_shadow.end() || it->second.position < opaque ||
-                    it->second.position <= consumed) {
-                    return false;
-                }
-                shadow_words.push_back(it->second.value);
-                return true;
-            });
-            if (!complete) {
-                shadow_words.clear();
-            }
-        }
-        const bool from_shadow = !shadow_words.empty();
-        // EDEN_NX2_MME_DMA_STATS: why precise reads wait (writer = compute or copy work).
-        if (static const bool stats = std::getenv("EDEN_NX2_MME_DMA_STATS") != nullptr; stats) {
-            static std::array<u64, 4> causes{};
-            const u64 writer = split.WriterPosition();
-            const u64 barrier = split.MemoryBarrierPosition();
-            const size_t cause = target <= consumed || from_shadow ? 0
-                                 : target == writer ? 1
-                                 : target == barrier ? 2
-                                                     : 3;
-            ++causes[cause];
-            static std::unordered_map<u32, u64> sources;
-            if (cause == 2) {
-                ++sources[split.MemoryBarrierSource()];
-            }
-            if (((causes[0] + causes[1] + causes[2] + causes[3]) & 0xffff) == 0) {
-                LOG_INFO(HW_GPU, "MME DMA reads: no wait {}, writer {}, barrier {}, constant buffer {}",
-                         causes[0], causes[1], causes[2], causes[3]);
-                for (const auto& [source, count] : sources) {
-                    LOG_INFO(HW_GPU, "MME DMA read barrier source {:#x}: {}", source, count);
-                }
-            }
-        }
-        if (target > consumed && !from_shadow) {
-            split.WaitForPosition(target, VideoCommon::DrainSite::MacroDmaRead);
-        }
-    } else {
-        split.Drain(VideoCommon::DrainSite::MacroDmaRead);
+    if (VideoCommon::Nx2Profile::Enabled()) {
+        VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::DmaReadBytes, read_bytes);
     }
-    // GPU-written words may still be only in a host buffer: the back checks and downloads them.
-    if (precise && shadow_words.empty() && words != 0) {
-        bool gpu_written = false;
-        for (GPUVAddr page = source & ~GPUVAddr{0xfff}; page < source + read_bytes && !gpu_written;
-             page += 0x1000) {
-            const auto device = memory_manager.GpuToCpuAddress(page);
-            gpu_written = device && Tegra::Nx2IsGpuWritten(*device);
-        }
-        if (gpu_written) {
-            if (static const bool stats = std::getenv("EDEN_NX2_MME_DMA_STATS") != nullptr; stats) {
-                static u64 checks{};
-                if ((++checks & 0x3ff) == 0) {
-                    LOG_INFO(HW_GPU, "MME DMA reads of GPU-written pages checked on the back: {}",
-                             checks);
-                }
-            }
+    // Drains the split, and has the back write out what its caches hold of the words: data the
+    // GPU wrote (indirect draw arguments from a culling dispatch), reports the query cache holds
+    // until their fence or host result (else the read returns stale occlusion counts).
+    const auto write_out = [&] {
+        split.Drain(VideoCommon::DrainSite::MacroDmaRead);
+        if (VideoCommon::QueryDma::TraceEnabled()) {
             split.Run(
-                [memory = &memory_manager, source, read_bytes] {
-                    if (memory->IsMemoryDirty(source, read_bytes,
-                                              VideoCommon::CacheType::BufferCache)) {
-                        memory->FlushRegion(source, read_bytes,
-                                            VideoCommon::CacheType::BufferCache);
+                [this, macro, method, source, read_bytes] {
+                    if (VideoCommon::QueryDma::HasPendingQueries(memory_manager, *rasterizer,
+                                                                 source, read_bytes)) {
+                        VideoCommon::QueryDma::Trace(memory_manager, *rasterizer, macro, method,
+                                                     source, read_bytes);
                     }
                 },
                 VideoCommon::DrainSite::MacroDmaFlush);
         }
-    }
-    if (!precise && VideoCommon::QueryDma::TraceEnabled()) {
-        split.Run(
-            [this, macro, method, source, read_bytes] {
-                if (VideoCommon::QueryDma::HasPendingQueries(memory_manager, *rasterizer, source,
-                                                             read_bytes)) {
-                    VideoCommon::QueryDma::Trace(memory_manager, *rasterizer, macro, method,
-                                                 source, read_bytes);
-                }
-            },
-            VideoCommon::DrainSite::MacroDmaFlush);
-    }
-    if (VideoCommon::Nx2Profile::Enabled()) {
-        VideoCommon::Nx2Profile::Add(VideoCommon::Nx2Profile::Counter::DmaReadBytes, read_bytes);
-    }
-    // The caches belong to the back, which may still be running after a precise wait.
-    if (!precise &&
-        memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache)) {
-        if (!precise_disabled) {
-            precise_disabled = true;
-            LOG_WARNING(HW_GPU, "Native MME DMA read of GPU-written memory at {:#x}: precise reads off",
-                        source);
+        if (memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache)) {
+            split.Run(
+                [memory = &memory_manager, source, read_bytes] {
+                    memory->FlushRegion(source, read_bytes, VideoCommon::CacheType::BufferCache);
+                },
+                VideoCommon::DrainSite::MacroDmaFlush);
         }
-        split.Run(
-            [memory = &memory_manager, source, read_bytes] {
-                memory->FlushRegion(source, read_bytes, VideoCommon::CacheType::BufferCache);
-            },
-            VideoCommon::DrainSite::MacroDmaFlush);
-    }
-    // A read of a page reports were sent to writes out the reports the query cache still holds,
-    // waiting for their host results (zortos293/Lichii#215), or the guest reads stale occlusion counts.
-    const bool reads_reports = [&] {
-        if (!shadow_words.empty() || words == 0) {
-            return false;
-        }
-        bool report_page = false;
-        for (GPUVAddr page = source >> 12; page <= (source + read_bytes - 1) >> 12; ++page) {
-            const auto device = memory_manager.GpuToCpuAddress(page << 12);
-            if (device && Tegra::Nx2IsReportPage(*device)) {
-                report_page = true;
-                break;
-            }
-        }
-        if (!report_page) {
-            return false;
-        }
-        // The waits above let the back run every queued report to these words: if the query
-        // cache holds none of them now, guest memory has their results and the back has nothing
-        // to write out (~40,000 round trips a second in Ocarina's forest otherwise).
-        // EDEN_NX2_REPORT_READ_CHECK=0 always asks the back.
-        static const bool check = [] {
-            const char* value = std::getenv("EDEN_NX2_REPORT_READ_CHECK");
-            return value == nullptr || value[0] != '0';
-        }();
-        if (!check) {
-            return true;
-        }
-        for (GPUVAddr begin = source; begin < source + read_bytes;) {
-            const GPUVAddr end = (std::min)((begin & ~GPUVAddr{0xfff}) + 0x1000, source + read_bytes);
-            const auto device = memory_manager.GpuToCpuAddress(begin);
-            if (!device || rasterizer->HasCachedQueries(*device, end - begin)) {
-                return true;
-            }
-            begin = end;
-        }
-        return false;
-    }();
-    if (reads_reports) {
         split.Run(
             [this, source, read_bytes] {
-                VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, source, read_bytes);
+                VideoCommon::QueryDma::FlushPending(memory_manager, *rasterizer, source,
+                                                    read_bytes);
             },
             VideoCommon::DrainSite::MacroDmaFlush);
+    };
+    namespace AsyncReadback = VideoCore::AsyncReadback;
+    const u64 wait_start = AsyncReadback::Now();
+    // Only the work still queued that can write the words has to run first (FrontNoteWrites,
+    // GpuSplit::WaitForWrites). Past it no entry can make them GPU-written or add reports there,
+    // so the caches have nothing to write out unless they already hold it now.
+    const bool waited = split.WaitForWrites(memory_manager, source, read_bytes);
+    const bool drained =
+        memory_manager.IsMemoryDirty(source, read_bytes, VideoCommon::CacheType::BufferCache) ||
+        VideoCommon::QueryDma::HoldsReports(memory_manager, *rasterizer, source, read_bytes);
+    if (drained) {
+        write_out();
+    }
+    AsyncReadback::CountDmaRead(waited || drained, drained, AsyncReadback::Now() - wait_start);
+    if (VideoCommon::Nx2Profile::Enabled()) {
+        AsyncReadback::MaybeReport();
+    }
+    // EDEN_NX2_DMA_READ_VERIFY: a read made without draining the split drains it anyway and has
+    // the caches write the words out, as a full drain would, and the macro gets those words.
+    // CheckDmaRead counts the reads whose words differ from the ones read first.
+    const bool verify = AsyncReadback::DmaReadVerify();
+    std::vector<u32> undrained;
+    std::vector<u32> checked;
+    if (verify) {
+        if (!drained) {
+            for (u32 i = 0; i < words; ++i) {
+                undrained.push_back(memory_manager.Read<u32>(source + u64{i} * sizeof(u32)));
+            }
+            write_out();
+        }
+        checked.reserve(words);
     }
     u32 changed{};
     for (u32 i = 0; i < words; ++i) {
-        const u32 word = !shadow_words.empty()
-                             ? shadow_words[i]
-                             : memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
+        const u32 word = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
         if (method == 0x158) {
             fs.parameters.push_back(word);
         } else if (ram + i < native_data_ram.size()) {
@@ -1869,6 +1782,12 @@ void Maxwell3D::FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& fs, u32 m
         if (!diag_before.empty() && diag_before[i] != word) {
             ++changed;
         }
+        if (verify) {
+            checked.push_back(word);
+        }
+    }
+    if (verify) {
+        CheckDmaRead(macro, source, drained, waited, undrained, checked);
     }
     if (Tegra::Nx2CmdPageDiag::g_enabled) {
         bool gpu_written = false;

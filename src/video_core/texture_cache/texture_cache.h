@@ -2807,6 +2807,7 @@ template <class P>
 void TextureCache<P>::InvalidateScale(Image& image) {
     // Its views are deleted: a fast draw delta draw keeping one must not follow.
     VideoCommon::Nx2FastDraw::Break(VideoCommon::Nx2FastDraw::Reason::Invalidation);
+    ++scale_epoch;
     if (image.scale_tick <= frame_tick) {
         image.scale_tick = frame_tick + 1;
     }
@@ -4149,7 +4150,10 @@ template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
-    MarkStale(image);
+    // Not marked stale here (upstream #818): the overlaps JoinImages has just copied into the
+    // image that replaces them are deleted too, and their data lives on in that image. A later
+    // image made on those pages that does not copy all of it started without an upload. Only the
+    // collector's drop loses the data (RunGarbageCollector marks it).
     VideoCommon::Nx2FastDraw::Break(VideoCommon::Nx2FastDraw::Reason::Invalidation);
     // Drop every decode still queued for it, whatever IsDecoding says: an image re-decoded while
     // a decode was in flight has two, and the first to finish clears the flag. A decode left

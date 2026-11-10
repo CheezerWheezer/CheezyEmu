@@ -422,6 +422,11 @@ public:
 
     [[nodiscard]] bool IsRescaling(const ImageViewBase& image_view) const noexcept;
 
+    /// Counts InvalidateScale calls: an image changed its scale and lost its views.
+    [[nodiscard]] u64 ScaleEpoch() const noexcept {
+        return scale_epoch;
+    }
+
     /// Create channel state.
     void CreateChannel(Tegra::Control::ChannelState& channel) final override;
 
@@ -750,6 +755,7 @@ private:
 
     u64 modification_tick = 0;
     u64 frame_tick = 0;
+    u64 scale_epoch = 0;
 
     Common::ThreadWorker texture_decode_worker{1, "TextureDecoder", {},
                                                Common::ThreadPlacement::Efficiency};

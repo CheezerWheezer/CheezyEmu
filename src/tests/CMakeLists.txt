@@ -11,8 +11,10 @@ add_executable(tests
     video_core/unswizzle_workers.cpp
     video_core/aftermath_dump.cpp
     video_core/frame_dump_schedule.cpp
+    video_core/nx2_stutter_trace.cpp
     video_core/host_mip_limits.cpp
     video_core/gpu_timestamp.cpp
+    video_core/semaphore_waiters.cpp
     core/nx2_streamplay.cpp
     core/nx2_video_ready.cpp
     core/nx2_debug_server.cpp
@@ -47,6 +49,8 @@ add_executable(tests
     video_core/storage_write_extent.cpp
     video_core/storage_buffer_control_flow.cpp
     core/nup_validation.cpp
+    core/nx_archive.cpp
+    frontend_common/nx_archive.cpp
     core/vfs_vector.cpp
     core/file_sys_parsers.cpp
     input_common/calibration_lifetime.cpp
@@ -65,6 +69,7 @@ add_executable(tests
     video_core/native_pending_policy.cpp
     video_core/framebuffer_clear_layers.cpp
     video_core/framebuffer_limits.cpp
+    video_core/unbacked_fallback.cpp
     video_core/fire_emblem_upscale.cpp
     video_core/dlss_contract.cpp
     video_core/ampere_fast_fusion.cpp
@@ -116,6 +121,7 @@ add_executable(tests
     video_core/fast_draw.cpp
     video_core/gpu_command_safety.cpp
     video_core/syncpoint_actions.cpp
+    video_core/nx2_video_av1.cpp
     video_core/nx2_video_render.cpp
     video_core/ampere_matrix.cpp
     video_core/spirv_software_matrix.cpp
@@ -204,6 +210,9 @@ if (TARGET dynarmic::dynarmic)
     target_sources(tests PRIVATE core/window_trace.cpp)
     target_link_libraries(tests PRIVATE dynarmic::dynarmic)
 endif()
+
+target_compile_definitions(tests PRIVATE
+    LICHII_NX_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/core/nx_fixtures")
 
 add_test(NAME tests COMMAND tests)
 

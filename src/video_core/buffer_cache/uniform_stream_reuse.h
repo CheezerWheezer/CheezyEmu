@@ -50,7 +50,8 @@ public:
     struct Slot {
         Ref ref{};
         u64 tick{};
-        u32 size{}; // 0: nothing streamed yet
+        u64 device_addr{}; ///< Where `bytes` were last read
+        u32 size{};        // 0: nothing streamed yet
         std::array<u8, MaxBytes> bytes{};
     };
 
@@ -97,36 +98,67 @@ template <class Runtime, class DeviceMemory>
     }
     Reuse& reuse = UniformStreamReuseState<typename Runtime::StreamUniformRef>();
     typename Reuse::Slot& slot = reuse.slots[stage][index];
-    // Within one device page the guest bytes are contiguous: use them in place instead of
-    // copying them to the scratch first.
-    constexpr u64 PageMask = (u64{1} << 12) - 1;
-    const u8* scratch = nullptr;
-    if ((device_addr & PageMask) + size <= PageMask + 1) {
-        scratch = device_memory.template GetPointer<u8>(device_addr);
-    }
-    if (scratch == nullptr) {
-        device_memory.ReadBlockUnsafe(device_addr, reuse.scratch.data(), size);
-        scratch = reuse.scratch.data();
-    }
+    u8* const scratch = reuse.scratch.data();
+    device_memory.ReadBlockUnsafe(device_addr, scratch, size);
 
     const bool same_bytes =
         slot.size == size && std::memcmp(slot.bytes.data(), scratch, size) == 0;
+    slot.device_addr = device_addr;
     if (same_bytes && slot.tick == runtime.CurrentTick()) {
         runtime.RebindStreamUniform(slot.ref, size);
         return true;
     }
-    // Upload the slot's copy: guest memory may change while this runs, and a later reuse must
-    // find exactly the bytes that were uploaded.
+    const std::span<u8> span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
+    std::memcpy(span.data(), scratch, size);
+    slot.ref = runtime.LastStreamUniformRef();
+    // After the allocation: the tick the stream region is tagged with is the one current now.
+    slot.tick = runtime.CurrentTick();
     if (!same_bytes) {
         slot.size = size;
         std::memcpy(slot.bytes.data(), scratch, size);
     }
-    const std::span<u8> span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
-    std::memcpy(span.data(), slot.bytes.data(), size);
-    slot.ref = runtime.LastStreamUniformRef();
-    // After the allocation: the tick the stream region is tagged with is the one current now.
-    slot.tick = runtime.CurrentTick();
     return true;
+}
+
+/// Uniform keeps: binds the slot's last allocation again without reading guest memory,
+/// when that bind read the same range in this command buffer. The caller guarantees that nothing
+/// ordered before this draw wrote the range since that bind (the previous draw's). Returns false
+/// (nothing bound) otherwise.
+template <class Runtime>
+[[nodiscard]] bool RebindKeptUniform(Runtime& runtime, size_t stage, u32 index, u64 device_addr,
+                                     u32 size) {
+    using Reuse = UniformStreamReuse<typename Runtime::StreamUniformRef>;
+    if (size == 0 || size > Reuse::MaxBytes || stage >= Reuse::NumStages ||
+        index >= Reuse::NumSlots) {
+        return false;
+    }
+    const typename Reuse::Slot& slot =
+        UniformStreamReuseState<typename Runtime::StreamUniformRef>().slots[stage][index];
+    if (slot.size != size || slot.device_addr != device_addr ||
+        slot.tick != runtime.CurrentTick()) {
+        return false;
+    }
+    runtime.RebindStreamUniform(slot.ref, size);
+    return true;
+}
+
+/// EDEN_NX2_UBO_KEEP_VERIFY: whether guest memory still holds the bytes the slot's last
+/// bind read from the range RebindKeptUniform would reuse.
+template <class Runtime, class DeviceMemory>
+[[nodiscard]] bool KeptUniformHolds(DeviceMemory& device_memory, size_t stage, u32 index,
+                                    u64 device_addr, u32 size) {
+    using Reuse = UniformStreamReuse<typename Runtime::StreamUniformRef>;
+    if (size == 0 || size > Reuse::MaxBytes || stage >= Reuse::NumStages ||
+        index >= Reuse::NumSlots) {
+        return false;
+    }
+    Reuse& reuse = UniformStreamReuseState<typename Runtime::StreamUniformRef>();
+    const typename Reuse::Slot& slot = reuse.slots[stage][index];
+    if (slot.size != size || slot.device_addr != device_addr) {
+        return false;
+    }
+    device_memory.ReadBlockUnsafe(device_addr, reuse.scratch.data(), size);
+    return std::memcmp(slot.bytes.data(), reuse.scratch.data(), size) == 0;
 }
 
 } // namespace VideoCommon

@@ -27,7 +27,6 @@
 #include "video_core/nx2.h"
 #include "video_core/engines/fermi_2d.h"
 #include "video_core/engines/kepler_compute.h"
-#include "video_core/engines/puller.h"
 #include "video_core/engines/native_upscale.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/game_dlss_status.h"
@@ -1549,18 +1548,30 @@ void KeplerCompute::FrontCallMethod(Core::System& system, VideoCommon::GpuSplit&
     FrontApply(fs, method, argument);
     split.Method(this, method, argument, is_last_call, segment);
     if (method == 0x6c3) {
-        FrontNoteRelease(fs, argument);
+        FrontNoteReport(split, fs, argument);
     }
 }
 
-void KeplerCompute::FrontNoteRelease(const FrontState& fs, u32 control) const {
-    // ProcessNativeReportSemaphore: operation 0 without reduction writes the payload.
-    if (front_puller == nullptr || (control & 3) != 0 || ((control >> 3) & 1) != 0) {
+void KeplerCompute::FrontNoteReport(VideoCommon::GpuSplit& split, const FrontState& fs,
+                                    u32 control) {
+    // SET_REPORT_SEMAPHORE_D was sent: what ProcessNativeReportSemaphore will write on the back.
+    const u32 operation = control & 3;
+    if (operation != 0 && operation != 2) {
         return;
     }
     const GPUVAddr address =
         (GPUVAddr{fs.registers[0x6c0] & 0x1ffffff} << 32) | fs.registers[0x6c1];
-    front_puller->NoteRelease(address, fs.registers[0x6c2]);
+    const auto device = memory_manager.GpuToCpuAddress(address);
+    if (!device) {
+        return;
+    }
+    // A reduction combines the payload with the word's value then.
+    const bool reduction = ((control >> 3) & 1) != 0;
+    split.NoteSemaphoreWrite(*device, fs.registers[0x6c2], !reduction);
+    if (!reduction && ((control >> 28) & 1) == 0) {
+        // 64 bits (a timestamp follows).
+        split.NoteSemaphoreWrite(*device + 4, 0, true);
+    }
 }
 
 void KeplerCompute::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split,
@@ -1579,8 +1590,10 @@ void KeplerCompute::FrontCallMultiMethod(Core::System& system, VideoCommon::GpuS
         }
     }
     split.MultiMethod(this, method, base_start, amount, methods_pending, segment);
-    if (method == 0x6c3 && amount != 0) {
-        FrontNoteRelease(fs, base_start[amount - 1]);
+    if (method == 0x6c3) {
+        for (u32 i = 0; i < amount; ++i) {
+            FrontNoteReport(split, fs, base_start[i]);
+        }
     }
 }
 
@@ -1604,7 +1617,7 @@ void KeplerCompute::FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& s
         FrontApply(fs, address, value);
         split.MacroWrite(this, address, value);
         if (address == 0x6c3) {
-            FrontNoteRelease(fs, value);
+            FrontNoteReport(split, fs, value);
         }
         return true;
     };
