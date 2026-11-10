@@ -121,6 +121,12 @@ public:
         return true;
     }
 
+    /// Work queued or running that has not finished yet.
+    [[nodiscard]] size_t PendingWork() {
+        std::scoped_lock lock{queue_mutex};
+        return work_scheduled - work_done;
+    }
+
     void WaitForRequests(std::stop_token stop_token = {}) {
         std::stop_callback callback(stop_token, [this] {
             for (auto& thread : threads) {

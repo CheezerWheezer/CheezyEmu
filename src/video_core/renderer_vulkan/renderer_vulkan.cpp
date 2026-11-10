@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -219,7 +220,14 @@ try
 
 RendererVulkan::~RendererVulkan() {
     scheduler.RegisterOnSubmit([] {});
+    const auto begin = std::chrono::steady_clock::now();
     void(device.GetLogical().WaitIdle());
+    // Logged for "Emulation thread failed to stop" reports: what follows is the destruction of
+    // the rasterizer and its caches (the pipeline cache logs its own waits).
+    LOG_INFO(Render_Vulkan, "Shutdown: renderer: the GPU went idle in {} ms",
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 std::chrono::steady_clock::now() - begin)
+                 .count());
 }
 
 void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebuffers) {

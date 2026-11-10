@@ -812,11 +812,27 @@ bool PreloadAllPipelines() {
 } // Anonymous namespace
 
 PipelineCache::~PipelineCache() {
+    // Timed and logged: "Emulation thread failed to stop" reports end in the GPU's shutdown,
+    // and this is where it waits for shader builds and for the caches to be written.
+    const auto begin = std::chrono::steady_clock::now();
+    const auto ms_since = [](std::chrono::steady_clock::time_point from) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now() - from)
+            .count();
+    };
+    const size_t builds = workers.PendingWork();
     serialization_stop.request_stop();
     background_pipelines.Stop();
+    const auto background_ms = ms_since(begin);
     workers.WaitForRequests();
+    const auto builds_ms = ms_since(begin) - background_ms;
+    const auto saving = std::chrono::steady_clock::now();
     serialization_thread.WaitForRequests();
     SaveUsedPipelines();
+    LOG_INFO(Render_Vulkan,
+             "Shutdown: pipeline cache: background prebuilds stopped in {} ms, {} shader builds "
+             "in flight took {} ms, cache writes {} ms",
+             background_ms, builds, builds_ms, ms_since(saving));
     if (use_vulkan_pipeline_cache && !vulkan_pipeline_cache_filename.empty()) {
         SerializeVulkanPipelineCache(vulkan_pipeline_cache_filename, vulkan_pipeline_cache,
                                      CACHE_VERSION);
