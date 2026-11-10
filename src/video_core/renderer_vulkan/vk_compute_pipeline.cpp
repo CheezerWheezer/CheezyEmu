@@ -385,11 +385,38 @@ void ComputePipeline::RunBuild() {
 bool ComputePipeline::CanReplaceOcarinaUpscale() const {
     const bool known_shader =
         shader_hash == 0xe40f5efb5480e692ULL || shader_hash == Ocarina1440pShader;
-    return known_shader && !info.stores_global_memory &&
-           info.image_buffer_descriptors.empty() && info.image_descriptors.size() == 1 &&
-           info.image_descriptors.front().count == 1 && info.image_descriptors.front().is_written &&
-           !info.image_descriptors.front().is_read && !info.image_descriptors.front().is_byte_addressed &&
-           std::ranges::none_of(info.storage_buffers_descriptors, &Shader::StorageBufferDescriptor::is_written);
+    if (!known_shader) {
+        return false;
+    }
+    const bool fits =
+        !info.stores_global_memory && info.image_buffer_descriptors.empty() &&
+        info.image_descriptors.size() == 1 && info.image_descriptors.front().count == 1 &&
+        info.image_descriptors.front().is_written && !info.image_descriptors.front().is_read &&
+        !info.image_descriptors.front().is_byte_addressed &&
+        std::ranges::none_of(info.storage_buffers_descriptors,
+                             &Shader::StorageBufferDescriptor::is_written);
+    if (!fits) {
+        // Without the replacement there is no FSR and frame generation waits for ever ("waiting"
+        // in the bar): say once what about the translated shader didn't fit.
+        static std::atomic_flag logged;
+        if (!logged.test_and_set()) {
+            const bool one = info.image_descriptors.size() == 1;
+            LOG_WARNING(Render_Vulkan,
+                        "Ocarina FSR: the game's upscale shader {:016X} can't be replaced on this "
+                        "device, so FSR and frame generation stay idle (global memory writes {}, "
+                        "image buffers {}, images {}, first image count {} written {} read {} "
+                        "byte addressed {}, written storage buffers {})",
+                        shader_hash, info.stores_global_memory,
+                        info.image_buffer_descriptors.size(), info.image_descriptors.size(),
+                        one ? info.image_descriptors.front().count : 0,
+                        one && info.image_descriptors.front().is_written,
+                        one && info.image_descriptors.front().is_read,
+                        one && info.image_descriptors.front().is_byte_addressed,
+                        std::ranges::count_if(info.storage_buffers_descriptors,
+                                              &Shader::StorageBufferDescriptor::is_written));
+        }
+    }
+    return fits;
 }
 
 bool ComputePipeline::Configure(Tegra::Engines::KeplerCompute& kepler_compute,
