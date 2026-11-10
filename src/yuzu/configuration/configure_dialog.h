@@ -57,6 +57,12 @@ public:
 
     void ApplyConfiguration();
 
+    /// True when the window was closed with "Find Best Settings for This PC": the caller applies
+    /// the recommended settings (common/recommended_settings.h) instead of this window's.
+    [[nodiscard]] bool BestSettingsRequested() const {
+        return best_settings_requested;
+    }
+
 private slots:
     void OnLanguageChanged(const QString& locale);
 
@@ -69,6 +75,8 @@ private:
     void RetranslateUI();
 
     void HandleApplyButtonClicked();
+
+    bool best_settings_requested = false;
 
     void SetConfiguration();
     void UpdateVisibleTabs();

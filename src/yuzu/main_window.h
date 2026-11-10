@@ -22,6 +22,7 @@
 #include <qaction.h>
 
 #include "common/common_types.h"
+#include "common/recommended_settings.h"
 #include "common/settings_enums.h"
 #include "core/file_sys/nup_writer.h"
 #include "frontend_common/content_manager.h"
@@ -191,6 +192,9 @@ public:
     /// Adds the status bar's graphics choices (upscaling filter, anti-aliasing, frame generation,
     /// docked or handheld) and the graphics settings to a menu.
     void AddQuickGraphicsMenu(QMenu& menu);
+    /// The PC the recommended settings are chosen for (the GPU picked in Graphics, its video
+    /// memory, the RAM), and one line that describes it.
+    [[nodiscard]] Settings::HostProfile RecommendedHost(QString& host_text);
 
     void filterBarSetChecked(bool state);
     void UpdateUITheme();

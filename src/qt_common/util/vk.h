@@ -58,12 +58,16 @@ namespace VkDeviceInfo {
 class Record {
 public:
     explicit Record(std::string_view name, const std::vector<VkPresentModeKHR>& vsync_modes,
-                    bool has_broken_compute);
+                    bool has_broken_compute, u32 vendor_id = 0, bool integrated = false,
+                    u64 vram_bytes = 0);
     ~Record();
 
     const std::string name;
     const std::vector<VkPresentModeKHR> vsync_support;
     const bool has_broken_compute;
+    const u32 vendor_id;   ///< PCI vendor (0x1002 AMD, 0x10DE NVIDIA, 0x8086 Intel)
+    const bool integrated; ///< VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
+    const u64 vram_bytes;  ///< Sum of the device-local memory heaps
 };
 
 // TODO(crueter): Port some configure_graphics.cpp stuff

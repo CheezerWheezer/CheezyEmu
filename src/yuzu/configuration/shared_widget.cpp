@@ -30,6 +30,7 @@
 #include <QRegularExpression>
 #include <QSizePolicy>
 #include <QSlider>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStyle>
 #include <QValidator>
@@ -354,6 +355,35 @@ QWidget* Widget::CreateSlider(bool reversed, float multiplier, const QString& gi
 
     if (!Settings::IsConfiguringGlobal()) {
         slider->connect(slider, &QAbstractSlider::actionTriggered, [touch]() { touch(); });
+    }
+
+    // A box to type the number in, next to the slider, in place of the read-only value: an
+    // exact frame rate limit or sharpness is hard to hit with a trackpad or a controller. Only
+    // where the number shown is the setting's own value.
+    if (setting.IsIntegral() && !reversed && multiplier == default_multiplier) {
+        auto* const box = new QSpinBox(this);
+        box->setRange(slider->minimum(), slider->maximum());
+        box->setValue(slider->value());
+        box->setSuffix(suffix);
+        box->setKeyboardTracking(false); // the value is taken when typing ends
+        box->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+        feedback->hide();
+        layout->addWidget(box);
+        slider->connect(slider, &QAbstractSlider::valueChanged, box, [box](int value) {
+            const QSignalBlocker blocker{box};
+            box->setValue(value);
+        });
+        const bool per_game = !Settings::IsConfiguringGlobal();
+        box->connect(box, QOverload<int>::of(&QSpinBox::valueChanged), slider,
+                     [slider_ = slider, touch, per_game](int value) {
+                         if (slider_->value() == value) {
+                             return;
+                         }
+                         slider_->setValue(value);
+                         if (per_game) {
+                             touch();
+                         }
+                     });
     }
 
     return container;

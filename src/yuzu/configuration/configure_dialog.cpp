@@ -104,6 +104,25 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
     connect(ui->selectorList, &QListWidget::itemSelectionChanged, this,
             &ConfigureDialog::UpdateVisibleTabs);
 
+    // One button for players who don't want to go through the tabs: picks the settings that fit
+    // this PC's graphics card and memory (with a way back), instead of what is in this window.
+    {
+        QPushButton* const best = ui->buttonBox->addButton(
+            tr("Find Best Settings for This PC..."), QDialogButtonBox::ResetRole);
+        best->setToolTip(
+            tr("Closes this window and offers the settings CheezyEmu recommends for this "
+               "graphics card and memory. Your own settings are kept: Help > Restore My "
+               "Previous Settings brings them back."));
+        best->setEnabled(!system.IsPoweredOn());
+        if (system.IsPoweredOn()) {
+            best->setToolTip(tr("Stop the game first."));
+        }
+        connect(best, &QAbstractButton::clicked, this, [this] {
+            best_settings_requested = true;
+            reject();
+        });
+    }
+
     if (system.IsPoweredOn()) {
         QPushButton* apply_button = ui->buttonBox->addButton(QDialogButtonBox::Apply);
         connect(apply_button, &QAbstractButton::clicked, this,

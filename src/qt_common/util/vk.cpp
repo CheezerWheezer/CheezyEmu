@@ -23,8 +23,9 @@ class QWindow;
 
 namespace VkDeviceInfo {
 Record::Record(std::string_view name_, const std::vector<VkPresentModeKHR>& vsync_modes_,
-               bool has_broken_compute_)
-    : name{name_}, vsync_support{vsync_modes_}, has_broken_compute{has_broken_compute_} {}
+               bool has_broken_compute_, u32 vendor_id_, bool integrated_, u64 vram_bytes_)
+    : name{name_}, vsync_support{vsync_modes_}, has_broken_compute{has_broken_compute_},
+      vendor_id{vendor_id_}, integrated{integrated_}, vram_bytes{vram_bytes_} {}
 
 Record::~Record() = default;
 
@@ -72,7 +73,18 @@ void PopulateRecords(std::vector<Record>& records, QWindow* window) try {
 
         name = fmt::format("{} ({})", name, driver_string);
 
-        records.push_back(VkDeviceInfo::Record(name, present_modes, has_broken_compute));
+        VkPhysicalDeviceMemoryProperties memory{};
+        dld.vkGetPhysicalDeviceMemoryProperties(physical_device, &memory);
+        u64 vram_bytes = 0;
+        for (u32 heap = 0; heap < memory.memoryHeapCount; ++heap) {
+            if (memory.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+                vram_bytes += memory.memoryHeaps[heap].size;
+            }
+        }
+        records.push_back(VkDeviceInfo::Record(
+            name, present_modes, has_broken_compute, properties.properties.vendorID,
+            properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+            vram_bytes));
     }
 } catch (const Vulkan::vk::Exception& exception) {
     LOG_ERROR(Frontend, "Failed to enumerate devices with error: {}", exception.what());

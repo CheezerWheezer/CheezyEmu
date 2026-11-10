@@ -25,11 +25,12 @@ std::map<std::string, std::string> ParseBackup(const std::string& backup) {
 
 } // namespace
 
-std::vector<RecommendedSettingChange> ApplyRecommendedSettings(Values& values) {
+std::vector<RecommendedSettingChange> ApplyRecommendedSettings(Values& values,
+                                                               const HostProfile& host) {
     const auto saved = ParseBackup(values.recommended_settings_backup.GetValue());
     std::vector<RecommendedSettingChange> changes;
     std::string backup;
-    ForEachRecommendedSetting(values, [&](auto& setting, const auto& value) {
+    ForEachRecommendedSetting(values, host, [&](auto& setting, const auto& value) {
         std::string previous = setting.ToStringGlobal();
         // A value backed up earlier stays; a setting the backup does not hold yet, such as one a
         // later build added to the table, joins it.
@@ -57,7 +58,8 @@ std::vector<RecommendedSettingChange> ApplyRecommendedSettings(Values& values) {
 std::vector<RecommendedSettingChange> RestorePreviousSettings(Values& values) {
     const auto saved = ParseBackup(values.recommended_settings_backup.GetValue());
     std::vector<RecommendedSettingChange> changes;
-    ForEachRecommendedSetting(values, [&](auto& setting, const auto&) {
+    // Which settings the table holds does not depend on the PC, only their values.
+    ForEachRecommendedSetting(values, HostProfile{}, [&](auto& setting, const auto&) {
         const auto it = saved.find(setting.GetLabel());
         if (it == saved.end()) {
             return;

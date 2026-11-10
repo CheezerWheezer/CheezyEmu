@@ -417,7 +417,7 @@
   </action>
   <action name="action_Apply_Recommended_Settings">
    <property name="text">
-    <string>Apply Recommended &amp;Settings...</string>
+    <string>Find Best &amp;Settings for This PC...</string>
    </property>
   </action>
   <action name="action_Restore_Previous_Settings">

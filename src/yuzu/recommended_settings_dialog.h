@@ -13,8 +13,9 @@ class RecommendedSettingsDialog {
     Q_DECLARE_TR_FUNCTIONS(RecommendedSettingsDialog)
 
 public:
-    /// Asks whether to use the recommended settings. True when the user accepts.
-    static bool Ask(QWidget* parent);
+    /// Asks whether to use the recommended settings for the PC `host_text` describes. True when
+    /// the user accepts.
+    static bool Ask(QWidget* parent, const QString& host_text);
 
     /// Says what ApplyRecommendedSettings changed and where to undo it.
     static void ShowApplied(QWidget* parent,

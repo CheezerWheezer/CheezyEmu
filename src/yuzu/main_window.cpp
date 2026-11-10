@@ -3957,6 +3957,10 @@ void MainWindow::OnConfigure() {
             &MainWindow::OnGameListRefresh);
 
     const auto result = configure_dialog.exec();
+    if (configure_dialog.BestSettingsRequested()) {
+        // "Find Best Settings for This PC" closed the window without applying what was in it.
+        QTimer::singleShot(0, this, &MainWindow::OnApplyRecommendedSettings);
+    }
     if (result != QDialog::Accepted && !UISettings::values.configuration_applied &&
         !UISettings::values.reset_to_defaults) {
         // Runs if the user hit Cancel or closed the window, and did not ever press the Apply button
@@ -4468,7 +4472,64 @@ void MainWindow::OnEdenDependencies() {
     depsDialog.exec();
 }
 
+Settings::HostProfile MainWindow::RecommendedHost(QString& host_text) {
+    // The PC the settings are chosen for: the GPU picked in Graphics (the first one before any
+    // was), its video memory, and the RAM.
+    Settings::HostProfile host;
+    host.ram_bytes = Common::GetMemInfo().TotalPhysicalMemory;
+#ifdef _WIN32
+    host.windows = true;
+#else
+    host.windows = false;
+#endif
+    QString gpu_name = tr("Unknown graphics card");
+    if (vk_device_records.empty()) {
+        VkDeviceInfo::PopulateRecords(vk_device_records, this->window()->windowHandle());
+    }
+    if (!vk_device_records.empty()) {
+        const size_t index = (std::min)(
+            static_cast<size_t>(Settings::values.vulkan_device.GetValue(true)),
+            vk_device_records.size() - 1);
+        const auto& record = vk_device_records[index];
+        host.amd = record.vendor_id == 0x1002;
+        host.integrated = record.integrated;
+        host.vram_bytes = record.vram_bytes;
+        gpu_name = QString::fromStdString(record.name);
+    }
+    host_text =
+        tr("%1, %2 GB of video memory, %3 GB of RAM.")
+            .arg(gpu_name)
+            .arg(static_cast<double>(host.vram_bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 0)
+            .arg(static_cast<double>(host.ram_bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 0);
+    LOG_INFO(Config,
+             "Recommended settings for: {} (AMD {}, integrated {}), {} MiB of video memory, {} "
+             "MiB of RAM",
+             gpu_name.toStdString(), host.amd, host.integrated, host.vram_bytes >> 20,
+             host.ram_bytes >> 20);
+    return host;
+}
+
 void MainWindow::OfferRecommendedSettings() {
+    // CHEEZYEMU_RECOMMENDED_DRYRUN=1: log what the recommended settings would change on this
+    // PC and put everything back (to check the table without clicking through the dialogs).
+    if (qEnvironmentVariableIsSet("CHEEZYEMU_RECOMMENDED_DRYRUN")) {
+        static bool done = false;
+        if (!std::exchange(done, true)) {
+            QString text;
+            const Settings::HostProfile host = RecommendedHost(text);
+            const std::string backup = Settings::values.recommended_settings_backup.GetValue();
+            Settings::values.recommended_settings_backup = std::string{};
+            const auto changes = Settings::ApplyRecommendedSettings(Settings::values, host);
+            for (const auto& change : changes) {
+                LOG_INFO(Config, "Recommended (dry run): {} {} -> {}", change.setting->GetLabel(),
+                         change.previous, change.current);
+            }
+            Settings::RestorePreviousSettings(Settings::values);
+            Settings::values.recommended_settings_backup = backup;
+            LOG_INFO(Config, "Recommended (dry run): {} settings would change", changes.size());
+        }
+        return;
+    }
     if (emulation_running || boot_in_progress || close_pending ||
         Settings::values.recommended_settings_prompt_shown.GetValue()) {
         return;
@@ -4480,7 +4541,9 @@ void MainWindow::OnApplyRecommendedSettings() {
     if (emulation_running) {
         return;
     }
-    const bool accepted = RecommendedSettingsDialog::Ask(this);
+    QString host_text;
+    const Settings::HostProfile host = RecommendedHost(host_text);
+    const bool accepted = RecommendedSettingsDialog::Ask(this, host_text);
     if (emulation_running) {
         // A game started behind the question; ask again when none runs.
         return;
@@ -4490,7 +4553,7 @@ void MainWindow::OnApplyRecommendedSettings() {
         OnSaveConfig();
         return;
     }
-    const auto changes = Settings::ApplyRecommendedSettings(Settings::values);
+    const auto changes = Settings::ApplyRecommendedSettings(Settings::values, host);
     LOG_INFO(Config, "Applied the recommended settings: {} changed", changes.size());
     Settings::UpdateGPUAccuracy();
     OnSaveConfig();
