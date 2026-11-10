@@ -1307,6 +1307,22 @@ int TextureCache<P>::RenderTargetsRedrawnReason() {
 }
 
 template <class P>
+bool TextureCache<P>::DepthStencilWritable(bool is_clear) const {
+    // A draw with depth writes off and no stencil test only reads the depth buffer. Marked as
+    // modified all the same, every such draw made the buffer newer than the images that overlap
+    // it, and the next use of one copied the whole buffer over: with an Ocarina FSR preset the
+    // game samples a 1308x736 view of its 1312x736 depth buffer between those draws, 206 copies
+    // a frame (5 ms of GPU time, Quality slower than Native AA). EDEN_NX2_DEPTH_ALWAYS_MODIFIED=1
+    // brings the old rule back.
+    static const bool always = std::getenv("EDEN_NX2_DEPTH_ALWAYS_MODIFIED") != nullptr;
+    if (always || is_clear) {
+        return true;
+    }
+    const auto& regs = maxwell3d->regs;
+    return regs.depth_write_enabled != 0 || regs.stencil_enable != 0;
+}
+
+template <class P>
 void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
     using namespace VideoCommon::Dirty;
     struct ClearingScope {
@@ -1324,7 +1340,8 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
             NoteRenderTarget(color_buffer_id);
         }
         const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
-        PrepareImageView(depth_buffer_id, true, is_clear && IsFullClear(depth_buffer_id));
+        PrepareImageView(depth_buffer_id, DepthStencilWritable(is_clear),
+                         is_clear && IsFullClear(depth_buffer_id));
         NoteRenderTarget(depth_buffer_id);
         return;
     }
@@ -1343,7 +1360,8 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
     }
     const ImageViewId depth_buffer_id = render_targets.depth_buffer_id;
 
-    PrepareImageView(depth_buffer_id, true, is_clear && IsFullClear(depth_buffer_id));
+    PrepareImageView(depth_buffer_id, DepthStencilWritable(is_clear),
+                     is_clear && IsFullClear(depth_buffer_id));
     for (const ImageViewId color_buffer_id : render_targets.color_buffer_ids) {
         NoteRenderTarget(color_buffer_id);
     }
@@ -4477,6 +4495,34 @@ void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
         const ImageBase& rhs_image = slot_images[rhs->id];
         return lhs_image.modification_tick < rhs_image.modification_tick;
     });
+    // EDEN_NX2_ALIAS_COPIES=1: which overlapping images are copied into which, logged every
+    // 600 copies (a preset's 1308x736 scene copy against its 1312x736 target made ~255 a frame).
+    static const bool count_copies = std::getenv("EDEN_NX2_ALIAS_COPIES") != nullptr;
+    if (count_copies) {
+        static std::map<std::string, u32> seen;
+        static u32 total = 0;
+        static u64 first_frame = 0;
+        for (const AliasedImage* const aliased : aliased_images) {
+            const ImageBase& from = slot_images[aliased->id];
+            ++seen[fmt::format("{}x{} {} @{:#x} <- {}x{} {} @{:#x}", image.info.size.width,
+                               image.info.size.height, static_cast<int>(image.info.format),
+                               image.gpu_addr, from.info.size.width, from.info.size.height,
+                               static_cast<int>(from.info.format), from.gpu_addr)];
+            if (total == 0) {
+                first_frame = frame_tick;
+            }
+            if (++total == 600) {
+                std::string text;
+                for (const auto& [name, count] : seen) {
+                    text += fmt::format(" | {}x {}", count, name);
+                }
+                LOG_INFO(HW_GPU, "Alias copies: 600 in {} frames{}", frame_tick - first_frame,
+                         text);
+                seen.clear();
+                total = 0;
+            }
+        }
+    }
     const auto& resolution = Settings::values.resolution_info;
     for (const AliasedImage* const aliased : aliased_images) {
         if (!resolution.active || !any_rescaled) {

@@ -338,6 +338,9 @@ public:
     /// @param is_clear True when the render targets are being used for clears
     void UpdateRenderTargets(bool is_clear);
 
+    /// Whether the draw or clear being set up can change the depth or stencil buffer.
+    [[nodiscard]] bool DepthStencilWritable(bool is_clear) const;
+
     /// Find a framebuffer with the currently bound render targets
     /// UpdateRenderTargets should be called before this
     Framebuffer* GetFramebuffer();
