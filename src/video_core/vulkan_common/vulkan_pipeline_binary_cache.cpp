@@ -17,6 +17,14 @@
 #include "common/logging.h"
 #include "video_core/vulkan_common/vulkan_pipeline_binary_cache.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace Vulkan::PipelineBinaryCache {
 namespace {
 
@@ -33,6 +41,96 @@ constexpr u32 MAX_BINARIES_PER_PIPELINE = 64;
 struct Stats {
     std::atomic<u64> loaded{}, compiled{}, saved{}, load_failed{}, skipped{};
     std::atomic<u64> loaded_us{}, compiled_us{};
+};
+
+/// Reads the file at given offsets, from any thread, while it is being appended to.
+class FileReader {
+public:
+    FileReader() = default;
+    FileReader(const FileReader&) = delete;
+    FileReader& operator=(const FileReader&) = delete;
+    ~FileReader() {
+        Close();
+    }
+
+    bool Open(const std::filesystem::path& path) {
+        Close();
+#ifdef _WIN32
+        handle = CreateFileW(path.c_str(), GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_RANDOM_ACCESS,
+                             nullptr);
+        return handle != INVALID_HANDLE_VALUE;
+#else
+        fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        return fd >= 0;
+#endif
+    }
+
+    void Close() {
+#ifdef _WIN32
+        if (handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(handle);
+            handle = INVALID_HANDLE_VALUE;
+        }
+#else
+        if (fd >= 0) {
+            close(fd);
+            fd = -1;
+        }
+#endif
+    }
+
+    [[nodiscard]] u64 Size() const {
+#ifdef _WIN32
+        LARGE_INTEGER size{};
+        return handle != INVALID_HANDLE_VALUE && GetFileSizeEx(handle, &size)
+                   ? static_cast<u64>(size.QuadPart)
+                   : 0;
+#else
+        struct stat st {};
+        return fd >= 0 && fstat(fd, &st) == 0 ? static_cast<u64>(st.st_size) : 0;
+#endif
+    }
+
+    [[nodiscard]] bool Read(u64 offset, void* out, size_t size) const {
+        u8* dst = static_cast<u8*>(out);
+        while (size > 0) {
+            const size_t want = size < (size_t{1} << 30) ? size : (size_t{1} << 30);
+#ifdef _WIN32
+            if (handle == INVALID_HANDLE_VALUE) {
+                return false;
+            }
+            // With an offset a synchronous handle reads there, whatever other threads read.
+            OVERLAPPED at{};
+            at.Offset = static_cast<DWORD>(offset);
+            at.OffsetHigh = static_cast<DWORD>(offset >> 32);
+            DWORD got = 0;
+            if (!ReadFile(handle, dst, static_cast<DWORD>(want), &got, &at) || got == 0) {
+                return false;
+            }
+#else
+            if (fd < 0) {
+                return false;
+            }
+            const ssize_t got = pread(fd, dst, want, static_cast<off_t>(offset));
+            if (got <= 0) {
+                return false;
+            }
+#endif
+            dst += got;
+            offset += static_cast<u64>(got);
+            size -= static_cast<size_t>(got);
+        }
+        return true;
+    }
+
+private:
+#ifdef _WIN32
+    HANDLE handle{INVALID_HANDLE_VALUE};
+#else
+    int fd{-1};
+#endif
 };
 
 class Store {
@@ -54,61 +152,68 @@ public:
 
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
-        size_t good_end = 0;
-        {
-            std::ifstream in(path, std::ios::binary | std::ios::ate);
-            if (in) {
-                const auto size = static_cast<size_t>(in.tellg());
-                in.seekg(0);
-                loaded.resize(size);
-                if (!in.read(reinterpret_cast<char*>(loaded.data()), size)) {
-                    loaded.clear();
-                }
-            }
+        // The file stays on disk: only where each pipeline's binaries are is kept, and they are
+        // read when the pipeline is built. Held in memory whole it was 1 to 2 GB for the session.
+        u64 file_size = 0;
+        std::array<u8, HEADER_BYTES> found{};
+        bool same_driver = false;
+        if (reader.Open(path)) {
+            file_size = reader.Size();
+            same_driver = file_size >= HEADER_BYTES &&
+                          reader.Read(0, found.data(), found.size()) && found == header;
         }
-        const bool same_driver = loaded.size() >= HEADER_BYTES &&
-                                 std::memcmp(loaded.data(), header.data(), HEADER_BYTES) == 0;
         if (same_driver) {
-            size_t p = HEADER_BYTES;
-            good_end = p;
-            while (p + RECORD_HEADER_BYTES <= loaded.size()) {
+            u64 p = HEADER_BYTES;
+            file_end = p;
+            std::array<u8, RECORD_HEADER_BYTES> record{};
+            while (p + RECORD_HEADER_BYTES <= file_size &&
+                   reader.Read(p, record.data(), record.size())) {
                 u32 magic, key_size;
                 u64 len;
-                std::memcpy(&magic, &loaded[p], 4);
-                std::memcpy(&key_size, &loaded[p + 4], 4);
-                std::memcpy(&len, &loaded[p + 8 + KEY_BYTES], 8);
+                std::memcpy(&magic, &record[0], 4);
+                std::memcpy(&key_size, &record[4], 4);
+                std::memcpy(&len, &record[8 + KEY_BYTES], 8);
                 if (magic != RECORD_MAGIC || key_size == 0 || key_size > KEY_BYTES ||
-                    len > loaded.size() - p - RECORD_HEADER_BYTES) {
+                    len > file_size - p - RECORD_HEADER_BYTES) {
                     break;
                 }
-                index.emplace(std::string(reinterpret_cast<const char*>(&loaded[p + 8]), key_size),
-                              Blob{&loaded[p + RECORD_HEADER_BYTES], static_cast<size_t>(len)});
-                p += RECORD_HEADER_BYTES + static_cast<size_t>(len);
-                good_end = p;
+                index.emplace(std::string(reinterpret_cast<const char*>(&record[8]), key_size),
+                              Blob{p + RECORD_HEADER_BYTES, static_cast<size_t>(len)});
+                p += RECORD_HEADER_BYTES + len;
+                file_end = p;
             }
-            if (good_end < loaded.size()) {
+            if (file_end < file_size) {
                 // A session that ended mid-write leaves a partial record; drop it.
-                std::filesystem::resize_file(path, good_end, ec);
+                reader.Close();
+                std::filesystem::resize_file(path, file_end, ec);
+                if (ec) {
+                    LOG_ERROR(Render_Vulkan, "Pipeline binaries: can't trim {}", path.string());
+                    return false;
+                }
             }
             out.open(path, std::ios::binary | std::ios::app);
         } else {
             // First run, or the driver changed: binaries from another driver can't be used, so the
             // file is replaced rather than kept beside the new one.
-            if (!loaded.empty()) {
+            if (file_size != 0) {
                 LOG_INFO(Render_Vulkan, "Pipeline binaries: driver changed, starting over");
             }
-            loaded.clear();
+            reader.Close();
             out.open(path, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char*>(header.data()), header.size());
             out.flush();
+            file_end = HEADER_BYTES;
         }
         if (!out) {
             LOG_ERROR(Render_Vulkan, "Pipeline binaries: can't write {}", path.string());
             return false;
         }
+        if (!reader.Open(path)) {
+            LOG_ERROR(Render_Vulkan, "Pipeline binaries: can't read {}", path.string());
+            return false;
+        }
         LOG_INFO(Render_Vulkan, "Pipeline binaries: {} saved pipelines ({:.1f} MiB) in {}",
-                 index.size(), static_cast<double>(loaded.size()) / (1024.0 * 1024.0),
-                 path.string());
+                 index.size(), static_cast<double>(file_end) / (1024.0 * 1024.0), path.string());
         return true;
     }
 
@@ -117,6 +222,7 @@ public:
         if (out.is_open()) {
             out.close();
         }
+        reader.Close();
         LOG_INFO(Render_Vulkan,
                  "Pipeline binaries: {} pipelines built from saved binaries (avg {:.2f} ms), {} "
                  "compiled (avg {:.2f} ms), {} saved, {} saved binaries rejected",
@@ -195,8 +301,9 @@ public:
     }
 
 private:
+    /// Where a pipeline's binaries are in the file.
     struct Blob {
-        const u8* data;
+        u64 offset;
         size_t size;
     };
 
@@ -232,11 +339,19 @@ private:
     }
 
     template <typename CreateInfo, typename CreateFn>
-    bool CreateFromSaved(const Blob& blob, const CreateInfo& ci, VkPipeline* out_pipeline,
+    bool CreateFromSaved(const Blob& where, const CreateInfo& ci, VkPipeline* out_pipeline,
                          CreateFn& create) {
-        if (blob.size < 4) {
+        if (where.size < 4) {
             return false;
         }
+        std::vector<u8> bytes(where.size);
+        if (!reader.Read(where.offset, bytes.data(), bytes.size())) {
+            return false;
+        }
+        const struct {
+            const u8* data;
+            size_t size;
+        } blob{bytes.data(), bytes.size()};
         u32 count;
         std::memcpy(&count, blob.data, 4);
         if (count == 0 || count > MAX_BINARIES_PER_PIPELINE) {
@@ -364,23 +479,33 @@ private:
         if (index.contains(key)) {
             return;
         }
-        auto owned = std::make_unique<std::vector<u8>>(std::move(payload));
-        if (out.is_open()) {
-            const u32 magic = RECORD_MAGIC;
-            const u32 key_size = static_cast<u32>(key.size());
-            std::array<u8, KEY_BYTES> key_padded{};
-            std::memcpy(key_padded.data(), key.data(), key.size());
-            const u64 len = owned->size();
-            out.write(reinterpret_cast<const char*>(&magic), 4);
-            out.write(reinterpret_cast<const char*>(&key_size), 4);
-            out.write(reinterpret_cast<const char*>(key_padded.data()), KEY_BYTES);
-            out.write(reinterpret_cast<const char*>(&len), 8);
-            out.write(reinterpret_cast<const char*>(owned->data()),
-                      static_cast<std::streamsize>(owned->size()));
-            out.flush();
+        if (!out.is_open()) {
+            return;
         }
-        index.emplace(key, Blob{owned->data(), owned->size()});
-        session_blobs.push_back(std::move(owned));
+        const u32 magic = RECORD_MAGIC;
+        const u32 key_size = static_cast<u32>(key.size());
+        std::array<u8, KEY_BYTES> key_padded{};
+        std::memcpy(key_padded.data(), key.data(), key.size());
+        const u64 len = payload.size();
+        out.write(reinterpret_cast<const char*>(&magic), 4);
+        out.write(reinterpret_cast<const char*>(&key_size), 4);
+        out.write(reinterpret_cast<const char*>(key_padded.data()), KEY_BYTES);
+        out.write(reinterpret_cast<const char*>(&len), 8);
+        out.write(reinterpret_cast<const char*>(payload.data()),
+                  static_cast<std::streamsize>(payload.size()));
+        out.flush();
+        if (!out) {
+            // Disk full, typically. What is in the file past here can't be trusted: stop saving;
+            // the next start drops the partial record.
+            LOG_ERROR(Render_Vulkan, "Pipeline binaries: writing {} failed, no more are saved "
+                                     "this session",
+                      path.string());
+            out.close();
+            return;
+        }
+        // Flushed, so a later build of the same pipeline can read it back from the file.
+        index.emplace(key, Blob{file_end + RECORD_HEADER_BYTES, payload.size()});
+        file_end += RECORD_HEADER_BYTES + len;
         ++stats.saved;
     }
 
@@ -388,8 +513,8 @@ private:
     const vk::DeviceDispatch* dld{};
     std::filesystem::path path;
     std::ofstream out;
-    std::vector<u8> loaded;
-    std::vector<std::unique_ptr<std::vector<u8>>> session_blobs;
+    FileReader reader;
+    u64 file_end{};
     std::unordered_map<std::string, Blob> index;
     std::shared_mutex mutex;
     Stats stats;

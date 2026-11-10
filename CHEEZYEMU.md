@@ -62,6 +62,11 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   `EDEN_NX2_FORCE_MESH_FALLBACK=0` turns it off, `=1` forces it on any GPU.
 - **About 1 GB less RAM** in Ocarina: memory the game cleared to zero is given back to the system
   sooner (zortos293/Lichii#961 with Fritchii v5.6's faster page check).
+- **1 to 2 GB less RAM on AMD cards**: the file of saved compiled shaders
+  (`vulkan_binaries`) was read into memory whole and kept there for the session, 1.8 GB on the
+  test PC; now each shader's part is read from the file when it is built. Same boot time. PCs
+  with 16 GB of RAM are still tight in Ocarina at 4K: a large page file helps (a report of the
+  whole PC freezing on the load from Castle Town to Hyrule Field came from one).
 - **Ocarina runs faster**: zortos293/Lichii#1161 by Lucas Borges is in (the game's GPU command
   stream waits less for itself, images are reused, reports are cheaper). On the test PC
   (i5-12600K, RX 6750 XT, no upscaler) Hyrule Field went from about 51 to 59 fps standing and
