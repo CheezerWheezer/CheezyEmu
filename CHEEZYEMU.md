@@ -6,6 +6,54 @@ build 117 (`89440b2`) and is now its own emulator. Its main additions: compiled 
 (each shader is compiled once instead of every time you start the game), AMD FSR 4 and FSR 3.1
 upscaling, AMD frame generation, and the community's AMD performance work.
 
+## New in build 12
+
+Not released yet: this section grows as the work lands.
+
+- **White flashes ("flashbang") and stretched, glowing geometry after changing areas**: upstream
+  Lichii found the cause and its fix is in (zortos293/Lichii#1199 and #1236, with 99ivs and
+  PantACRO4life). Video memory the game had freed kept its old contents on the emulator's side,
+  so when the game reused that address, meshes read other data as vertices until a restart. If
+  you still see it, send the log of that session (`eden_log.txt.old.txt` if you have reopened
+  CheezyEmu since).
+- **"Find Best Settings for This PC"**: one button at the bottom of Emulation > Configure (also
+  in Help). It looks at your graphics card, its video memory and your RAM and sets the
+  performance options, AMD FSR, frame generation and Ocarina of Time's render size to match,
+  shows what it changed, and Help > Restore My Previous Settings undoes it. Settings made for a
+  single game are not touched. Based on upstream's recommended settings (#1200).
+- **FSR presets**: Balanced did not start FSR or frame generation (greyed out in the status
+  bar), docked or handheld: the game's scene image is up to 12 pixels wider than the copy the
+  upscaler reads and only 4 were allowed. Quality and Balanced were also slower than Native AA:
+  the emulator copied the depth buffer about 200 times a frame for them. On the test PC
+  (RX 6750 XT) Quality with frame generation went from 36 to 49 fps.
+- **FSR and frame generation "waiting" on cards short of video memory** (an RX 9060 XT 8 GB at
+  4K): when FSR 4 could not start, FSR stayed off for the whole session. It now frees memory,
+  falls back to FSR 3.1 at once, and tries again later if nothing starts.
+- **Out of memory**:
+  - A card that ran out of video memory could end the emulator (RX 5600 XT 6 GB, 17 minutes
+    into Ocarina): buffers now fall back to system memory the way images already did.
+  - PCs with 16 GB of RAM: the texture cache stays within what Windows can still hand out
+    (upstream #1210), half as many idle shaders are kept in memory (about 0.9 GB), and when
+    Windows runs out of page file the game waits for it to grow instead of crashing, and the
+    log says what to change. Frame generation alone keeps about 1.5 GB of RAM: turn it off on
+    a 16 GB PC if memory is short, and leave the page file on "System managed size".
+  - The log has a "Vulkan memory" line every 30 seconds (video and system memory in use).
+- **New performance bar** (View > Performance Overlay): one black strip with frame rate (with
+  frame generation), frame time, a frame rate history, FSR and frame generation status, RAM and
+  video memory. Drag it anywhere over the game; it snaps to the edges and remembers its place.
+  Right-click it for corners, a compact mode, and the graphics choices of the status bar
+  (upscaling filter, anti-aliasing, frame generation, docked or handheld), which fullscreen
+  hides.
+- **A box to type the number in next to sliders** (frame rate limit, sharpness, speed).
+- From upstream Lichii build 150: the ocarina crackle (#1196), a stand-in texture where the
+  game dump's own texture is damaged (dark Water Temple walls and fairy fountain, #1197), Mario
+  Kart World's dark characters and karts (#1231), changing settings while a game loads no
+  longer freezes the window (#1168).
+- When CheezyEmu fails to stop a game, the log now says what the graphics shutdown waited for.
+- `EDEN_NX2_MESH_EMULATION=0` (test): on a GPU without mesh shaders (Apple, older cards) the
+  grass and props drawn with them are left out, as in builds up to 8, instead of drawn through
+  compute. For a report of Ocarina freezing on an Apple M1 Pro while loading a save.
+
 ## New in build 11
 
 How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.exe` in every download.

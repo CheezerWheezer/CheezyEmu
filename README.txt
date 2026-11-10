@@ -262,6 +262,11 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   EDEN_NX2_FSR_VERSION=3            Uses FSR 3.1 even where FSR 4 is offered (for comparing)
   EDEN_NX2_FORCE_MESH_FALLBACK=1    Draws mesh shader geometry the safe way on any GPU (fixes
                                     AMD hangs; =0 never uses it, even where it is automatic)
+  EDEN_NX2_MESH_EMULATION=0         On a GPU without mesh shaders: leaves grass and props out
+                                    instead of drawing them through compute (if loading a
+                                    save freezes there)
+  EDEN_NX2_DEPTH_ALWAYS_MODIFIED=1  Brings back the old depth buffer rule, if water, particles
+                                    or decals look wrong in build 12
   EDEN_NX2_TRANSIENT_TARGETS=0      Brings back the older rule for draws whose shader is still
                                     building, if something stays missing in a new area
   EDEN_NX2_FLASH_WATCH=C:\flash     Records what caused a white flash into that folder
