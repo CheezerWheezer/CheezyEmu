@@ -167,13 +167,12 @@ void BufferCache<P>::TickFrame() {
                           largest.end(), std::greater<>{});
         LOG_INFO(HW_GPU,
                  "Buffer cache: {} buffers {} MiB; largest {}; compute write extents: {} checks "
-                 "held, {} programs caught and marked in full, {} known ones marked in full from "
-                 "the start, {} full marks",
+                 "held, {} programs wrote past their proof ({} bytes found), {} extra marks",
                  count, total >> 20,
                  fmt::join(largest.begin(), largest.begin() + std::min<size_t>(6, largest.size()), ", "),
-                 extent_probes_trusted, extent_probes_distrusted, extent_programs_known,
-                 extent_full_marks);
-        extent_full_marks = 0;
+                 extent_probes_held, extent_programs_caught, extent_bytes_caught,
+                 extent_extra_marks);
+        extent_extra_marks = 0;
     }
 
     // Calculate hits and shots and move hit bits to the right
@@ -2320,34 +2319,30 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
                 const u64 proven = std::min<u64>(binding.size, pad + *extent);
                 mark = proven;
                 known_write = proven;
-                // Not yet checked at these dims, or caught writing past it: mark in full (see
-                // ExtentTrust), and check this dispatch.
+                extent_pads[ssbo_index] = pad;
+                // Check what it really writes past the proof (ExtentTrust): on its first
+                // dispatches at new dims, then now and then, more often once it was caught.
                 if (!IS_OPENGL && proven < binding.size && ExtentCheckEnabled()) {
                     const std::array<u32, 3> dims_grid =
                         grid.value_or(std::array<u32, 3>{~0U, ~0U, ~0U});
-                    const ExtentTrust& trust = ExtentTrustFor(compute_shader_hash);
+                    const ExtentTrust& trust = extent_trust[compute_shader_hash];
                     bool bigger = false;
                     for (size_t i = 0; i < 3; ++i) {
                         bigger |= block[i] > trust.block[i] || dims_grid[i] > trust.grid[i];
                     }
-                    // A trusted program is checked again now and then: it may write far only
-                    // sometimes, and bytes an unmarked dispatch left behind still show.
-                    const bool audit =
-                        !bigger && frame_tick - trust.last_check_frame >= EXTENT_AUDIT_FRAMES;
-                    if (trust.distrusted || bigger || audit) {
-                        mark = binding.size;
-                        ++extent_full_marks;
-                        if (!trust.distrusted && !trust.probe_pending) {
-                            extent_probe_requests[ssbo_index] = ExtentProbeRequest{
-                                .active = true,
-                                .audit = audit,
-                                .proven = proven,
-                                .pointer = pointer,
-                                .pad = pad,
-                                .block = block,
-                                .grid = dims_grid,
-                            };
-                        }
+                    const u64 interval =
+                        trust.extra.empty() ? EXTENT_AUDIT_FRAMES : EXTENT_CAUGHT_FRAMES;
+                    const bool audit = !bigger && frame_tick - trust.last_check_frame >= interval;
+                    if ((bigger || audit) && !trust.probe_pending) {
+                        extent_probe_requests[ssbo_index] = ExtentProbeRequest{
+                            .active = true,
+                            .audit = audit,
+                            .proven = proven,
+                            .pointer = pointer,
+                            .pad = pad,
+                            .block = block,
+                            .grid = dims_grid,
+                        };
                     }
                 }
             }
@@ -3357,6 +3352,9 @@ void BufferCache<P>::BindHostComputeStorageBuffers() {
             }
             return;
         }
+        if (native && is_written) {
+            MarkExtentExtras(index, binding);
+        }
         Buffer& buffer = slot_buffers[binding.buffer_id];
         TouchBuffer(buffer, binding.buffer_id);
         const u32 size = binding.size;
@@ -3386,12 +3384,40 @@ void BufferCache<P>::BindHostComputeStorageBuffers() {
 }
 
 template <class P>
-void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
-    // Write extent check (ExtentTrust): guest memory of the tail past the proof, right before this
-    // dispatch. RecordComputeExtentProbes copies the GPU's tail right after it.
+void BufferCache<P>::MarkExtentExtras(u32 index, const Binding& binding) {
     if constexpr (!IS_OPENGL) {
-        const ExtentProbeRequest& request = extent_probe_requests[index];
-        if (!request.active || request.proven >= binding.size) {
+        if (extent_trust.empty() || !ExtentCheckEnabled()) {
+            return;
+        }
+        const auto it = extent_trust.find(compute_shader_hash);
+        if (it == extent_trust.end() || it->second.extra.empty()) {
+            return;
+        }
+        const u64 pad = extent_pads[index];
+        for (const auto& [begin, end] : it->second.extra) {
+            const u64 from = pad + begin;
+            const u64 to = (std::min<u64>)(pad + end, binding.size);
+            if (from >= to) {
+                continue;
+            }
+            MarkWrittenBuffer(binding.buffer_id, binding.device_addr + from,
+                              static_cast<u32>(to - from), false,
+                              GpuWaitStats::WriteSite::ComputeStorage);
+            ++extent_extra_marks;
+        }
+    }
+}
+
+template <class P>
+void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
+    // Write extent check (ExtentTrust): which tail to copy before and after this dispatch.
+    if constexpr (!IS_OPENGL) {
+        ExtentProbeRequest& request = extent_probe_requests[index];
+        if (!request.active) {
+            return;
+        }
+        request.active = false;
+        if (request.proven >= binding.size) {
             return;
         }
         BufferId buffer_id = binding.buffer_id;
@@ -3423,7 +3449,7 @@ void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
         if (!slot_buffers.contains(buffer_id)) {
             return;
         }
-        const u64 span = (std::min<u64>)(room, 2_MiB);
+        const u64 span = (std::min<u64>)(room, EXTENT_PROBE_SPAN);
         ExtentProbe probe{
             .shader_hash = compute_shader_hash,
             .index = index,
@@ -3433,22 +3459,35 @@ void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
             .request = request,
             .span = span,
         };
-        // What the CPU would read there without the mark, taken before the dispatch. Bytes the
-        // cache already knows the GPU wrote, and CPU writes not in the buffer yet, may differ for
-        // other reasons: they are left out.
-        probe.guest.resize(span);
-        device_memory.ReadBlockUnsafe(tail, probe.guest.data(), span);
-        const auto skip = [&](DAddr begin, DAddr end) {
+        // Bytes the cache already has as GPU-written need no finding.
+        gpu_modified_ranges.ForEachInRange(tail, span, [&](DAddr begin, DAddr end) {
             begin = (std::max)(begin, tail);
             end = (std::min)(end, tail + span);
             if (begin < end) {
                 probe.skip.emplace_back(begin - tail, end - tail);
             }
-        };
-        gpu_modified_ranges.ForEachInRange(tail, span, skip);
-        PendingCpuWriteRanges().ForEachInRange(tail, span, skip);
+        });
         extent_probes.push_back(std::move(probe));
-        ExtentTrustFor(compute_shader_hash).probe_pending = true;
+        extent_trust[compute_shader_hash].probe_pending = true;
+    }
+}
+
+template <class P>
+void BufferCache<P>::NoteDispatchNext() {
+    if constexpr (!IS_OPENGL) {
+        for (ExtentProbe& probe : extent_probes) {
+            if (probe.before || !slot_buffers.contains(probe.buffer_id)) {
+                continue;
+            }
+            Buffer& buffer = slot_buffers[probe.buffer_id];
+            probe.before = runtime.DownloadStagingBuffer(probe.span, true);
+            const BufferCopy copy{
+                .src_offset = buffer.Offset(probe.device_addr),
+                .dst_offset = probe.before->offset,
+                .size = probe.span,
+            };
+            runtime.CopyBuffer(probe.before->buffer, buffer, std::span{&copy, 1}, true);
+        }
     }
 }
 
@@ -3456,7 +3495,7 @@ template <class P>
 void BufferCache<P>::RecordComputeExtentProbes() {
     if constexpr (!IS_OPENGL) {
         for (ExtentProbe& probe : extent_probes) {
-            if (probe.after || !slot_buffers.contains(probe.buffer_id)) {
+            if (!probe.before || probe.after || !slot_buffers.contains(probe.buffer_id)) {
                 continue;
             }
             // What the dispatch's other storage bindings are known to write is not this
@@ -3491,65 +3530,102 @@ template <class P>
 void BufferCache<P>::CheckExtentProbes() {
     if constexpr (!IS_OPENGL) {
         std::erase_if(extent_probes, [this](ExtentProbe& probe) {
+            const auto release = [&] {
+                if (probe.before) {
+                    runtime.FreeDeferredStagingBuffer(*probe.before);
+                }
+                if (probe.after) {
+                    runtime.FreeDeferredStagingBuffer(*probe.after);
+                }
+            };
             if (!probe.after) {
                 if (!slot_buffers.contains(probe.buffer_id)) {
-                    // Its buffer is gone before any dispatch followed: check the program again.
-                    ExtentTrustFor(probe.shader_hash).probe_pending = false;
+                    // Its buffer is gone before its dispatch was recorded: check again later.
+                    extent_trust[probe.shader_hash].probe_pending = false;
+                    release();
                     return true;
                 }
-                // The dispatch was dropped after its bind: the next one records the copy, and a
-                // difference from it can only distrust the program (the safe side).
                 return false;
             }
             if (!runtime.IsFree(probe.tick)) {
                 return false;
             }
-            // The GPU's tail after the dispatch against guest memory before it: a difference is
-            // GPU data the cache would not have known about without the full mark.
-            const u8* const guest = probe.guest.data();
+            // The tail on the host GPU right before the dispatch against right after it: what
+            // differs, the dispatch wrote. Runs closer than 64 bytes are taken as one.
+            const u8* const before = probe.before->mapped_span.data();
             const u8* const after = probe.after->mapped_span.data();
-            u64 differing = 0;
-            u64 first = ~u64{0};
-            u64 last = 0;
-            if (std::memcmp(guest, after, probe.span) != 0) {
+            std::vector<std::pair<u64, u64>> runs;
+            u64 bytes = 0;
+            if (std::memcmp(before, after, probe.span) != 0) {
                 std::vector<bool> skipped(probe.span);
                 for (const auto& [begin, end] : probe.skip) {
                     std::fill(skipped.begin() + static_cast<std::ptrdiff_t>(begin),
                               skipped.begin() + static_cast<std::ptrdiff_t>(end), true);
                 }
                 for (u64 i = 0; i < probe.span; ++i) {
-                    if (guest[i] != after[i] && !skipped[i]) {
-                        ++differing;
-                        first = (std::min)(first, i);
-                        last = i;
+                    if (before[i] == after[i] || skipped[i]) {
+                        continue;
+                    }
+                    ++bytes;
+                    if (!runs.empty() && i - runs.back().second < 64) {
+                        runs.back().second = i + 1;
+                    } else {
+                        runs.emplace_back(i, i + 1);
                     }
                 }
             }
-            ExtentTrust& trust = ExtentTrustFor(probe.shader_hash);
+            ExtentTrust& trust = extent_trust[probe.shader_hash];
             trust.probe_pending = false;
             trust.last_check_frame = frame_tick;
             const ExtentProbeRequest& request = probe.request;
-            if (differing != 0) {
-                if (!trust.distrusted) {
-                    trust.distrusted = true;
-                    ++extent_probes_distrusted;
-                    ExtentDistrust::Remember(probe.shader_hash);
+            if (!runs.empty()) {
+                extent_bytes_caught += bytes;
+                if (trust.extra.empty()) {
+                    ++extent_programs_caught;
+                }
+                if (!trust.logged) {
+                    trust.logged = true;
                     LOG_WARNING(HW_GPU,
                                 "Compute write extent too small: shader {:016x} pointer {:#x} pad "
-                                "{} proven {} of {} bytes, block {}x{}x{} grid {}x{}x{}: {} bytes "
-                                "written past the proof (first +{}, last +{}){}; marked in full "
-                                "from now on, and from the start in later sessions",
+                                "{} proven {} of {} bytes, block {}x{}x{} grid {}x{}x{}: this "
+                                "dispatch changed {} bytes past the proof in {} runs (first +{}, "
+                                "last +{}); those bytes are marked GPU-written from now on",
                                 probe.shader_hash, request.pointer, request.pad, request.proven,
                                 probe.binding_size, request.block[0], request.block[1],
                                 request.block[2], request.grid[0], request.grid[1],
-                                request.grid[2], differing, first, last,
-                                request.audit ? ", found by an audit after it was trusted" : "");
+                                request.grid[2], bytes, runs.size(), runs.front().first,
+                                runs.back().second - 1);
                 }
-            } else if (!trust.distrusted) {
-                ++extent_probes_trusted;
-                // Trusted at these dims (and so at any dims within them) once enough checks held:
-                // the offenders write far only now and then. The componentwise maximum with dims
-                // checked before also counts as checked (a dispatch past both is rare).
+                const bool alive = slot_buffers.contains(probe.buffer_id);
+                for (const auto& [begin, end] : runs) {
+                    // Known now: mark them, late as it is, so the next guest read or upload
+                    // respects them, and remember them from the pointer for the next binds.
+                    if (alive) {
+                        MarkWrittenBuffer(probe.buffer_id, probe.device_addr + begin,
+                                          static_cast<u32>(end - begin), false,
+                                          GpuWaitStats::WriteSite::ComputeStorage);
+                    }
+                    if (trust.extra.size() < EXTENT_MAX_RANGES &&
+                        request.proven + begin >= request.pad) {
+                        trust.extra.emplace_back(request.proven + begin - request.pad,
+                                                 request.proven + end - request.pad);
+                    }
+                }
+                // Sorted and merged.
+                std::ranges::sort(trust.extra);
+                std::vector<std::pair<u64, u64>> merged;
+                for (const auto& range : trust.extra) {
+                    if (!merged.empty() && range.first <= merged.back().second) {
+                        merged.back().second = (std::max)(merged.back().second, range.second);
+                    } else {
+                        merged.push_back(range);
+                    }
+                }
+                trust.extra = std::move(merged);
+            } else {
+                ++extent_probes_held;
+                // Dims count as checked (and so any dims within them) once enough checks held.
+                // The componentwise maximum with dims checked before also counts as checked.
                 if (!request.audit && ++trust.held >= EXTENT_CHECKS_TO_TRUST) {
                     trust.held = 0;
                     for (size_t i = 0; i < 3; ++i) {
@@ -3558,7 +3634,7 @@ void BufferCache<P>::CheckExtentProbes() {
                     }
                 }
             }
-            runtime.FreeDeferredStagingBuffer(*probe.after);
+            release();
             return true;
         });
     }

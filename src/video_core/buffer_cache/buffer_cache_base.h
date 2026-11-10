@@ -38,7 +38,6 @@
 #include "common/slot_vector.h"
 #include "shader_recompiler/shader_info.h"
 #include "video_core/buffer_cache/buffer_base.h"
-#include "video_core/buffer_cache/extent_distrust.h"
 #include "video_core/buffer_cache/read_trap_tracker.h"
 #include "video_core/buffer_cache/virtual_range_cache.h"
 #include "video_core/control/channel_state_cache.h"
@@ -305,6 +304,10 @@ public:
     /// ones would have, but a later read takes the range again. MarkWrittenBuffer does this for
     /// the writes it records; the query cache's copies of its results call it themselves.
     void OutdateReadDownloads(DAddr device_addr, u64 size);
+
+    /// The GPU thread is about to record a compute dispatch (`mutex` held, outside any render
+    /// pass): the write extent check copies its tails now, right before it (ExtentTrust).
+    void NoteDispatchNext();
 
     /// The GPU thread recorded a draw or dispatch (`mutex` held). After a dispatch, the downloads
     /// of the pages written since that the guest reads after each write go right behind it
@@ -1090,36 +1093,44 @@ private:
     /// Oldest first, and written to guest memory in that order: none lands over newer bytes.
     std::deque<ReadDownload> read_downloads;
 
-    /// Write extent self-check (port of Frizti/Fritchii 115e2dbbe1, a2cf026b2c, 25984e0e0b; Ocarina
-    /// of Time's huge glowing triangles, which bloom turns into a white flash). The store analysis
-    /// bounds how far a native compute program writes, and only that much is marked GPU-written;
-    /// one program writes past it, and the CPU then read stale guest bytes back (particle
-    /// positions turned into one right vertex and garbage). Each program is marked in full until
-    /// a dispatch at its dims was checked: its tail past the proof, as the GPU left it after that
-    /// one dispatch, is compared with guest memory from right before it (known GPU writes and
-    /// unapplied CPU writes left out). The same: the proof holds at these dims (and at smaller
-    /// ones). Different: the program is marked in full for the session and logged, naming it.
-    /// Experimental: only with EDEN_NX2_EXTENT_CHECK=1 (see ExtentCheckEnabled).
+    /// Write extent check (after Frizti/Fritchii 115e2dbbe1, a2cf026b2c, 25984e0e0b; Ocarina of
+    /// Time's huge glowing triangles, which bloom turns into white flashes). The store analysis
+    /// bounds how far a native compute program writes, and only that much is marked GPU-written.
+    /// Some programs write further (records at slots their data picks): the cache never knew those
+    /// bytes, so an upload could put stale guest bytes over them and a guest read saw old ones.
     ///
-    /// The offenders write far only now and then, so one clean check proves little (a player's
-    /// session, 2026-11-10: two programs were caught 12 and 16 minutes in, after the flash had
-    /// started). So: dims are trusted after EXTENT_CHECKS_TO_TRUST clean checks, a trusted program
-    /// is checked again every EXTENT_AUDIT_FRAMES frames (an audit also finds bytes an earlier
-    /// unmarked dispatch left in the buffer), and a program caught once is marked in full from
-    /// its first dispatch in every later session (extent_distrust.h, with the known ones built in).
+    /// A checked dispatch has the tail of its binding past the proof copied on the host GPU right
+    /// before and right after it. Bytes that differ were written by that dispatch: exactly those
+    /// are marked GPU-written (once the copies can be read, a frame or two later) and remembered
+    /// for the program, from the pointer, so its later dispatches mark them at bind. Nothing wider
+    /// is ever marked. Two earlier forms marked the whole binding, up to 8 MiB, while a program
+    /// was checked and for good once it was caught: the next download then wrote the buffer's
+    /// copy of pages the program never touched over newer guest bytes (a semaphore the game
+    /// waited for: black screen at load, 2026-11-10), and a tester's session had the triangles
+    /// with four programs marked in full. They also compared with guest memory, which differs
+    /// wherever the emulator itself writes guest memory (reports, semaphores): false catches.
+    ///
+    /// A program is checked on its first EXTENT_CHECKS_TO_TRUST dispatches at new dims, then every
+    /// EXTENT_AUDIT_FRAMES frames; one that wrote past its proof every EXTENT_CAUGHT_FRAMES.
     static constexpr u32 EXTENT_CHECKS_TO_TRUST = 4;
     static constexpr u64 EXTENT_AUDIT_FRAMES = 1800;
+    static constexpr u64 EXTENT_CAUGHT_FRAMES = 20;
+    static constexpr u64 EXTENT_PROBE_SPAN = 4_MiB;
+    static constexpr size_t EXTENT_MAX_RANGES = 512;
     struct ExtentTrust {
         std::array<u32, 3> block{};
         std::array<u32, 3> grid{};
-        bool distrusted{};
         bool probe_pending{};
+        bool logged{};
         u32 held{};             ///< Clean checks since the trusted dims last grew
         u64 last_check_frame{}; ///< frame_tick of the last finished check
+        /// Bytes it was seen writing past its proof, [begin, end) from the pointer, sorted and
+        /// merged. Marked at every bind.
+        std::vector<std::pair<u64, u64>> extra;
     };
     struct ExtentProbeRequest {
         bool active{};
-        bool audit{}; ///< A trusted program's periodic check
+        bool audit{}; ///< A periodic check, not one of the first at new dims
         u64 proven{};
         u64 pointer{};
         u64 pad{};
@@ -1134,47 +1145,29 @@ private:
         u64 binding_size{};
         ExtentProbeRequest request{};
         u64 span{};
-        /// Guest memory of the tail at bind. Under the full mark the CPU's reads bring the GPU's
-        /// bytes into guest memory, so only a copy made before the dispatch shows what the CPU
-        /// would have read without the mark.
-        std::vector<u8> guest;
-        /// Tail offsets [begin, end) left out of the compare: known GPU writes, CPU writes not
-        /// applied to the buffer yet, and what the dispatch's other storage bindings are known to
-        /// write (native pointers have no size, so their windows overlap this one's tail: without
-        /// this a program was caught for bytes it wrote, rightly, through another binding).
+        /// Tail offsets [begin, end) left out of the compare: bytes already marked GPU-written,
+        /// and what the dispatch's other storage bindings are known to write (native pointers
+        /// have no size, so their windows overlap this one's tail).
         std::vector<std::pair<u64, u64>> skip;
+        std::optional<Async_Buffer> before;
         std::optional<Async_Buffer> after;
         u64 tick{};
     };
     u64 compute_shader_hash{};
     std::unordered_map<u64, ExtentTrust> extent_trust;
     std::array<ExtentProbeRequest, NUM_STORAGE_BUFFERS> extent_probe_requests{};
-    /// How much of each compute storage binding the cache would mark without the check (the
-    /// proof where there is one), 0 for a binding that is not written.
+    /// How much of each compute storage binding the cache marks from the proof (0 for a binding
+    /// that is not written), and how far its pointer is past the binding's start.
     std::array<u64, NUM_STORAGE_BUFFERS> extent_known_writes{};
+    std::array<u64, NUM_STORAGE_BUFFERS> extent_pads{};
     std::vector<ExtentProbe> extent_probes;
-    u64 extent_probes_trusted{};
-    u64 extent_probes_distrusted{};
-    u64 extent_programs_known{};
-    u64 extent_full_marks{};
+    u64 extent_probes_held{};
+    u64 extent_programs_caught{};
+    u64 extent_bytes_caught{};
+    u64 extent_extra_marks{};
 
-    /// The program's trust, made on first use (distrusted from the start when it is a known one).
-    [[nodiscard]] ExtentTrust& ExtentTrustFor(u64 shader_hash) {
-        const auto [it, inserted] = extent_trust.try_emplace(shader_hash);
-        if (inserted && ExtentDistrust::IsKnown(shader_hash)) {
-            it->second.distrusted = true;
-            ++extent_programs_known;
-        }
-        return it->second;
-    }
-
-    /// Off unless EDEN_NX2_EXTENT_CHECK=1. Marking a native binding in full (which the check
-    /// does while it tests a program, and for good once it caught one) makes its whole window,
-    /// up to 8 MiB, GPU-written: the next download writes the buffer's copy of those pages over
-    /// guest memory, also where the program wrote nothing and the guest has newer bytes. With
-    /// eleven programs marked in full from the start, Ocarina of Time froze on a black screen at
-    /// load, its channels waiting on a semaphore whose value never arrived (2026-11-10). It needs
-    /// marks no wider than what was really written before it can be on by default.
+    /// Only with EDEN_NX2_EXTENT_CHECK=1: in 1000 checks over Kakariko Village and Zora's River it
+    /// found no program writing past its proof, so it stays a test tool until one is seen.
     [[nodiscard]] static bool ExtentCheckEnabled() {
         static const bool enabled = [] {
             const char* value = std::getenv("EDEN_NX2_EXTENT_CHECK");
@@ -1185,6 +1178,8 @@ private:
 
     void CheckExtentProbes();
     void ProbeExtentTail(u32 index, const Binding& binding);
+    /// Marks what the program was seen writing past its proof (ExtentTrust::extra).
+    void MarkExtentExtras(u32 index, const Binding& binding);
     /// Records the "after" copies of the write extent checks of the dispatch just recorded.
     void RecordComputeExtentProbes();
     /// All the read downloads' clean_ranges (they don't overlap): GPU-modified bytes already on

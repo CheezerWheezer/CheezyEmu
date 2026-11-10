@@ -2309,6 +2309,7 @@ void RasterizerVulkan::DispatchCompute() {
         const auto [args_buffer, args_offset] = slots.DispatchArguments(*list_slot);
         scheduler.RequestOutsideRenderPassOperationContext();
         scheduler.NoteComputeWrites();
+        buffer_cache.NoteDispatchNext();
         scheduler.TraceComputePipeline(pipeline->ShaderHash());
         scheduler.Record([this, pipeline, byte_addressed_shadow, indirect_buffer = args_buffer,
                           indirect_offset = args_offset](vk::CommandBuffer cmdbuf) {
@@ -2345,6 +2346,7 @@ void RasterizerVulkan::DispatchCompute() {
             buffer_cache.ObtainBuffer(*indirect_address, 12, sync_info, post_op);
         scheduler.RequestOutsideRenderPassOperationContext();
         scheduler.NoteComputeWrites();
+        buffer_cache.NoteDispatchNext();
         scheduler.TraceComputePipeline(pipeline->ShaderHash());
         scheduler.Record([this, pipeline, indirect_buffer = buffer->Handle(),
                           indirect_offset = offset](vk::CommandBuffer cmdbuf) {
@@ -2368,6 +2370,7 @@ void RasterizerVulkan::DispatchCompute() {
     }
     scheduler.RequestOutsideRenderPassOperationContext();
     scheduler.NoteComputeWrites();
+    buffer_cache.NoteDispatchNext();
     // The upscaler's evaluation may be recorded next, before the dispatch: the barrier goes first.
     const bool barrier_first = can_replace;
     if (barrier_first) {
