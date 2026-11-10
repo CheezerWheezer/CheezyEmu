@@ -572,6 +572,8 @@ private:
     QLabel* firmware_label = nullptr;
     QPushButton* gpu_accuracy_button = nullptr;
     QPushButton* renderer_status_button = nullptr;
+    /// One button for the graphics choices the status bar used to show as six buttons.
+    QPushButton* graphics_menu_button = nullptr;
     QPushButton* refresh_button = nullptr;
     QPushButton* dock_status_button = nullptr;
     QPushButton* filter_status_button = nullptr;

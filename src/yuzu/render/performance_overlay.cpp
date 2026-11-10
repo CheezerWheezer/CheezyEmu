@@ -13,6 +13,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QStatusBar>
 #include <QWindow>
 
 #include "common/logging.h"
@@ -276,6 +277,10 @@ void PerformanceOverlay::UpdateStats(const Core::PerfStatsResults& results,
     static const QString shot = qEnvironmentVariable("CHEEZYEMU_OVERLAY_SHOT");
     if (!shot.isEmpty() && ++m_updates % 6 == 0) {
         grab().save(shot);
+        // The status bar too, next to it: "<file>.statusbar.png".
+        if (QStatusBar* const bar = m_main_window->statusBar()) {
+            bar->grab().save(shot + QStringLiteral(".statusbar.png"));
+        }
         const QRect area = Area();
         LOG_INFO(Frontend, "Performance bar at {},{} {}x{} over the game picture at {},{} {}x{}",
                  x(), y(), width(), height(), area.x(), area.y(), area.width(), area.height());

@@ -45,6 +45,10 @@ Not released yet: this section grows as the work lands.
   (upscaling filter, anti-aliasing, frame generation, docked or handheld), which fullscreen
   hides.
 - **A box to type the number in next to sliders** (frame rate limit, sharpness, speed).
+- **The status bar fits a small window**: the renderer, accuracy, dock, filter, anti-aliasing
+  and FX buttons are one GRAPHICS button that opens the same choices as a menu, the FSR button
+  shows the name only (the sizes are in its tooltip and in the performance bar), and
+  "Scale: 1x" is hidden.
 - From upstream Lichii build 150: the ocarina crackle (#1196), a stand-in texture where the
   game dump's own texture is damaged (dark Water Temple walls and fairy fountain, #1197), Mario
   Kart World's dark characters and karts (#1231), changing settings while a game loads no

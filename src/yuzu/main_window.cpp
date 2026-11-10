@@ -1294,6 +1294,55 @@ void MainWindow::InitializeWidgets() {
 
     statusBar()->insertPermanentWidget(0, refresh_button);
 
+    // The six graphics buttons took a third of the bar, and in a 1300 pixel window every button
+    // was cut off ("ULKAN", "AST", "ILINEAR"). They live on in a hidden holder, so the code that
+    // updates them is unchanged, and one GRAPHICS button opens the same choices as a menu.
+    {
+        auto* const holder = new QWidget(this);
+        holder->setObjectName(QStringLiteral("LegacyStatusButtons"));
+        holder->hide();
+        for (QPushButton* const button : {
+                 renderer_status_button, gpu_accuracy_button, dock_status_button,
+                 filter_status_button, aa_status_button,
+#ifdef HAS_RESHADE
+                 post_shader_status_button,
+#endif
+             }) {
+            if (button != nullptr) {
+                statusBar()->removeWidget(button);
+                button->setParent(holder);
+            }
+        }
+        graphics_menu_button = new QPushButton(tr("GRAPHICS"));
+        graphics_menu_button->setObjectName(QStringLiteral("TogglableStatusBarButton"));
+        graphics_menu_button->setFocusPolicy(Qt::NoFocus);
+        graphics_menu_button->setCheckable(true);
+        graphics_menu_button->setChecked(true);
+        graphics_menu_button->setToolTip(
+            tr("Upscaling filter, anti-aliasing, frame generation, docked or handheld, GPU "
+               "accuracy and the graphics settings."));
+        connect(graphics_menu_button, &QPushButton::clicked, this, [this] {
+            graphics_menu_button->setChecked(true);
+            QMenu menu;
+            QMenu* const accuracy = menu.addMenu(tr("GPU Accuracy"));
+            auto* const levels = new QActionGroup(accuracy);
+            for (const auto& [level, text] : ConfigurationShared::gpu_accuracy_texts_map) {
+                QAction* const action = accuracy->addAction(text, [this, level = level] {
+                    Settings::values.gpu_accuracy.SetValue(level);
+                    UpdateGPUAccuracyButton();
+                });
+                action->setCheckable(true);
+                action->setChecked(Settings::values.gpu_accuracy.GetValue() == level);
+                levels->addAction(action);
+            }
+            AddQuickGraphicsMenu(menu);
+            // Above the button, as the bar is at the bottom of the window.
+            const QSize size = menu.sizeHint();
+            menu.exec(graphics_menu_button->mapToGlobal(QPoint{0, -size.height()}));
+        });
+        statusBar()->insertPermanentWidget(1, graphics_menu_button);
+    }
+
     statusBar()->setVisible(true);
     setStyleSheet(QStringLiteral("QStatusBar::item{border: none;}"));
 }
@@ -5474,7 +5523,8 @@ void MainWindow::UpdateStatusBar() {
     // After the texts above are current: the performance bar shows them.
     emit statsUpdated(results, shader_notify);
 
-    res_scale_label->setVisible(true);
+    // "Scale: 1x" says nothing (and FSR needs 1x): the label shows only for another scale.
+    res_scale_label->setVisible(res_scale != 1 || res_info.downscale);
     emu_speed_label->setVisible(!Settings::values.use_multi_core.GetValue());
     game_fps_label->setVisible(true);
     emu_frametime_label->setVisible(true);
@@ -5538,7 +5588,13 @@ void MainWindow::UpdatePostShaderText() {
 #endif
 
 QString MainWindow::UpscaleStatusText() const {
-    return upscale_status_button ? upscale_status_button->text() : QString{};
+    if (!upscale_status_button) {
+        return QString{};
+    }
+    // The performance bar has room for the sizes; the status bar keeps them in the tooltip.
+    return emulation_running && upscale_running
+               ? upscale_name + QLatin1Char(' ') + upscale_sizes
+               : upscale_status_button->text();
 }
 
 QString MainWindow::FrameGenStatusText() const {
@@ -5561,10 +5617,10 @@ void MainWindow::UpdateUpscaleButton() {
     }
     if (upscale_running) {
         upscale_status_button->setChecked(true);
-        upscale_status_button->setText(upscale_name + QLatin1Char(' ') + upscale_sizes);
+        upscale_status_button->setText(upscale_name);
         upscale_status_button->setToolTip(
-            tr("%1 is upscaling the game: render size > output size (upscale ratio).")
-                .arg(upscale_name));
+            tr("%1 is upscaling the game: %2 (render size > output size, upscale ratio).")
+                .arg(upscale_name, upscale_sizes));
         return;
     }
     upscale_status_button->setChecked(false);
