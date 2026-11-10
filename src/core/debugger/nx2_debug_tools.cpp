@@ -526,6 +526,17 @@ json SpeedLimit(ToolState&, const json& params) {
     return {{"previous", previous}, {"on", setting.GetValue()}};
 }
 
+// Reads or sets the debug knobs (Settings::GetDebugKnobAt) of the running game: a change under
+// test checks a knob, and a script flips it to compare both ways in the same scene and process.
+json Knobs(ToolState&, const json& params) {
+    auto& setting = Settings::values.debug_knobs;
+    const u16 previous = setting.GetValue();
+    if (params.contains("value")) {
+        setting.SetValue(static_cast<u16>(params.at("value").get<u32>() & 0xffff));
+    }
+    return {{"previous", previous}, {"value", setting.GetValue()}};
+}
+
 json HostTiming(ToolState& state, const json& params) {
     auto& stats = state.system.CoreTiming().host_wait_stats;
     const bool previous = stats.load();
@@ -731,6 +742,7 @@ Handlers MakeHandlers(const std::shared_ptr<ToolState>& state) {
         {"sample", handler(SampleThreads)},
         {"speed_limit", handler(SpeedLimit)},
         {"host_timing", handler(HostTiming)},
+        {"knobs", handler(Knobs)},
         {"read_memory", handler(ReadMemory)},
         {"search_memory", handler(SearchMemory)},
         {"read_gpu_memory", handler(ReadGpuMemory)},
