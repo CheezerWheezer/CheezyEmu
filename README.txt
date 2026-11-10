@@ -240,6 +240,13 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
     properties; Immediate (no VSync) spaces frames unevenly. Use FIFO, and FreeSync if your
     monitor has it.
   - Thin grid lines on distant ground (AMD): turn on EDEN_NX2_KEEP_ASTC=1 (below).
+  - The GPU hangs or resets, or the screen goes black after the opening cutscene (AMD):
+    on Linux and on laptops / handhelds with built-in Radeon graphics CheezyEmu now avoids
+    the cause by itself. On a desktop Radeon on Windows, turn on
+    EDEN_NX2_FORCE_MESH_FALLBACK=1 (below). The first start after that builds shaders for
+    several minutes.
+  - A white flash across the whole picture: set EDEN_NX2_FLASH_WATCH to a folder (below),
+    play until it happens, then send that folder and the log.
 
 
 6. OTHER SWITCHES
@@ -251,6 +258,12 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   EDEN_NX2_PRELOAD_ALL_PIPELINES=1  Builds every saved shader at boot (see section 2)
   EDEN_NX2_AMD_FG_DEBUG=2           AMD frame generation's debug view
   EDEN_NX2_FSR_VERSION=3            Uses FSR 3.1 even where FSR 4 is offered (for comparing)
+  EDEN_NX2_FORCE_MESH_FALLBACK=1    Draws mesh shader geometry the safe way on any GPU (fixes
+                                    AMD hangs; =0 never uses it, even where it is automatic)
+  EDEN_NX2_TRANSIENT_TARGETS=0      Brings back the older rule for draws whose shader is still
+                                    building, if something stays missing in a new area
+  EDEN_NX2_FLASH_WATCH=C:\flash     Records what caused a white flash into that folder
+                                    (costs some speed; leave it off otherwise)
   EDEN_NX2_SEC_RESERVE=0            Commits all of the console's memory at boot again (the
                                     build 8 behaviour), if build 9's lower memory use causes
                                     trouble

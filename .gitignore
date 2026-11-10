@@ -67,3 +67,7 @@ vulkansdk*.exe
 
 # Build-time generated external sources
 externals/generated
+
+# Python caches (they embed the path of the PC that made them)
+__pycache__/
+*.pyc
