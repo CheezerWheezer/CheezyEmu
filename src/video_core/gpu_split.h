@@ -173,6 +173,13 @@ public:
     static inline bool check_owner{};
     static void CheckOwner(const char* where);
 
+    /// Whether command lists are read with cache flushes: DMA Accuracy Safe, or Default with
+    /// accurate GPU emulation. Safe alone does not count for a Switch 2 title: its command lists
+    /// have their own precise path (GPU-written lists are copied, DmaPusher::Step), and the flushing
+    /// read stalled the GPU on every list and kept this split off (29.8 -> 32.0 FPS in Ocarina's
+    /// Hyrule Field with FSR 4 and frame generation on). EDEN_NX2_SAFE_DMA=1 brings it back.
+    [[nodiscard]] static bool SafeReadsWanted();
+
     /// Makes what was sent visible to the back.
     void Publish();
     /// Waits until the back executed everything sent so far.

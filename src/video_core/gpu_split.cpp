@@ -89,6 +89,29 @@ void GpuSplit::CheckOwner(const char* where) {
 
 GpuSplit GpuSplit::instance;
 
+bool GpuSplit::SafeReadsWanted() {
+    if (Settings::IsDMALevelDefault()) {
+        return Settings::IsGPULevelHigh();
+    }
+    if (!Settings::IsDMALevelSafe()) {
+        return false;
+    }
+    if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed)) {
+        return true; // Switch 1 titles: as the setting says
+    }
+    static const bool honour = [] {
+        const char* const value = std::getenv("EDEN_NX2_SAFE_DMA");
+        const bool on = value != nullptr && value[0] == '1';
+        LOG_INFO(HW_GPU, "DMA Accuracy is Safe: {} for this Switch 2 title{}",
+                 on ? "used" : "not used",
+                 on ? " (EDEN_NX2_SAFE_DMA=1; the GPU thread split stays off)"
+                    : ", its command lists have their own precise path and Safe would turn the "
+                      "GPU thread split off (EDEN_NX2_SAFE_DMA=1 uses it anyway)");
+        return on;
+    }();
+    return honour;
+}
+
 void GpuSplit::MaybeStart(Core::System& system_) {
     static const char mode = [] {
         const char* value = std::getenv("EDEN_NX2_SPLIT");
@@ -101,8 +124,7 @@ void GpuSplit::MaybeStart(Core::System& system_) {
     // The front reads command lists straight from guest memory; a read that flushes the caches
     // first (safe DMA, accurate GPU) would touch back-owned state. The settings can change
     // mid-game: hand the engines back to the front (and start again when they allow it).
-    const bool safe_reads = Settings::IsDMALevelDefault() ? Settings::IsGPULevelHigh()
-                                                          : Settings::IsDMALevelSafe();
+    const bool safe_reads = SafeReadsWanted();
     const bool allowed = !safe_reads && !Settings::IsGPULevelHigh() &&
                          Settings::values.renderer_backend.GetValue() == Settings::RendererBackend::Vulkan;
     if (active && !allowed) {

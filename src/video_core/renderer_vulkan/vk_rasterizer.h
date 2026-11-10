@@ -409,6 +409,7 @@ private:
     /// frame generation), at most MaxOcarinaActors a frame.
     std::vector<OcarinaActorPose> oot_actors;
     std::vector<OcarinaActorPose> oot_previous_actors;
+    std::vector<struct OcarinaActorMesh> oot_meshes; ///< This frame's, kept for its memory
     /// Solid objects of this frame, and those of the frame before by mesh (many share one).
     std::vector<OcarinaActorPose> oot_rigid;
     std::unordered_map<u64, std::vector<OcarinaActorPose>> oot_previous_rigid;

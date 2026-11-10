@@ -3170,7 +3170,9 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     if (oot_actors_frame != render_trace_frame) {
         oot_previous_rigid.clear();
         if (oot_actors_frame + 1 == render_trace_frame) {
-            oot_previous_actors = std::move(oot_actors);
+            // Swapped, not moved: a pose is 13 KB (280 bones), and a moved-from vector grew
+            // again from nothing every frame, copying megabytes as it doubled.
+            oot_previous_actors.swap(oot_actors);
             for (auto& pose : oot_rigid) {
                 oot_previous_rigid[pose.vertex ^ (pose.indices << 1) ^
                                    (u64{pose.index_count} << 40) ^
@@ -3181,6 +3183,7 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
             oot_previous_actors.clear();
         }
         oot_actors.clear();
+        oot_actors.reserve(MaxOcarinaActors);
         oot_rigid.clear();
         oot_actors_frame = render_trace_frame;
     }
@@ -3256,18 +3259,25 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     if (oot_actors.size() >= MaxOcarinaActors) {
         return;
     }
-    OcarinaActorPose pose{
-        .layout = layout,
-        .channel = gpu_memory,
-        .vertex = stream.Address(),
-        .indices = draw.index_buffer.IndexStart(),
-        .base_vertex = static_cast<s32>(draw.base_index),
-        .index_count = index_count,
-    };
     // The same mesh drawn twice in a frame (a shadow pass) keeps its first pose.
-    if (std::ranges::any_of(oot_actors, [&](const auto& actor) { return actor.SameMesh(pose); })) {
+    const GPUVAddr vertex_address = stream.Address();
+    const GPUVAddr index_address = draw.index_buffer.IndexStart();
+    const s32 base_vertex = static_cast<s32>(draw.base_index);
+    if (std::ranges::any_of(oot_actors, [&](const auto& actor) {
+            return actor.channel == gpu_memory && actor.vertex == vertex_address &&
+                   actor.indices == index_address && actor.base_vertex == base_vertex &&
+                   actor.index_count == index_count && actor.layout == layout;
+        })) {
         return;
     }
+    // Built in place (a pose is 13 KB): dropped again below when its buffers aren't found.
+    OcarinaActorPose& pose = oot_actors.emplace_back();
+    pose.layout = layout;
+    pose.channel = gpu_memory;
+    pose.vertex = vertex_address;
+    pose.indices = index_address;
+    pose.base_vertex = base_vertex;
+    pose.index_count = index_count;
     bool origin_found{}, bones_found{};
     buffer_cache.ForEachBoundBuffer(false, [&](u32 stage, bool storage, u32 index, bool,
                                                 const auto& binding, u32 size, const auto*, u32) {
@@ -3286,8 +3296,8 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
             bones_found = true;
         }
     });
-    if (origin_found && bones_found) {
-        oot_actors.push_back(pose);
+    if (!origin_found || !bones_found) {
+        oot_actors.pop_back();
     }
 }
 
@@ -3771,7 +3781,11 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         return fail("unsupported storage format");
     }
     // Without Link's pose the mesh stays empty and the motion comes from the camera alone.
-    std::vector<OcarinaActorMesh> meshes;
+    // Kept between frames: a mesh holds two 13 KB poses, and a new vector of them every frame
+    // was megabytes of allocation and copying.
+    std::vector<OcarinaActorMesh>& meshes = oot_meshes;
+    meshes.clear();
+    meshes.reserve(MaxOcarinaActors + MaxOcarinaMovingObjects);
     ReadOcarinaActors(meshes);
     try {
         const auto target_view =

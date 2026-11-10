@@ -247,7 +247,7 @@ bool DmaPusher::Step() {
         // A safe read flushes the caches, which belong to the split's back thread while it runs
         // (the split only starts with unsafe reads; the settings can change mid-game).
         const bool use_safe = !VideoCommon::GpuSplit::Get().Active() &&
-                              (Settings::IsDMALevelDefault() ? Settings::IsGPULevelHigh() : Settings::IsDMALevelSafe());
+                              VideoCommon::GpuSplit::SafeReadsWanted();
         // Recheck even when the wait returns at once: a writer may have finished (and marked the
         // pages) since the check above.
         if (!gpu_written && VideoCommon::GpuSplit::Get().Active()) {
