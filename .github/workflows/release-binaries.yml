@@ -732,6 +732,8 @@ jobs:
 
           Linux packages come as an AppImage (self-contained, needs glibc 2.39 or newer: Ubuntu 24.04, Fedora 40, Debian 13, Arch) and a tar.gz (uses your system libraries, so Qt 6 and the usual libraries must be installed).
 
+          AMD on Linux / SteamOS: from build 11 CheezyEmu draws mesh shader geometry the safe way by itself (native mesh shaders hang or reset AMD GPUs on RADV). On older builds, or to force it on any GPU, add \`EDEN_NX2_FORCE_MESH_FALLBACK=1 %command%\` to the launch options.
+
           $({
             row amd64 "$(appimage_tar cheezyemu-linux-x86_64)" "$(appimage_tar cheezyemu-linux-x86_64-pgo)" "Make the AppImage executable (\`chmod +x\`) and run it"
             row "ARM (aarch64)" "$(appimage_tar cheezyemu-linux-aarch64)" "$(appimage_tar cheezyemu-linux-aarch64-pgo)" ""

@@ -16,20 +16,23 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   command lists wait only for the work the console would wait for, and read-backs no longer hold
   the GPU thread. Ocarina of Time, Hyrule Field, i5-12600K + RX 6750 XT, no upscaler: about 45 to
   49-50 FPS, and the slowest frames drop from 42-51 ms to 24-29 ms (far fewer hitches).
-- **White flashes and huge glowing triangles after playing a while (Ocarina of Time): cause
-  found, fix not on yet.** A compute shader's writes are tracked only as far as an analysis proves
-  it writes; a few shaders write further now and then, the game reads stale particle data back and
-  draws giant bright triangles from it, which the bloom turns into a flash that stays until a
-  restart. A check that catches those shaders is in this build (after Frizti/Fritchii v5.6's
-  write extent check) but **off by default**: tracking a caught shader's whole memory window can
-  overwrite values the game is waiting for, and with several shaders caught the game froze on a
-  black screen. `EDEN_NX2_EXTENT_CHECK=1` turns it on for testing (it logs "Compute write extent
-  too small" for each shader it catches). It needs narrower tracking before it can be the default.
-- **White flashes ("flashbang") in Ocarina of Time**: the game sizes its glare from occlusion
-  query reports, and a report could reach it before the graphics card had finished the work it
-  measures. Upstream's fix for that (#337) had been taken out of the line this fork is built on,
-  for speed; it is back, with the upstream work above paying for it. Not yet confirmed over a long
-  play session: please report a flash with the log.
+- **White flashes ("flashbang") and glowing triangles in Ocarina of Time: still open.** One
+  possible cause is closed: the game sizes its glare from occlusion query reports, and a report
+  could reach it before the graphics card had finished the work it measures; upstream's fix for
+  that (#337) is back. Players still see flashes after playing a while (restarting the game
+  clears them), and the cause is not known yet. A second suspect, compute shaders writing past
+  what the emulator tracks, was checked with an exact test over a thousand shader runs and not
+  found; that test stays in as `EDEN_NX2_EXTENT_CHECK=1`. To help: set `EDEN_NX2_FLASH_WATCH` to
+  a folder, play until it happens, and send that folder with the log.
+- **Out of video memory on 8 GB cards no longer ends in a crash** (reports from an RX 5700 XT
+  at 4K and 1440p with frame generation): when an image can't get memory, the 512 MiB of recycled
+  images are released first and it is tried again, and a draw whose render target got no memory
+  is skipped instead of crashing in the driver. Memory still runs short on those cards at high
+  output sizes: use VRAM Usage Mode Conservative and a lower docked output if it happens.
+- **Status bar: Optical Flow and LSFG frame generation show the frames that reach the screen**
+  ("Game: 90 FPS (45 + FG)"), as AMD frame generation already did.
+- **FSR and frame generation switching off and on ("FSR (NO CAMERA)")**: the log now says how
+  many frames had no scene camera and why, so a report can be traced.
 - **Frame generation: Link no longer tears while he moves.** Generated frames doubled and broke
   his limbs, sword and middle (ghost hands, torn boots) because only part of him was given
   motion of his own; the rest got the scenery's. Three causes, found by saving the generated
