@@ -50,7 +50,12 @@ QString Gigabytes(u64 bytes) {
 
 PerformanceOverlay::PerformanceOverlay(MainWindow* parent)
     : QWidget(parent), m_main_window{parent} {
-    setAttribute(Qt::WA_TranslucentBackground);
+    // CHEEZYEMU_OVERLAY_MODE=opaque: a window without transparency, to measure what the
+    // transparent one costs the game's presentation.
+    m_opaque = qEnvironmentVariable("CHEEZYEMU_OVERLAY_MODE") == QStringLiteral("opaque");
+    if (!m_opaque) {
+        setAttribute(Qt::WA_TranslucentBackground);
+    }
     setAttribute(Qt::WA_ShowWithoutActivating);
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
     setCursor(Qt::OpenHandCursor);
@@ -258,6 +263,14 @@ void PerformanceOverlay::UpdateStats(const Core::PerfStatsResults& results,
     }
     update();
 
+    // CHEEZYEMU_OVERLAY_TOGGLE=<updates>: shows and hides the bar every so many updates (two a
+    // second) and logs it, to measure the frame rate with and without it in one run.
+    static const int toggle = qEnvironmentVariableIntValue("CHEEZYEMU_OVERLAY_TOGGLE");
+    if (toggle > 0 && ++m_toggle_updates % toggle == 0) {
+        setVisible(!isVisible());
+        LOG_INFO(Frontend, "Performance bar {}", isVisible() ? "shown" : "hidden");
+    }
+
     // CHEEZYEMU_OVERLAY_SHOT=<file.png>: saves a picture of the bar every few updates and logs
     // where it sits, to check it without capturing the screen.
     static const QString shot = qEnvironmentVariable("CHEEZYEMU_OVERLAY_SHOT");
@@ -276,7 +289,12 @@ void PerformanceOverlay::paintEvent(QPaintEvent*) {
     const int opacity = std::clamp(UISettings::values.perf_overlay_opacity.GetValue(), 20, 100);
     const QRectF box{0.5, 0.5, width() - 1.0, height() - 1.0};
     QPainterPath shape;
-    shape.addRoundedRect(box, 5.0, 5.0);
+    if (m_opaque) {
+        painter.fillRect(rect(), QColor{9, 9, 11});
+        shape.addRect(box);
+    } else {
+        shape.addRoundedRect(box, 5.0, 5.0);
+    }
     painter.fillPath(shape, QColor{9, 9, 11, opacity * 255 / 100});
     // The yellow edge, cut by the box's corners.
     painter.save();

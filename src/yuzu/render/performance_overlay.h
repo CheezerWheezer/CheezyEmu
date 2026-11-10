@@ -100,5 +100,7 @@ private:
     // Dragging
     bool m_dragging = false;
     int m_updates = 0;
+    int m_toggle_updates = 0;
+    bool m_opaque = false;
     QPoint m_drag_offset;
 };

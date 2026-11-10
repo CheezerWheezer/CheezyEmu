@@ -3992,9 +3992,14 @@ bool IsSceneSize(u32 width, u32 height, VkExtent2D scene, bool preset) {
     if (!preset) {
         return width == scene.width && height == scene.height;
     }
-    constexpr u32 slack = 4;
-    const auto within = [](u32 a, u32 b) { return (a > b ? a - b : b - a) <= slack; };
-    return within(width, scene.width) && within(height, scene.height);
+    // The target is the copy's size rounded up to a multiple of 16: handheld Quality reads
+    // 1308x736 of 1312x736, and handheld Balanced 1144x644 of 1152x644, which the 4 pixels allowed
+    // before turned down every frame (FSR greyed out, "PRESET SIZE"). 4 either way is kept for
+    // other roundings.
+    const auto fits = [](u32 image, u32 target) {
+        return image <= target ? target - image < 16 : image - target <= 4;
+    };
+    return fits(width, scene.width) && fits(height, scene.height);
 }
 } // Anonymous namespace
 
