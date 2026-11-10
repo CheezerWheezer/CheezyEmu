@@ -227,6 +227,17 @@ struct Values {
 
     // perf overlay
     Setting<bool> show_perf_overlay{linkage, false, "show_perf_overlay", Category::UiGameList};
+    // Where the performance bar sits (0-5: top left, top centre, top right, bottom left, bottom
+    // centre, bottom right; 6: where it was dragged, as thousandths of the free room) and which
+    // of its parts show.
+    Setting<int> perf_overlay_anchor{linkage, 0, "perf_overlay_anchor", Category::UiGameList};
+    Setting<int> perf_overlay_x{linkage, 0, "perf_overlay_x", Category::UiGameList};
+    Setting<int> perf_overlay_y{linkage, 0, "perf_overlay_y", Category::UiGameList};
+    Setting<bool> perf_overlay_compact{linkage, false, "perf_overlay_compact",
+                                       Category::UiGameList};
+    Setting<bool> perf_overlay_graph{linkage, true, "perf_overlay_graph", Category::UiGameList};
+    Setting<bool> perf_overlay_memory{linkage, true, "perf_overlay_memory", Category::UiGameList};
+    Setting<int> perf_overlay_opacity{linkage, 85, "perf_overlay_opacity", Category::UiGameList};
 
     // Size & File Types Column
     Setting<bool> show_size{linkage, true, "show_size", Category::UiGameList};

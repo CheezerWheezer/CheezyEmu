@@ -67,6 +67,39 @@ static_assert(VulkanPipelineCacheVersion == 54,
     return directory / fmt::format("{}.fork-v{}.bin", stem, version);
 }
 
+/// The saved driver pipelines (VK_KHR_pipeline_binary) of a title. Each is found by the driver's
+/// own key of the pipeline, which covers its shaders and state, so the file is not tied to a
+/// cache version: an update that changes some shaders builds those again and keeps the rest.
+[[nodiscard]] inline std::filesystem::path PipelineBinariesPath(
+    const std::filesystem::path& directory) {
+    return directory / "vulkan_binaries.bin";
+}
+
+/// Gives PipelineBinariesPath the versioned file an earlier build saved (newest version first),
+/// when it has none yet. A hard link where the file system has them, so that build still finds
+/// its file if the player goes back to it; a rename otherwise. Nothing is copied.
+inline void AdoptVersionedPipelineBinaries(const std::filesystem::path& directory,
+                                           std::span<const u32> versions) {
+    const auto destination = PipelineBinariesPath(directory);
+    std::error_code error;
+    if (std::filesystem::exists(destination, error) || error) {
+        return;
+    }
+    for (const u32 version : versions) {
+        const auto source = VersionedPipelineCachePath(directory, "vulkan_binaries", version);
+        if (!std::filesystem::is_regular_file(source, error)) {
+            continue;
+        }
+        std::filesystem::create_hard_link(source, destination, error);
+        if (error) {
+            std::filesystem::rename(source, destination, error);
+        }
+        if (!error) {
+            return;
+        }
+    }
+}
+
 /// The file whose lock (Common::FS::FileLock) is held by whatever writes a guest environment cache
 /// (PipelineCacheMagic), which is appended to in place, so that emulators running at once never
 /// write it together or read what another is writing. The driver pipeline cache is replaced whole

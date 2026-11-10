@@ -80,6 +80,10 @@ public:
 #endif
     }
 
+    [[nodiscard]] DeviceMemoryStatus GetDeviceMemoryStatus() const override {
+        return {device.GetDeviceMemoryUsage(), device.GetDeviceMemoryBudget()};
+    }
+
     [[nodiscard]] VideoCore::UpscalerStatus GetUpscalerStatus() const override {
         VideoCore::UpscalerStatus status;
 #if defined(_WIN32) && defined(EGLANTINE_STREAMLINE)

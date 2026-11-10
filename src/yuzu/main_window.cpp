@@ -4176,6 +4176,68 @@ void MainWindow::OnIncreaseVolume() {
     UpdateVolumeUI();
 }
 
+QWidget* MainWindow::GameSurface() const {
+    if (render_window != nullptr && render_window->isVisible()) {
+        return render_window;
+    }
+    return centralWidget();
+}
+
+void MainWindow::AddQuickGraphicsMenu(QMenu& menu) {
+    // One submenu per choice, the current value ticked.
+    const auto choices = [&menu](const QString& title, const auto& texts, const auto& current,
+                                 auto pick) {
+        QMenu* const sub = menu.addMenu(title);
+        auto* const group = new QActionGroup(sub);
+        for (const auto& [value, text] : texts) {
+            QAction* const action = sub->addAction(text, [pick, value = value] { pick(value); });
+            action->setCheckable(true);
+            action->setChecked(value == current);
+            group->addAction(action);
+        }
+        return sub;
+    };
+    choices(tr("Upscaling Filter"), ConfigurationShared::scaling_filter_texts_map,
+            Settings::values.scaling_filter.GetValue(), [this](Settings::ScalingFilter filter) {
+                Settings::values.scaling_filter.SetValue(filter);
+                UpdateFilterText();
+            });
+    choices(tr("Anti-Aliasing"), ConfigurationShared::anti_aliasing_texts_map,
+            Settings::values.anti_aliasing.GetValue(), [this](Settings::AntiAliasing mode) {
+                Settings::values.anti_aliasing.SetValue(mode);
+                UpdateAAText();
+            });
+    {
+        QMenu* const sub = menu.addMenu(tr("Frame Generation"));
+        auto* const group = new QActionGroup(sub);
+        const bool on = Settings::values.frame_gen.GetValue();
+        QAction* const off = sub->addAction(tr("Off"), [this] {
+            Settings::values.frame_gen.SetValue(false);
+            UpdateFrameGenButton();
+        });
+        off->setCheckable(true);
+        off->setChecked(!on);
+        group->addAction(off);
+        for (const auto& [type, text] : ConfigurationShared::frame_gen_type_texts_map) {
+            QAction* const action = sub->addAction(text, [this, type = type] {
+                Settings::values.frame_gen_type.SetValue(type);
+                Settings::values.frame_gen.SetValue(true);
+                UpdateFrameGenButton();
+            });
+            action->setCheckable(true);
+            action->setChecked(on && Settings::values.frame_gen_type.GetValue() == type);
+            group->addAction(action);
+        }
+    }
+    choices(tr("Console Mode"), ConfigurationShared::use_docked_mode_texts_map,
+            Settings::values.use_docked_mode.GetValue(), [this](Settings::ConsoleMode mode) {
+                if (mode != Settings::values.use_docked_mode.GetValue()) {
+                    OnToggleDockedMode();
+                }
+            });
+    menu.addAction(tr("Graphics Settings..."), this, &MainWindow::OnConfigure);
+}
+
 void MainWindow::OnToggleAdaptingFilter() {
     auto filter = Settings::values.scaling_filter.GetValue();
     filter = Settings::ScalingFilter(u32(filter) + 1);
@@ -5205,8 +5267,6 @@ void MainWindow::UpdateStatusBar() {
     auto& shader_notify = QtCommon::system->GPU().ShaderNotify();
     const int shaders_building = shader_notify.ShadersBuilding();
 
-    emit statsUpdated(results, shader_notify);
-
     if (shaders_building > 0) {
         shader_building_label->setText(tr("Building: %n shader(s)", "", shaders_building));
         shader_building_label->setVisible(true);
@@ -5250,6 +5310,8 @@ void MainWindow::UpdateStatusBar() {
     // player's report). Show the game's frames plus the ones generated in the last interval.
     const bool built_in_frame_gen = !amd_frame_gen && frame_gen_generating && generated_fps > 0.0 &&
                                     Settings::values.frame_gen.GetValue();
+    frame_gen_added_fps =
+        amd_frame_gen ? results.average_game_fps : built_in_frame_gen ? generated_fps : 0.0;
     QString fpsText =
         amd_frame_gen
             ? tr("Game: %1 FPS (%2 + FG)")
@@ -5289,6 +5351,9 @@ void MainWindow::UpdateStatusBar() {
     upscale_idle_tag = QString::fromStdString(upscaler.idle_tag);
     upscale_idle_reason = QString::fromStdString(upscaler.idle_reason);
     UpdateUpscaleButton();
+
+    // After the texts above are current: the performance bar shows them.
+    emit statsUpdated(results, shader_notify);
 
     res_scale_label->setVisible(true);
     emu_speed_label->setVisible(!Settings::values.use_multi_core.GetValue());

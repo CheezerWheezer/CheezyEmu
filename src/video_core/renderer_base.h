@@ -90,6 +90,15 @@ public:
         return {};
     }
 
+    /// Video memory in use and what the driver offers this process, in bytes (0: not known)
+    struct DeviceMemoryStatus {
+        u64 used{};
+        u64 budget{};
+    };
+    [[nodiscard]] virtual DeviceMemoryStatus GetDeviceMemoryStatus() const {
+        return {};
+    }
+
     /// Whether the game-specific upscaler runs, which one and at what sizes
     [[nodiscard]] virtual UpscalerStatus GetUpscalerStatus() const {
         return {};

@@ -180,6 +180,17 @@ public:
     /// in fullscreen, where the status bar is hidden).
     [[nodiscard]] QString UpscaleStatusText() const;
     [[nodiscard]] QString FrameGenStatusText() const;
+    /// The frame rate that reaches the screen for a game rate: with frame generation running,
+    /// the generated frames of the last status bar update are added.
+    [[nodiscard]] double DisplayedFps(double game_fps) const {
+        return game_fps + frame_gen_added_fps;
+    }
+    /// The widget the game is drawn in: the render window (its own window outside single window
+    /// mode), or the middle of this window before there is one.
+    [[nodiscard]] QWidget* GameSurface() const;
+    /// Adds the status bar's graphics choices (upscaling filter, anti-aliasing, frame generation,
+    /// docked or handheld) and the graphics settings to a menu.
+    void AddQuickGraphicsMenu(QMenu& menu);
 
     void filterBarSetChecked(bool state);
     void UpdateUITheme();
@@ -565,6 +576,8 @@ private:
     QString frame_gen_idle_reason;
     u64 frame_gen_frames = 0;
     bool frame_gen_generating = false;
+    /// Frames per second frame generation added in the last status bar update.
+    double frame_gen_added_fps = 0.0;
     /// When frame_gen_frames was read, for the generated frames per second in the status bar.
     std::chrono::steady_clock::time_point frame_gen_sampled{};
     QPushButton* upscale_status_button = nullptr;

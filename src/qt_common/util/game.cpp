@@ -287,9 +287,18 @@ void RemoveTransferableShaderCache(u64 program_id, GameListRemoveTarget target) 
 void RemoveVulkanDriverPipelineCache(u64 program_id) {
     const auto shader_cache_dir = Common::FS::GetEdenPath(Common::FS::EdenPath::ShaderDir);
     const auto shader_cache_folder_path = shader_cache_dir / fmt::format("{:016x}", program_id);
-    const auto binaries_file = VideoCommon::VersionedPipelineCachePath(
-        shader_cache_folder_path, "vulkan_binaries", VideoCommon::VulkanPipelineCacheVersion);
-    if (Common::FS::Exists(binaries_file) && !Common::FS::RemoveFile(binaries_file)) {
+    // The file of builds up to 11 too: it may be the same file under its old name (a hard link),
+    // and left behind it would be adopted again at the next start.
+    bool removed = true;
+    for (const auto& binaries_file :
+         {VideoCommon::PipelineBinariesPath(shader_cache_folder_path),
+          VideoCommon::VersionedPipelineCachePath(shader_cache_folder_path, "vulkan_binaries",
+                                                  VideoCommon::VulkanPipelineCacheVersion)}) {
+        if (Common::FS::Exists(binaries_file) && !Common::FS::RemoveFile(binaries_file)) {
+            removed = false;
+        }
+    }
+    if (!removed) {
         QtCommon::Frontend::Warning(tr("Error Removing Vulkan Driver Pipeline Cache"),
                                     tr("Failed to remove the saved compiled shaders."));
     }

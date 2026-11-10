@@ -1052,8 +1052,11 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     if (Settings::values.use_vulkan_pipeline_binaries.GetValue() &&
         device.IsKhrPipelineBinarySupported() &&
         device.GetDriverID() != VK_DRIVER_ID_NVIDIA_PROPRIETARY) {
-        device.GetLogical().EnablePipelineBinaryCache(
-            VideoCommon::VersionedPipelineCachePath(base_dir, "vulkan_binaries", CACHE_VERSION));
+        // One file for every build: see PipelineBinariesPath. Builds up to 11 named it after the
+        // cache version.
+        constexpr std::array<u32, 3> earlier{CACHE_VERSION, 53, 52};
+        VideoCommon::AdoptVersionedPipelineBinaries(base_dir, earlier);
+        device.GetLogical().EnablePipelineBinaryCache(VideoCommon::PipelineBinariesPath(base_dir));
         pipeline_binaries_enabled = true;
     }
     const auto carried = VideoCommon::CarryOverPipelineCache(
@@ -2281,6 +2284,22 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
     size_t mesh_index{};
     if (mesh_unsupported) {
         ReportUnsupportedMeshPipeline(key, programs);
+        // EDEN_NX2_MESH_EMULATION=0: leave task/mesh draws out instead of running them through
+        // compute, as builds up to 8 did on a GPU without VK_EXT_mesh_shader (foliage and props
+        // are missing). For a report of Ocarina of Time freezing on an Apple M1 Pro right after
+        // its first 128-vertex mesh emulation pipelines were made.
+        static const bool emulate = [] {
+            const char* const value = std::getenv("EDEN_NX2_MESH_EMULATION");
+            const bool on = value == nullptr || value[0] != '0';
+            if (!on) {
+                LOG_WARNING(Render_Vulkan, "EDEN_NX2_MESH_EMULATION=0: task/mesh draws are "
+                                           "skipped, their geometry will be missing");
+            }
+            return on;
+        }();
+        if (!emulate) {
+            return nullptr;
+        }
         const bool has_task{key.unique_hashes[1] != 0 &&
                             programs[1].stage == Shader::Stage::Task};
         for (size_t index = 1; index < Maxwell::MaxShaderProgram; ++index) {
