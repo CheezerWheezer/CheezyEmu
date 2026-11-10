@@ -1130,6 +1130,9 @@ bool GraphicsPipeline::ConfigureImpl(bool is_indexed) {
             scheduler.RequestOutsideRenderPassOperationContext();
         }
     }
+    if (texture_cache.RenderTargetsOutOfMemory()) {
+        return false;
+    }
     if (IsBuilt() && (!pipeline || build->Failed())) {
         return false;
     }
@@ -1297,6 +1300,9 @@ bool GraphicsPipeline::ConfigureDelta(bool is_indexed) {
             (scheduler.RenderPassHasStores() || texture_cache.SamplesRenderTarget(view_span))) {
             scheduler.RequestOutsideRenderPassOperationContext();
         }
+    }
+    if (texture_cache.RenderTargetsOutOfMemory()) {
+        return false;
     }
     if (IsBuilt() && (!pipeline || build->Failed())) {
         return false;

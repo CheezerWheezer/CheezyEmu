@@ -1914,6 +1914,9 @@ void RasterizerVulkan::DrawTexture() {
     std::scoped_lock l{texture_cache.mutex};
     texture_cache.SynchronizeDescriptors(false);
     texture_cache.UpdateRenderTargets(false);
+    if (texture_cache.RenderTargetsOutOfMemory()) {
+        return;
+    }
 
     UpdateDynamicStates(nullptr);
 
@@ -1981,6 +1984,9 @@ void RasterizerVulkan::Clear(u32 layer_count) {
 
     std::scoped_lock lock{texture_cache.mutex};
     texture_cache.UpdateRenderTargets(true);
+    if (texture_cache.RenderTargetsOutOfMemory()) {
+        return;
+    }
     texture_cache.NoteRenderTargetsCleared(use_color, use_depth || use_stencil);
     const Framebuffer* const framebuffer = texture_cache.GetFramebuffer();
     if (frame_dump.Capturing() || flash_watch.WatchesPasses()) {

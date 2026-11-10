@@ -1383,6 +1383,22 @@ void TextureCache<P>::UpdateRenderTargets(bool is_clear) {
         ++render_targets_serial;
     }
 
+    // A target that got no memory: its draws are skipped (RenderTargetsOutOfMemory), and it is
+    // looked up again at the next one, by when the collector may have freed some.
+    render_targets_out_of_memory = render_targets.depth_buffer_id == NULL_IMAGE_VIEW_ID ||
+                                   std::ranges::any_of(render_targets.color_buffer_ids,
+                                                       [](ImageViewId id) {
+                                                           return id == NULL_IMAGE_VIEW_ID;
+                                                       });
+    if (render_targets_out_of_memory) {
+        flags[Dirty::RenderTargets] = true;
+        flags[Dirty::RenderTargetControl] = true; // forces every target's lookup
+        static u32 logged{};
+        if (logged++ < 8) {
+            LOG_ERROR(HW_GPU, "A render target has no memory: draws into it are skipped");
+        }
+    }
+
     flags[Dirty::DepthBiasGlobal] = true;
 }
 

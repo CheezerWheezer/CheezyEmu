@@ -356,6 +356,15 @@ public:
     /// was not fully cleared in this frame (or is tiny), 3 one was cleared in this frame but not
     /// the one before (for the runtime pipeline log).
     [[nodiscard]] int RenderTargetsRedrawnReason();
+
+    /// Whether a bound render target has no image because the device ran out of memory for it
+    /// (FindRenderTargetView gave the null view). A draw or clear into it must be skipped: the
+    /// null view is no depth buffer and no target of the right size, and AMD's driver crashed on
+    /// such a draw (amdvlk64.dll, read of 0x0, right after a 1536x1536 depth target failed on an
+    /// RX 5700 XT). The targets are looked up again at the next draw.
+    [[nodiscard]] bool RenderTargetsOutOfMemory() const noexcept {
+        return render_targets_out_of_memory;
+    }
     /// Records that the image behind `id` is a render target in this frame.
     void NoteRenderTarget(ImageViewId id);
 
@@ -630,6 +639,7 @@ private:
     std::deque<TextureCacheGPUMap> gpu_page_table_storage;
 
     RenderTargets render_targets;
+    bool render_targets_out_of_memory = false;
     u64 render_targets_serial = 0;
     u32 rt_active_mask = 0;
     std::array<ImageId, 8> rt_image_id{};
