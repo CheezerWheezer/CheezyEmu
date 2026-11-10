@@ -390,6 +390,8 @@ GraphicsPipeline::GraphicsPipeline(
       descriptor_buffer_ring{descriptor_buffer_ring_}, spv_modules{std::move(stages)},
       worker_only_build{worker_thread && static_cast<bool>(emit_stages)},
       mesh_emulation{std::move(mesh_emulation_)} {
+    // Until MakePipeline knows which stages it has: from the programs of its key.
+    has_tessellation = key.unique_hashes[2] != 0 || key.unique_hashes[3] != 0;
     if (shader_notify) {
         shader_notify->MarkShaderBuilding();
     }
@@ -1621,6 +1623,7 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         vertex_input_ci.pNext = &input_divisor_ci;
     }
     const bool has_tess_stages = spv_modules[1] || spv_modules[2];
+    has_tessellation = has_tess_stages;
     auto input_assembly_topology = MaxwellToVK::PrimitiveTopology(device, key.state.topology);
     if (input_assembly_topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
         if (!has_tess_stages) {

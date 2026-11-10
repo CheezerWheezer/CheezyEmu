@@ -549,6 +549,8 @@ private:
         handle_spans;
     /// The constant buffer binds and data since the previous draw.
     VideoCommon::Nx2FastDraw::Delta taken_delta;
+    /// The primitive topology last set as dynamic state (UpdateDynamicStates).
+    VkPrimitiveTopology dynamic_topology{VK_PRIMITIVE_TOPOLOGY_MAX_ENUM};
     FastDrawStats fast_draw_stats;
     /// Nx2FastDraw::Enabled and VerifyEnabled as the drawing thread last read them.
     bool fast_draw_on{};

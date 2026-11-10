@@ -166,6 +166,12 @@ public:
         return mesh_emulation.has_value();
     }
 
+    /// Whether it has tessellation stages: its input assembly topology is a patch list then,
+    /// whatever the guest's (MakePipeline), and the dynamic topology must be one too.
+    [[nodiscard]] bool HasTessellation() const noexcept {
+        return has_tessellation;
+    }
+
     /// Output bytes the emulation needs for one mesh workgroup.
     [[nodiscard]] u64 MeshEmulationBlockBytes() const noexcept {
         return mesh_emulation ? u64{mesh_emulation->block_words} * 4 : 0;
@@ -401,6 +407,7 @@ private:
     std::array<bool, NUM_STAGES> configured_stages{};
     std::array<u32, NUM_STAGES> handle_constant_buffers{};
     std::vector<VideoCommon::ImageViewInOut> delta_views;
+    bool has_tessellation{};
     std::vector<VideoCommon::SamplerId> delta_samplers;
     /// Delta draws: the image descriptor entries (first entry and count per
     /// stage) and rescaling words pushed for delta_views, which delta draws push again while no

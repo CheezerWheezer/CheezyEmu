@@ -4666,9 +4666,24 @@ void RasterizerVulkan::UpdateDynamicStates(const GraphicsPipeline* pipeline) {
             UpdateDepthWriteEnable(regs);
             UpdateStencilTestEnable(regs);
         }
-        if (topology_changed) {
-            scheduler.Record([topology_vk = MaxwellToVK::PrimitiveTopology(device, topology)](
-                                 vk::CommandBuffer cmdbuf) {
+        // The topology is dynamic state, and a pipeline only fixes its class: with tessellation
+        // stages it must be a patch list, without them it must not be one. MakePipeline already
+        // corrects the static topology that way ("Patch topology not used with tessellation",
+        // as Ocarina of Time's terrain draws), but the guest's own topology was set here, over
+        // it: undefined behaviour that AMD's Windows driver tolerates and that hangs the GPU on
+        // RADV ("Illegal opcode in command stream", then a reset) when the first tessellated
+        // terrain is drawn.
+        auto topology_vk = MaxwellToVK::PrimitiveTopology(device, topology);
+        if (pipeline != nullptr && !emulated_mesh) {
+            if (pipeline->HasTessellation()) {
+                topology_vk = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
+            } else if (topology_vk == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
+                topology_vk = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+            }
+        }
+        if (topology_changed || (!emulated_mesh && topology_vk != dynamic_topology)) {
+            dynamic_topology = topology_vk;
+            scheduler.Record([topology_vk](vk::CommandBuffer cmdbuf) {
                 cmdbuf.SetPrimitiveTopologyEXT(topology_vk);
             });
         }
