@@ -5229,6 +5229,15 @@ void MainWindow::UpdateStatusBar() {
 
     const auto frame_gen = QtCommon::system->GPU().Renderer().GetFrameGenStatus();
     frame_gen_generating = frame_gen.generated_frames > frame_gen_frames;
+    // Generated frames per second since the last update (the built-in generators count them).
+    const auto frame_gen_now = std::chrono::steady_clock::now();
+    const double frame_gen_seconds =
+        std::chrono::duration<double>(frame_gen_now - frame_gen_sampled).count();
+    const double generated_fps =
+        frame_gen_generating && frame_gen_seconds > 0.05 && frame_gen_seconds < 30.0
+            ? static_cast<double>(frame_gen.generated_frames - frame_gen_frames) / frame_gen_seconds
+            : 0.0;
+    frame_gen_sampled = frame_gen_now;
     frame_gen_frames = frame_gen.generated_frames;
 
     // AMD frame generation adds one frame per game frame after the emulator presents, where the
@@ -5236,10 +5245,19 @@ void MainWindow::UpdateStatusBar() {
     const bool amd_frame_gen = frame_gen_generating && Settings::values.frame_gen.GetValue() &&
                                Settings::values.frame_gen_type.GetValue() ==
                                    Settings::FrameGenType::AmdFsr;
+    // The built-in generators (Optical Flow, LSFG) present their frames themselves: the bar
+    // showed the game's rate alone, which read as "frame generation is not counted" (a SteamOS
+    // player's report). Show the game's frames plus the ones generated in the last interval.
+    const bool built_in_frame_gen = !amd_frame_gen && frame_gen_generating && generated_fps > 0.0 &&
+                                    Settings::values.frame_gen.GetValue();
     QString fpsText =
         amd_frame_gen
             ? tr("Game: %1 FPS (%2 + FG)")
                   .arg(std::round(results.average_game_fps * 2.0), 0, 'f', 0)
+                  .arg(std::round(results.average_game_fps), 0, 'f', 0)
+        : built_in_frame_gen
+            ? tr("Game: %1 FPS (%2 + FG)")
+                  .arg(std::round(results.average_game_fps + generated_fps), 0, 'f', 0)
                   .arg(std::round(results.average_game_fps), 0, 'f', 0)
             : tr("Game: %1 FPS").arg(std::round(results.average_game_fps), 0, 'f', 0);
     if (!m_fpsSuffix.isEmpty())

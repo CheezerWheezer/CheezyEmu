@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <optional>
 
@@ -564,6 +565,8 @@ private:
     QString frame_gen_idle_reason;
     u64 frame_gen_frames = 0;
     bool frame_gen_generating = false;
+    /// When frame_gen_frames was read, for the generated frames per second in the status bar.
+    std::chrono::steady_clock::time_point frame_gen_sampled{};
     QPushButton* upscale_status_button = nullptr;
     QString upscale_name;        ///< "FSR 4.1.2"
     QString upscale_sizes;       ///< "960x540 to 1920x1080"
