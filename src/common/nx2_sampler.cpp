@@ -35,6 +35,7 @@ struct Sample {
     unsigned thread;
     unsigned depth;
     bool faulted; ///< the walk stopped at an access violation
+    unsigned long long time_ns; ///< steady_clock when it was taken
     std::array<DWORD64, MaxDepth> frames;
 };
 
@@ -416,7 +417,8 @@ std::string Report(const std::vector<Target>& targets, const std::vector<Sample>
 }
 
 std::string SampleThreads(const std::vector<std::string>& patterns, double seconds,
-                          const std::string& out) {
+                          const std::string& out, const std::function<bool()>& keep = {},
+                          const std::function<bool(unsigned long long)>& select = {}) {
     const std::vector<Target> targets = FindThreads(patterns);
     std::fprintf(stderr, "nx2 sampler: %zu threads match, sampling %.0f s\n", targets.size(),
                  seconds);
@@ -428,6 +430,14 @@ std::string SampleThreads(const std::vector<std::string>& patterns, double secon
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
     while (std::chrono::steady_clock::now() < deadline &&
            samples.size() + targets.size() <= samples.capacity()) {
+        if (keep && !keep()) {
+            Sleep(1);
+            continue;
+        }
+        const unsigned long long time_ns = static_cast<unsigned long long>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
         for (unsigned i = 0; i < targets.size(); ++i) {
             const HANDLE handle = targets[i].handle;
             if (SuspendThread(handle) == static_cast<DWORD>(-1)) {
@@ -438,12 +448,16 @@ std::string SampleThreads(const std::vector<std::string>& patterns, double secon
             if (GetThreadContext(handle, &context)) {
                 Sample& sample = samples.emplace_back();
                 sample.thread = i;
+                sample.time_ns = time_ns;
                 sample.depth =
                     GuardedWalk(context, sample.frames, targets[i].tib, sample.faulted);
             }
             ResumeThread(handle);
         }
         Sleep(1);
+    }
+    if (select) {
+        std::erase_if(samples, [&](const Sample& sample) { return !select(sample.time_ns); });
     }
     // DbgHelp is single-threaded: the debug server's `sample` and EDEN_NX2_SAMPLE can report at
     // the same time.
@@ -460,8 +474,10 @@ std::string SampleThreads(const std::vector<std::string>& patterns, double secon
 
 } // Anonymous namespace
 
-std::string Sample(const char* names, double seconds, const std::string& out) {
-    return SampleThreads(SplitNames(names), seconds, out);
+std::string Sample(const char* names, double seconds, const std::string& out,
+                   const std::function<bool()>& keep,
+                   const std::function<bool(unsigned long long)>& select) {
+    return SampleThreads(SplitNames(names), seconds, out, keep, select);
 }
 
 void StartFromEnvironment() {
@@ -484,7 +500,8 @@ void StartFromEnvironment() {
 
 namespace Nx2Sampler {
 void StartFromEnvironment() {}
-std::string Sample(const char*, double, const std::string&) {
+std::string Sample(const char*, double, const std::string&, const std::function<bool()>&,
+                   const std::function<bool(unsigned long long)>&) {
     return "the sampler is Windows only";
 }
 } // namespace Nx2Sampler

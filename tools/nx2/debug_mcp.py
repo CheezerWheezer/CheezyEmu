@@ -148,6 +148,9 @@ TOOLS = [
                 "threads": {"type": "string",
                             "description": "Comma separated thread names; default GPU,GPUBack"},
                 "seconds": {"type": "number", "minimum": 1, "maximum": 60},
+                "late_ms": {"type": "number", "minimum": 0,
+                            "description": "Sample only while the frame in progress is this long "
+                                           "overdue (what runs during a hitch)"},
                 "max_chars": {"type": "integer", "minimum": 0},
             },
         },

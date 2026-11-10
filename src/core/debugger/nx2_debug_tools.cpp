@@ -511,7 +511,46 @@ json SampleThreads(ToolState& state, const json& params) {
     std::filesystem::create_directories(state.dump_directory);
     const auto path =
         state.dump_directory / fmt::format("samples-{}-{:03}.txt", state.session, ++state.samples);
-    std::string report = Nx2Sampler::Sample(threads.c_str(), seconds, path.string());
+    // late_ms: only while the frame in progress is that long overdue (what the guest and the GPU
+    // threads do during a hitch, which an even sample of a minute hides).
+    const u64 late_ns = static_cast<u64>(Param<double>(params, "late_ms", 0.0, 0.0, 1000.0) * 1e6);
+    std::function<bool()> keep;
+    if (late_ns != 0) {
+        keep = [late_ns] {
+            const u64 frame = g_nx2_present_count.load(std::memory_order_relaxed);
+            const u64 presented = g_nx2_present_times_ns[frame % g_nx2_present_times_ns.size()].load(
+                std::memory_order_relaxed);
+            const u64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count();
+            return presented != 0 && now > presented && now - presented > late_ns;
+        };
+    }
+    // slow_ms: only the samples inside frames that took that long, less their last tail_ms (in
+    // which the GPU threads catch up): what held the frame back.
+    const u64 slow_ns = static_cast<u64>(Param<double>(params, "slow_ms", 0.0, 0.0, 1000.0) * 1e6);
+    const u64 tail_ns = static_cast<u64>(Param<double>(params, "tail_ms", 0.0, 0.0, 1000.0) * 1e6);
+    std::function<bool(unsigned long long)> select;
+    std::vector<u64> presents;
+    if (slow_ns != 0) {
+        select = [&presents, slow_ns, tail_ns](unsigned long long time) {
+            if (presents.empty()) {
+                for (const auto& slot : g_nx2_present_times_ns) {
+                    presents.push_back(slot.load(std::memory_order_relaxed));
+                }
+                std::ranges::sort(presents);
+            }
+            const auto next = std::ranges::upper_bound(presents, static_cast<u64>(time));
+            if (next == presents.end() || next == presents.begin() || *(next - 1) == 0) {
+                return false;
+            }
+            const u64 begin = *(next - 1);
+            const u64 length = *next - begin;
+            return length > slow_ns && time - begin + tail_ns <= length;
+        };
+    }
+    std::string report =
+        Nx2Sampler::Sample(threads.c_str(), seconds, path.string(), keep, select);
     report.resize((std::min)(report.size(), Param<size_t>(params, "max_chars", 60000, 0, 4000000)));
     return {{"file", path.generic_string()}, {"report", std::move(report)}};
 }

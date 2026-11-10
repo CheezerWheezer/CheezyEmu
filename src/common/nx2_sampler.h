@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
 
 namespace Nx2Sampler {
@@ -16,7 +17,12 @@ namespace Nx2Sampler {
 void StartFromEnvironment();
 
 /// Samples the named threads for `seconds` now (blocking), writes the report to `out` (and
-/// the folded stacks to `out`.folded) and returns the report.
-std::string Sample(const char* names, double seconds, const std::string& out);
+/// the folded stacks to `out`.folded) and returns the report. With `keep`, only the moments it
+/// returns true for are sampled (the debug server's `late_ms`: while a frame is overdue). With
+/// `select`, only the samples whose time (steady_clock, ns) it returns true for are reported
+/// (`slow_ms`: those inside frames that turned out long).
+std::string Sample(const char* names, double seconds, const std::string& out,
+                   const std::function<bool()>& keep = {},
+                   const std::function<bool(unsigned long long)>& select = {});
 
 } // namespace Nx2Sampler
