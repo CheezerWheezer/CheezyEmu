@@ -373,6 +373,12 @@ public:
 
     void UnbindComputeStorageBuffers();
 
+    /// The compute program whose storage buffers are bound next (its write extents are checked
+    /// per program, see ExtentTrust).
+    void SetComputeShaderHash(u64 hash) noexcept {
+        compute_shader_hash = hash;
+    }
+
     /// write_extent: how far the program's stores reach past the pointer (native programs).
     void BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index, u32 cbuf_offset,
                                   bool is_written, u32 indirect_offset = ~0U,
@@ -1082,6 +1088,68 @@ private:
     }
     /// Oldest first, and written to guest memory in that order: none lands over newer bytes.
     std::deque<ReadDownload> read_downloads;
+
+    /// Write extent self-check (port of Frizti/Fritchii 115e2dbbe1, a2cf026b2c, 25984e0e0b; Ocarina
+    /// of Time's huge glowing triangles, which bloom turns into a white flash). The store analysis
+    /// bounds how far a native compute program writes, and only that much is marked GPU-written;
+    /// one program writes past it, and the CPU then read stale guest bytes back (particle
+    /// positions turned into one right vertex and garbage). Each program is marked in full until
+    /// a dispatch at its dims was checked: its tail past the proof, as the GPU left it after that
+    /// one dispatch, is compared with guest memory from right before it (known GPU writes and
+    /// unapplied CPU writes left out). The same: the proof holds at these dims (and at smaller
+    /// ones). Different: the program is marked in full for the session and logged, naming it.
+    /// EDEN_NX2_EXTENT_CHECK=0 trusts the proof as before.
+    struct ExtentTrust {
+        std::array<u32, 3> block{};
+        std::array<u32, 3> grid{};
+        bool distrusted{};
+        bool probe_pending{};
+    };
+    struct ExtentProbeRequest {
+        bool active{};
+        u64 proven{};
+        u64 pointer{};
+        u64 pad{};
+        std::array<u32, 3> block{};
+        std::array<u32, 3> grid{};
+    };
+    struct ExtentProbe {
+        u64 shader_hash{};
+        BufferId buffer_id{};
+        DAddr device_addr{}; ///< The tail's start (in buffer_id)
+        u64 binding_size{};
+        ExtentProbeRequest request{};
+        u64 span{};
+        /// Guest memory of the tail at bind. Under the full mark the CPU's reads bring the GPU's
+        /// bytes into guest memory, so only a copy made before the dispatch shows what the CPU
+        /// would have read without the mark.
+        std::vector<u8> guest;
+        /// Tail offsets [begin, end) left out of the compare: known GPU writes and CPU writes not
+        /// applied to the buffer yet.
+        std::vector<std::pair<u64, u64>> skip;
+        std::optional<Async_Buffer> after;
+        u64 tick{};
+    };
+    u64 compute_shader_hash{};
+    std::unordered_map<u64, ExtentTrust> extent_trust;
+    std::array<ExtentProbeRequest, NUM_STORAGE_BUFFERS> extent_probe_requests{};
+    std::vector<ExtentProbe> extent_probes;
+    u64 extent_probes_trusted{};
+    u64 extent_probes_distrusted{};
+    u64 extent_full_marks{};
+
+    [[nodiscard]] static bool ExtentCheckEnabled() {
+        static const bool enabled = [] {
+            const char* value = std::getenv("EDEN_NX2_EXTENT_CHECK");
+            return value == nullptr || value[0] != '0';
+        }();
+        return enabled;
+    }
+
+    void CheckExtentProbes();
+    void ProbeExtentTail(u32 index, const Binding& binding);
+    /// Records the "after" copies of the write extent checks of the dispatch just recorded.
+    void RecordComputeExtentProbes();
     /// All the read downloads' clean_ranges (they don't overlap): GPU-modified bytes already on
     /// their way, which later reads wait for rather than download again.
     Common::RangeSet<DAddr> read_download_ranges;
