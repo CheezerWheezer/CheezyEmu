@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: Copyright 2018 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -471,6 +472,48 @@ bool MemoryAllocator::CreateBufferInSeparatePool(const VkBufferCreateInfo& ci, M
            VK_SUCCESS;
 }
 
+VkResult MemoryAllocator::CreateBufferOutOfMemory(const VkBufferCreateInfo& ci,
+                                                  const VmaAllocationCreateInfo& wanted,
+                                                  VkDeviceSize min_alignment, VkBuffer& handle,
+                                                  VmaAllocation& allocation,
+                                                  VmaAllocationInfo& info) const {
+    // A buffer that got no memory threw out of the GPU thread and ended the emulator: an
+    // RX 5600 XT 6 GB (4.6 GB offered) crashed 17 minutes into Ocarina right after its images
+    // started to go without memory. Like images: free what is only kept for reuse, then go over
+    // the budget, then use system memory (slower, but a buffer the game can draw with).
+    const auto create = [&](const VmaAllocationCreateInfo& how) {
+        return min_alignment > 1
+                   ? vmaCreateBufferWithAlignment(allocator, &ci, &how, min_alignment, &handle,
+                                                  &allocation, &info)
+                   : vmaCreateBuffer(allocator, &ci, &how, &handle, &allocation, &info);
+    };
+    pressure_events.fetch_add(1, std::memory_order_relaxed);
+    const u64 freed = vk::ImageRecycler::ReleaseNow(allocator);
+    VkResult result = freed != 0 ? create(wanted) : VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    const char* how = "after releasing recycled images";
+    if (result != VK_SUCCESS) {
+        VmaAllocationCreateInfo relaxed = wanted;
+        relaxed.flags &= ~VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT;
+        result = create(relaxed);
+        how = "over the memory budget";
+        if (result != VK_SUCCESS) {
+            relaxed.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+            relaxed.preferredFlags = 0;
+            result = create(relaxed);
+            how = "in system memory";
+        }
+    }
+    static std::atomic<u32> logged{};
+    if (logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+        LOG_WARNING(Render_Vulkan,
+                    "Buffer of {} KiB is out of device memory ({} MiB of recycled images "
+                    "released): {}",
+                    ci.size >> 10, freed >> 20,
+                    result == VK_SUCCESS ? how : "no memory anywhere for it");
+    }
+    return result;
+}
+
 vk::Buffer MemoryAllocator::CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsage usage) const {
     // MESA will do memcpy() if not marked as host cached, so just force mark it for most buffers
     auto const anv_flags = (usage == MemoryUsage::Stream
@@ -507,6 +550,9 @@ vk::Buffer MemoryAllocator::CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsa
             LOG_WARNING(Render_Vulkan,
                         "Buffer of {} KiB (usage {}) over the memory budget: {}", ci.size >> 10,
                         static_cast<u32>(usage), result == VK_SUCCESS ? "made anyway" : "failed");
+        }
+        if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY) {
+            result = CreateBufferOutOfMemory(ci, alloc_ci, 0, handle, allocation, alloc_info);
         }
         vk::Check(result);
     }
@@ -565,8 +611,13 @@ vk::Buffer MemoryAllocator::CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsa
     VmaAllocation allocation{};
     VkMemoryPropertyFlags property_flags{};
 
-    vk::Check(vmaCreateBufferWithAlignment(allocator, &ci, &alloc_ci, min_alignment, &handle,
-                                           &allocation, &alloc_info));
+    VkResult result = vmaCreateBufferWithAlignment(allocator, &ci, &alloc_ci, min_alignment,
+                                                   &handle, &allocation, &alloc_info);
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY) {
+        result = CreateBufferOutOfMemory(ci, alloc_ci, min_alignment, handle, allocation,
+                                         alloc_info);
+    }
+    vk::Check(result);
     vmaGetAllocationMemoryProperties(allocator, allocation, &property_flags);
 
     u8 *data = reinterpret_cast<u8 *>(alloc_info.pMappedData);

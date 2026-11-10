@@ -313,15 +313,47 @@ public:
         if (offset >= end) {
             return true;
         }
-        if (VirtualAlloc(backing_base + offset, end - offset, MEM_COMMIT, PAGE_READWRITE) ==
+        if (VirtualAlloc(backing_base + offset, end - offset, MEM_COMMIT, PAGE_READWRITE) !=
             nullptr) {
-            LOG_CRITICAL(HW_Memory,
-                         "EDEN_NX2_SEC_RESERVE: committing {:#x} bytes of guest memory at {:#x} "
-                         "failed, error {}",
-                         end - offset, offset, GetLastError());
-            return false;
+            return true;
         }
-        return true;
+        DWORD error = GetLastError();
+        // Error 1455: RAM plus page file are all promised. With a system managed page file
+        // Windows grows it and the same request succeeds a moment later, so wait for that
+        // instead of ending the game (a 16 GB PC with a 6.6 GB page file crashed 80 s into
+        // Ocarina of Time here).
+        if (error == ERROR_COMMITMENT_LIMIT || error == ERROR_NOT_ENOUGH_MEMORY) {
+            static std::atomic<bool> told{};
+            if (!told.exchange(true)) {
+                MEMORYSTATUSEX status{};
+                status.dwLength = sizeof(status);
+                GlobalMemoryStatusEx(&status);
+                LOG_CRITICAL(HW_Memory,
+                             "Windows is out of memory for the game: {} MiB left of a {} MiB "
+                             "limit (RAM {} MiB plus the page file). Waiting for Windows to grow "
+                             "the page file. If the game ends here: set the page file to "
+                             "\"System managed size\" (or at least 24 GB), close other programs, "
+                             "and turn frame generation off (it takes about 1.5 GB).",
+                             status.ullAvailPageFile >> 20, status.ullTotalPageFile >> 20,
+                             status.ullTotalPhys >> 20);
+            }
+            for (int attempt = 0; attempt < 40; ++attempt) {
+                Sleep(100);
+                if (VirtualAlloc(backing_base + offset, end - offset, MEM_COMMIT,
+                                 PAGE_READWRITE) != nullptr) {
+                    return true;
+                }
+                error = GetLastError();
+                if (error != ERROR_COMMITMENT_LIMIT && error != ERROR_NOT_ENOUGH_MEMORY) {
+                    break;
+                }
+            }
+        }
+        LOG_CRITICAL(HW_Memory,
+                     "EDEN_NX2_SEC_RESERVE: committing {:#x} bytes of guest memory at {:#x} "
+                     "failed, error {}",
+                     end - offset, offset, error);
+        return false;
     }
 
     void* Allocate(size_t size) {

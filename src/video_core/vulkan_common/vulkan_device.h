@@ -1171,6 +1171,10 @@ FN_MAX_LIMIT_LIST
     /// yet the driver does: with the heap at its budget it is not available to new images.
     u64 GetDeviceMemorySlack() const;
 
+    /// One log line with every memory heap: what the allocator holds in blocks, how much of it is
+    /// in use, how much of it the allocator keeps mapped, and the driver's usage and budget.
+    void LogMemoryHeaps() const;
+
     u32 GetSetsPerPool() const {
         return sets_per_pool;
     }

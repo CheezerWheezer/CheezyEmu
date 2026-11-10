@@ -4361,6 +4361,11 @@ void RasterizerVulkan::FrameDumpPass(const Framebuffer* framebuffer) {
 }
 
 void RasterizerVulkan::TickFrame() {
+    // Every 30 s or so: where the memory the driver gave is, by heap and type (for "out of
+    // memory" and "the PC froze" reports).
+    if (++memory_log_frames % 1800 == 600) {
+        device.LogMemoryHeaps();
+    }
     if (VideoCore::Nx2Debug::HasRequests()) {
         if (auto capture = VideoCore::Nx2Debug::TakeCapture()) {
             frame_dump.Arm(std::move(capture->directory), capture->sampled, capture->buffers,

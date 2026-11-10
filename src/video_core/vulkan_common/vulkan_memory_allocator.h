@@ -114,6 +114,14 @@ namespace Vulkan {
         /// Returns the bytes freed.
         u64 ReleaseRecycledImages() const;
 
+        /// CreateBuffer's way out when the first try got no memory: frees recycled images, goes
+        /// over the budget, then uses system memory. Returns the last result.
+        VkResult CreateBufferOutOfMemory(const VkBufferCreateInfo& ci,
+                                         const VmaAllocationCreateInfo& wanted,
+                                         VkDeviceSize min_alignment, VkBuffer& handle,
+                                         VmaAllocation& allocation,
+                                         VmaAllocationInfo& info) const;
+
         /// CreateImage, but a null image instead of an exception when there is no memory for it.
         vk::Image TryCreateImage(const VkImageCreateInfo &ci, bool dedicated = false) const;
 

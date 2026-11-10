@@ -2098,6 +2098,44 @@ u64 Device::GetDeviceMemorySlack() const {
     return statistics.blockBytes - (std::min)(statistics.blockBytes, statistics.allocationBytes);
 }
 
+void Device::LogMemoryHeaps() const {
+    if (allocator == nullptr) {
+        return;
+    }
+    const auto memory = physical.GetMemoryProperties().memoryProperties;
+    std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+    vmaGetHeapBudgets(allocator, budgets.data());
+    // Blocks with a host-visible type are mapped whole while one of their allocations is (the
+    // driver then keeps that many bytes of address space, and on Windows of commit, for them).
+    VmaTotalStatistics total{};
+    vmaCalculateStatistics(allocator, &total);
+    std::string text;
+    for (u32 heap = 0; heap < memory.memoryHeapCount; ++heap) {
+        const bool local = (memory.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+        text += fmt::format(" | heap {} ({}, {} MiB): blocks {} MiB in {}, used {} MiB in {} "
+                            "allocations, driver {} of {} MiB",
+                            heap, local ? "video" : "system", memory.memoryHeaps[heap].size >> 20,
+                            budgets[heap].statistics.blockBytes >> 20,
+                            budgets[heap].statistics.blockCount,
+                            budgets[heap].statistics.allocationBytes >> 20,
+                            budgets[heap].statistics.allocationCount, budgets[heap].usage >> 20,
+                            budgets[heap].budget >> 20);
+    }
+    for (u32 type = 0; type < memory.memoryTypeCount; ++type) {
+        const auto& stats = total.memoryType[type].statistics;
+        if (stats.blockBytes == 0) {
+            continue;
+        }
+        const auto flags = memory.memoryTypes[type].propertyFlags;
+        text += fmt::format(" | type {} (heap {}{}{}): {} MiB in {} blocks, {} MiB used", type,
+                            memory.memoryTypes[type].heapIndex,
+                            (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? ", device local" : "",
+                            (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? ", host visible" : "",
+                            stats.blockBytes >> 20, stats.blockCount, stats.allocationBytes >> 20);
+    }
+    LOG_INFO(Render_Vulkan, "Vulkan memory{}", text);
+}
+
 u64 Device::GetDeviceMemoryBudget() const {
     if (!extensions.memory_budget) {
         return 0;

@@ -431,6 +431,7 @@ private:
     static constexpr size_t MaxOcarinaActors = 160; ///< 64 was reached in busy scenes
     static constexpr size_t MaxOcarinaMovingObjects = 64; ///< Their own slots: characters filled all
 #endif
+    u32 memory_log_frames{};
     u64 render_trace_frame = 0;
     u32 render_trace_draws = 0;
     u32 render_trace_clears = 0;
