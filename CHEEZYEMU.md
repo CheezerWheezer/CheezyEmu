@@ -33,6 +33,12 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
   ("Game: 90 FPS (45 + FG)"), as AMD frame generation already did.
 - **FSR and frame generation switching off and on ("FSR (NO CAMERA)")**: the log now says how
   many frames had no scene camera and why, so a report can be traced.
+- **Frame generation stuck on "waiting"** (reports from an RX 5700 XT): not fixed yet. The log
+  now says once when the game's own upscaler can't be replaced on a card and what didn't fit,
+  which is what frame generation waits for. Please send the log if you see it.
+- **Known issue: blocky, stair-stepped edges in water haze and in the shards of broken pots**
+  around Link in Ocarina of Time on AMD cards. It comes from the game's water and particle
+  pass, not from FSR or frame generation; no fix yet.
 - **Frame generation: Link no longer tears while he moves.** Generated frames doubled and broke
   his limbs, sword and middle (ghost hands, torn boots) because only part of him was given
   motion of his own; the rest got the scenery's. Three causes, found by saving the generated
