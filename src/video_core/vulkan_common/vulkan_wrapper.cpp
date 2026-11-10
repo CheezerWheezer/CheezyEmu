@@ -736,6 +736,38 @@ void ImageRecycler::Shrink(u64 bytes) noexcept {
     TrimRecycler(state, RecyclerCap - bytes, std::chrono::steady_clock::now());
 }
 
+u64 ImageRecycler::ReleaseNow(VmaAllocator allocator) noexcept {
+    u64 freed = 0;
+    {
+        RecyclerState& state = Recycler();
+        std::scoped_lock lock{state.mutex};
+        std::erase_if(state.images, [&](const RecycledImage& image) {
+            if (image.allocator != allocator) {
+                return false;
+            }
+            vmaDestroyImage(image.allocator, image.handle, image.allocation);
+            state.bytes -= image.size;
+            freed += image.size;
+            return true;
+        });
+    }
+    Graveyard& graveyard = Reaper();
+    {
+        std::scoped_lock graveyard_lock{graveyard.mutex};
+        std::erase_if(graveyard.images, [&](const RecycledImage& image) {
+            if (image.allocator != allocator) {
+                return false;
+            }
+            vmaDestroyImage(image.allocator, image.handle, image.allocation);
+            freed += image.size;
+            return true;
+        });
+    }
+    // A batch being destroyed: wait for it, its memory is about to be free too.
+    std::scoped_lock destroy_lock{graveyard.destroy_mutex};
+    return freed;
+}
+
 void ImageRecycler::Open(VmaAllocator allocator) noexcept {
     RecyclerState& state = Recycler();
     std::scoped_lock lock{state.mutex};

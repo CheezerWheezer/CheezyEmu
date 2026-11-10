@@ -799,6 +799,10 @@ public:
     [[nodiscard]] static u64 KeptBytes() noexcept;
     /// Drops the oldest kept images until at most `bytes` are kept.
     static void Shrink(u64 bytes) noexcept;
+    /// Destroys every kept image of this allocator now, on the calling thread, and those dropped
+    /// but not destroyed yet; returns the bytes freed. For an allocation that ran out of device
+    /// memory: Shrink only hands images to the reaper thread, which frees them later.
+    static u64 ReleaseNow(VmaAllocator allocator) noexcept;
 };
 
 struct MemoryLocation {

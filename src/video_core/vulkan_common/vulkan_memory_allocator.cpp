@@ -270,6 +270,20 @@ VkResult MemoryAllocator::AllocateImage(const VkImageCreateInfo &ci, bool dedica
     VkResult result = huge ? VK_ERROR_OUT_OF_DEVICE_MEMORY
                            : vmaCreateImage(allocator, &ci, &alloc_ci, &handle, &allocation, &alloc_info);
     if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY && !huge) {
+        // The recycler keeps up to 512 MiB of released images for later ones of the same kind.
+        // Out of memory, that is the first place to take it from (an RX 5700 XT at 4K with
+        // frame generation ran out and crashed with the recycler still holding its share).
+        if (const u64 freed = vk::ImageRecycler::ReleaseNow(allocator); freed != 0) {
+            static u32 released_logged{};
+            if (released_logged++ < 16) {
+                LOG_WARNING(Render_Vulkan,
+                            "Out of device memory: {} MiB of recycled images released",
+                            freed >> 20);
+            }
+            result = vmaCreateImage(allocator, &ci, &alloc_ci, &handle, &allocation, &alloc_info);
+        }
+    }
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY && !huge) {
         // Over the device memory budget (Switch 2 titles fill 8 GB cards): let the driver page
         // it out rather than failing the draw and aborting.
         static u32 logged{};
