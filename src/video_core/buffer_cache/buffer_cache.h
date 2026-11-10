@@ -167,10 +167,12 @@ void BufferCache<P>::TickFrame() {
                           largest.end(), std::greater<>{});
         LOG_INFO(HW_GPU,
                  "Buffer cache: {} buffers {} MiB; largest {}; compute write extents: {} checks "
-                 "held, {} programs marked in full, {} full marks for checks",
+                 "held, {} programs caught and marked in full, {} known ones marked in full from "
+                 "the start, {} full marks",
                  count, total >> 20,
                  fmt::join(largest.begin(), largest.begin() + std::min<size_t>(6, largest.size()), ", "),
-                 extent_probes_trusted, extent_probes_distrusted, extent_full_marks);
+                 extent_probes_trusted, extent_probes_distrusted, extent_programs_known,
+                 extent_full_marks);
         extent_full_marks = 0;
     }
 
@@ -2321,17 +2323,22 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
                 if (!IS_OPENGL && proven < binding.size && ExtentCheckEnabled()) {
                     const std::array<u32, 3> dims_grid =
                         grid.value_or(std::array<u32, 3>{~0U, ~0U, ~0U});
-                    const ExtentTrust& trust = extent_trust[compute_shader_hash];
+                    const ExtentTrust& trust = ExtentTrustFor(compute_shader_hash);
                     bool bigger = false;
                     for (size_t i = 0; i < 3; ++i) {
                         bigger |= block[i] > trust.block[i] || dims_grid[i] > trust.grid[i];
                     }
-                    if (trust.distrusted || bigger) {
+                    // A trusted program is checked again now and then: it may write far only
+                    // sometimes, and bytes an unmarked dispatch left behind still show.
+                    const bool audit =
+                        !bigger && frame_tick - trust.last_check_frame >= EXTENT_AUDIT_FRAMES;
+                    if (trust.distrusted || bigger || audit) {
                         mark = binding.size;
                         ++extent_full_marks;
                         if (!trust.distrusted && !trust.probe_pending) {
                             extent_probe_requests[ssbo_index] = ExtentProbeRequest{
                                 .active = true,
+                                .audit = audit,
                                 .proven = proven,
                                 .pointer = pointer,
                                 .pad = pad,
@@ -3437,7 +3444,7 @@ void BufferCache<P>::ProbeExtentTail(u32 index, const Binding& binding) {
         gpu_modified_ranges.ForEachInRange(tail, span, skip);
         PendingCpuWriteRanges().ForEachInRange(tail, span, skip);
         extent_probes.push_back(std::move(probe));
-        extent_trust[compute_shader_hash].probe_pending = true;
+        ExtentTrustFor(compute_shader_hash).probe_pending = true;
     }
 }
 
@@ -3468,7 +3475,7 @@ void BufferCache<P>::CheckExtentProbes() {
             if (!probe.after) {
                 if (!slot_buffers.contains(probe.buffer_id)) {
                     // Its buffer is gone before any dispatch followed: check the program again.
-                    extent_trust[probe.shader_hash].probe_pending = false;
+                    ExtentTrustFor(probe.shader_hash).probe_pending = false;
                     return true;
                 }
                 // The dispatch was dropped after its bind: the next one records the copy, and a
@@ -3499,32 +3506,38 @@ void BufferCache<P>::CheckExtentProbes() {
                     }
                 }
             }
-            ExtentTrust& trust = extent_trust[probe.shader_hash];
+            ExtentTrust& trust = ExtentTrustFor(probe.shader_hash);
             trust.probe_pending = false;
+            trust.last_check_frame = frame_tick;
             const ExtentProbeRequest& request = probe.request;
             if (differing != 0) {
                 if (!trust.distrusted) {
                     trust.distrusted = true;
                     ++extent_probes_distrusted;
+                    ExtentDistrust::Remember(probe.shader_hash);
                     LOG_WARNING(HW_GPU,
                                 "Compute write extent too small: shader {:016x} pointer {:#x} pad "
                                 "{} proven {} of {} bytes, block {}x{}x{} grid {}x{}x{}: {} bytes "
-                                "written past the proof (first +{}, last +{}); marked in full "
-                                "from now on",
+                                "written past the proof (first +{}, last +{}){}; marked in full "
+                                "from now on, and from the start in later sessions",
                                 probe.shader_hash, request.pointer, request.pad, request.proven,
                                 probe.binding_size, request.block[0], request.block[1],
                                 request.block[2], request.grid[0], request.grid[1],
-                                request.grid[2], differing, first, last);
+                                request.grid[2], differing, first, last,
+                                request.audit ? ", found by an audit after it was trusted" : "");
                 }
             } else if (!trust.distrusted) {
-                // Trusted at these dims, and so at any dims within them. The componentwise
-                // maximum with dims checked before also counts as checked (a dispatch past both
-                // is rare).
-                for (size_t i = 0; i < 3; ++i) {
-                    trust.block[i] = (std::max)(trust.block[i], request.block[i]);
-                    trust.grid[i] = (std::max)(trust.grid[i], request.grid[i]);
-                }
                 ++extent_probes_trusted;
+                // Trusted at these dims (and so at any dims within them) once enough checks held:
+                // the offenders write far only now and then. The componentwise maximum with dims
+                // checked before also counts as checked (a dispatch past both is rare).
+                if (!request.audit && ++trust.held >= EXTENT_CHECKS_TO_TRUST) {
+                    trust.held = 0;
+                    for (size_t i = 0; i < 3; ++i) {
+                        trust.block[i] = (std::max)(trust.block[i], request.block[i]);
+                        trust.grid[i] = (std::max)(trust.grid[i], request.grid[i]);
+                    }
+                }
             }
             runtime.FreeDeferredStagingBuffer(*probe.after);
             return true;

@@ -19,11 +19,14 @@ How to use all of this: **[README.txt](README.txt)**, also next to `cheezyemu.ex
 - **White flashes and huge glowing triangles after playing a while (Ocarina of Time)**: a second
   cause is closed. A compute shader's writes were tracked only as far as an analysis proved it
   writes; one shader writes further, the game read stale particle data back and drew giant bright
-  triangles from it, which the bloom turns into a flash. Every compute shader is now checked once
+  triangles from it, which the bloom turns into a flash. Every compute shader is now checked
   against what it really wrote, and tracked in full if it wrote further (port of Frizti/Fritchii
-  v5.6's write extent check). No fps cost measured. The log says "Compute write extent too small"
-  when it catches one. `EDEN_NX2_EXTENT_CHECK=0` turns the check off. If you still see a flash,
-  please send the log.
+  v5.6's write extent check, made stricter here: these shaders write far only now and then, so a
+  shader needs four clean checks before it is trusted and is checked again every 30 seconds; the
+  three shaders caught so far in Kakariko Village are tracked in full from the first frame, and
+  any shader your PC catches is remembered for later sessions in `shader/extent_distrust.txt`).
+  No fps cost measured. The log says "Compute write extent too small" when it catches one.
+  `EDEN_NX2_EXTENT_CHECK=0` turns the check off. If you still see a flash, please send the log.
 - **White flashes ("flashbang") in Ocarina of Time**: the game sizes its glare from occlusion
   query reports, and a report could reach it before the graphics card had finished the work it
   measures. Upstream's fix for that (#337) had been taken out of the line this fork is built on,

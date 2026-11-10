@@ -38,6 +38,7 @@
 #include "common/slot_vector.h"
 #include "shader_recompiler/shader_info.h"
 #include "video_core/buffer_cache/buffer_base.h"
+#include "video_core/buffer_cache/extent_distrust.h"
 #include "video_core/buffer_cache/read_trap_tracker.h"
 #include "video_core/buffer_cache/virtual_range_cache.h"
 #include "video_core/control/channel_state_cache.h"
@@ -1099,14 +1100,26 @@ private:
     /// unapplied CPU writes left out). The same: the proof holds at these dims (and at smaller
     /// ones). Different: the program is marked in full for the session and logged, naming it.
     /// EDEN_NX2_EXTENT_CHECK=0 trusts the proof as before.
+    ///
+    /// The offenders write far only now and then, so one clean check proves little (a player's
+    /// session, 2026-11-10: two programs were caught 12 and 16 minutes in, after the flash had
+    /// started). So: dims are trusted after EXTENT_CHECKS_TO_TRUST clean checks, a trusted program
+    /// is checked again every EXTENT_AUDIT_FRAMES frames (an audit also finds bytes an earlier
+    /// unmarked dispatch left in the buffer), and a program caught once is marked in full from
+    /// its first dispatch in every later session (extent_distrust.h, with the known ones built in).
+    static constexpr u32 EXTENT_CHECKS_TO_TRUST = 4;
+    static constexpr u64 EXTENT_AUDIT_FRAMES = 1800;
     struct ExtentTrust {
         std::array<u32, 3> block{};
         std::array<u32, 3> grid{};
         bool distrusted{};
         bool probe_pending{};
+        u32 held{};             ///< Clean checks since the trusted dims last grew
+        u64 last_check_frame{}; ///< frame_tick of the last finished check
     };
     struct ExtentProbeRequest {
         bool active{};
+        bool audit{}; ///< A trusted program's periodic check
         u64 proven{};
         u64 pointer{};
         u64 pad{};
@@ -1136,7 +1149,18 @@ private:
     std::vector<ExtentProbe> extent_probes;
     u64 extent_probes_trusted{};
     u64 extent_probes_distrusted{};
+    u64 extent_programs_known{};
     u64 extent_full_marks{};
+
+    /// The program's trust, made on first use (distrusted from the start when it is a known one).
+    [[nodiscard]] ExtentTrust& ExtentTrustFor(u64 shader_hash) {
+        const auto [it, inserted] = extent_trust.try_emplace(shader_hash);
+        if (inserted && ExtentDistrust::IsKnown(shader_hash)) {
+            it->second.distrusted = true;
+            ++extent_programs_known;
+        }
+        return it->second;
+    }
 
     [[nodiscard]] static bool ExtentCheckEnabled() {
         static const bool enabled = [] {
