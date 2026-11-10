@@ -21,6 +21,7 @@
 #include <bit>
 #include <numeric>
 #include "common/cityhash.h"
+#include "common/memory_detect.h"
 #include "common/scope_exit.h"
 #include "common/fs/fs.h"
 #include "common/fs/path_util.h"
@@ -1960,14 +1961,19 @@ void PipelineCache::EvictUnusedPipelines() {
         const char* const value = std::getenv("EDEN_NX2_EVICT_PIPELINES");
         return value && value[0] == '1';
     }();
-    constexpr size_t KeepPipelinesUpTo = 4000;
+    // A PC with 16 GB of RAM keeps half as many: Ocarina with its game memory, video memory
+    // and these leaves it nothing (whole-PC freezes on scene loads, error 1455 crashes), and
+    // 2000 fewer pipelines are about 0.9 GB. The price is a few more 2-3 ms rebuilds on the way
+    // back to a place.
+    static const bool low_memory = Common::GetMemInfo().TotalPhysicalMemory <= (17ULL << 30);
+    static const size_t KeepPipelinesUpTo = low_memory ? 2000 : 4000;
     if (!evict_always && graphics_cache.size() <= KeepPipelinesUpTo) {
         return;
     }
     const u64 cutoff = frame_count - EvictAfterFrames;
     const u64 tick = scheduler.CurrentTick();
     // ~0.9 GB of driver memory at ~0.45 MB each.
-    constexpr size_t MaxUnusedPrebuiltPipelines = 2000;
+    static const size_t MaxUnusedPrebuiltPipelines = low_memory ? 1000 : 2000;
     size_t kept_prebuilt = 0;
     size_t evicted = 0;
     for (auto it = graphics_cache.begin(); it != graphics_cache.end();) {
