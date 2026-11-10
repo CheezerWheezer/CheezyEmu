@@ -3179,6 +3179,7 @@ void RasterizerVulkan::TrackOcarinaCamera() {
     struct CameraDiagnostics {
         u64 window{};
         u32 draws{}, no_depth{}, not_scene{}, matched{}, mismatched{}, dynamic{};
+        u32 frames_found{}, gpu_written{};
         u32 largest_w{}, largest_h{};
         f32 camera_w{}, camera_h{}, camera_wz{}, camera_wz1{};
         u32 target_w{}, target_h{}, drawn_w{}, drawn_h{};
@@ -3198,6 +3199,16 @@ void RasterizerVulkan::TrackOcarinaCamera() {
                      diag.mismatched, diag.camera_w, diag.camera_h, diag.camera_wz,
                      diag.camera_wz1, diag.target_w, diag.target_h, diag.dynamic, diag.drawn_w,
                      diag.drawn_h);
+        }
+        // In play a camera is found every frame. Fewer means FSR and frame generation switch
+        // off and on ("FSR (NO CAMERA)" in the bar, 60 and 120 fps in turn): say how many and why.
+        if (diag.matched != 0 && diag.frames_found < 570) {
+            LOG_WARNING(Render_Vulkan,
+                        "Ocarina FSR: a scene camera in only {} of the last 600 frames ({} camera "
+                        "buffers were GPU-written, {} didn't match (last {}x{} vs target {}x{}), "
+                        "{} of {} draws without depth)",
+                        diag.frames_found, diag.gpu_written, diag.mismatched, diag.camera_w,
+                        diag.camera_h, diag.target_w, diag.target_h, diag.no_depth, diag.draws);
         }
         diag = {};
         diag.window = render_trace_frame;
@@ -3233,8 +3244,11 @@ void RasterizerVulkan::TrackOcarinaCamera() {
                                                 const auto& binding, u32 bound_size,
                                                 const auto*, u32) {
         std::array<f32, 0x230 / sizeof(f32)> camera;
-        if (stage != 0 || storage || index != 3 || bound_size < sizeof(camera) ||
-            buffer_cache.IsRegionGpuModified(binding.device_addr, sizeof(camera))) {
+        if (stage != 0 || storage || index != 3 || bound_size < sizeof(camera)) {
+            return;
+        }
+        if (buffer_cache.IsRegionGpuModified(binding.device_addr, sizeof(camera))) {
+            ++diag.gpu_written;
             return;
         }
         device_memory.ReadBlockUnsafe(binding.device_addr, camera.data(), sizeof(camera));
@@ -3300,6 +3314,9 @@ void RasterizerVulkan::TrackOcarinaCamera() {
         }
         const std::span values{camera};
         ++diag.matched;
+        if (oot_camera_sample_frame != render_trace_frame) {
+            ++diag.frames_found;
+        }
         oot_camera_sample_frame = render_trace_frame;
         oot_motion.camera_channel = gpu_memory;
         oot_motion.extent = {color.size.width, color.size.height};
