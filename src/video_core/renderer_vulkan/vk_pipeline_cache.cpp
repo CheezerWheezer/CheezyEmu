@@ -617,12 +617,6 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
                                        driver_id == VK_DRIVER_ID_MESA_TURNIP),
 
         .has_broken_spirv_clamp = driver_id == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS,
-        // TEST: EDEN_NX2_NAN_SATURATE=1 (it changes the SPIR-V of nearly every shader, so every
-        // saved pipeline is built again once).
-        .has_broken_nan_clamp = [] {
-            const char* value = std::getenv("EDEN_NX2_NAN_SATURATE");
-            return value != nullptr && value[0] == '1';
-        }(),
         .has_broken_spirv_position_input = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY,
         .has_broken_unsigned_image_offsets = false,
         .has_broken_signed_operations = false,

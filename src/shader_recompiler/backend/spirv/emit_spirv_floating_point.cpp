@@ -20,17 +20,6 @@ Id Decorate(EmitContext& ctx, IR::Inst* inst, Id op) {
 // Maxwell's FMNMX and .SAT return the non-NaN operand (NaN saturates to 0). FMin/FMax/FClamp leave
 // NaN undefined and AMD's Windows compiler passes it through, so use the NaN-defined N variants.
 Id Clamp(EmitContext& ctx, Id type, Id value, Id zero, Id one) {
-    // On AMD's Windows driver NMax(NaN, 0) still comes out NaN and the NMin after it gives 1, so
-    // a saturated NaN is 1 where the console gives 0. Ocarina of Time's decal volumes carry
-    // infinite fade ranges (inf - inf), and their fade then removed the water haze and particles
-    // in whole light clusters around the player (blocky stair-step edges). NaN is told by its
-    // bits, which no fast-math rule folds away, and replaced by 0 before the clamp.
-    if (ctx.profile.has_broken_nan_clamp && type.value == ctx.F32[1].value) {
-        const Id bits{ctx.OpBitcast(ctx.U32[1], value)};
-        const Id magnitude{ctx.OpBitwiseAnd(ctx.U32[1], bits, ctx.Const(0x7fffffffU))};
-        const Id is_nan{ctx.OpUGreaterThan(ctx.U1, magnitude, ctx.Const(0x7f800000U))};
-        value = ctx.OpSelect(type, is_nan, zero, value);
-    }
     return ctx.OpNMin(type, ctx.OpNMax(type, value, zero), one);
 }
 
