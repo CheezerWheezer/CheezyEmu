@@ -72,9 +72,9 @@ public:
     /// layout). Returns false when FSR 4 can't run, so the caller can fall back to FSR 3.1.
     bool Upscale(const Inputs& inputs);
 
-    [[nodiscard]] bool Failed() const noexcept {
-        return failed.load();
-    }
+    /// True while the upscaler is out: for good, or until its next try (one that couldn't start
+    /// is tried again a few times, later).
+    [[nodiscard]] bool Failed() const noexcept;
 
     [[nodiscard]] VkImage OutputImage() const noexcept {
         return *output_image;
@@ -112,6 +112,9 @@ private:
     vk::ImageView output_view;
     vk::Sampler point_sampler;
     std::atomic<bool> failed{};
+    /// When a context that couldn't be created is tried again (steady clock, ns); 0: never.
+    std::atomic<s64> retry_at_ns{};
+    u32 create_failures{};
 
     // FSR 4 output check: a few input and output pixels read back every so often.
     vk::Buffer health_buffer;

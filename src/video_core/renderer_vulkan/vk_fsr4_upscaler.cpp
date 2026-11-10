@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include <chrono>
 #include <fmt/format.h>
 
 #include "common/fs/path_util.h"
@@ -66,6 +67,14 @@ using Api = FfxRuntime::Api;
 
 // Set when FSR 4 drew black over a real picture: FSR 3.1 from then on, for this session.
 std::atomic<bool> fsr4_output_black{};
+/// FSR 4 couldn't make its context this session (out of video memory, typically): FSR 3.1 is used.
+std::atomic<bool> fsr4_create_failed{};
+
+s64 SteadyNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
 
 // The output check: an 8x8 grid of input and output pixels, 16 bytes a pixel.
 constexpr u32 HEALTH_GRID = 8;
@@ -145,7 +154,9 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
         }
     });
     const bool black = fsr4_output_black.load();
-    const bool want_fsr4 = Settings::values.amd_fsr4.GetValue() && !force_fsr3 && !black;
+    const bool no_start = fsr4_create_failed.load();
+    const bool want_fsr4 =
+        Settings::values.amd_fsr4.GetValue() && !force_fsr3 && !black && !no_start;
     VkDeviceContext vk_context = DeviceContext(device);
     u64 count = 0;
     ffxQueryDescGetVersions versions{};
@@ -187,6 +198,7 @@ std::optional<Provider> FindFsr4(const Api& api, const Device& device) {
         LOG_INFO(Render_Vulkan, "AMD FSR: using FSR {} ({})", fsr3->name,
                  force_fsr3                                 ? "forced by EDEN_NX2_FSR_VERSION=3"
                  : black                                    ? "FSR 4 drew a black picture"
+                 : no_start                                 ? "FSR 4 couldn't start"
                  : !Settings::values.amd_fsr4.GetValue()    ? "FSR 4 is turned off"
                                                             : "no FSR 4 for this GPU or driver");
     }
@@ -315,6 +327,18 @@ void Fsr4Upscaler::DestroyContext() {
 bool Fsr4Upscaler::CreateContext(VkExtent2D render_size, VkExtent2D upscale_size,
                                  bool depth_inverted, bool hdr_requested) {
     DestroyContext();
+    // EDEN_NX2_FSR_FAIL_CREATE=<n>: the first n context creations fail, to test what happens
+    // when FSR can't start (the FSR 3.1 fallback, then the later tries).
+    static std::atomic<int> failures_left = [] {
+        const char* const value = std::getenv("EDEN_NX2_FSR_FAIL_CREATE");
+        return value != nullptr ? std::atoi(value) : 0;
+    }();
+    if (failures_left.load() > 0 && failures_left.fetch_sub(1) > 0) {
+        LOG_WARNING(Render_Vulkan, "AMD FSR {}: context creation failed on purpose "
+                                   "(EDEN_NX2_FSR_FAIL_CREATE)",
+                    context->provider.name);
+        return false;
+    }
     // EDEN_NX2_FSR4_HDR=0 treats the colour as tonemapped (non-linear) for A/B runs.
     static const bool hdr_allowed = [] {
         const char* const value = std::getenv("EDEN_NX2_FSR4_HDR");
@@ -524,9 +548,23 @@ bool Fsr4Upscaler::SwitchToFsr3() {
     return true;
 }
 
+bool Fsr4Upscaler::Failed() const noexcept {
+    if (!failed.load()) {
+        return false;
+    }
+    const s64 retry = retry_at_ns.load();
+    return retry == 0 || SteadyNowNs() < retry;
+}
+
 bool Fsr4Upscaler::Upscale(const Inputs& in) {
     if (failed) {
-        return false;
+        if (Failed()) {
+            return false;
+        }
+        // Time for another try at a context that couldn't be created.
+        failed = false;
+        retry_at_ns = 0;
+        render_extent = {};
     }
     if (!health_done && CheckOutputHealth() && !SwitchToFsr3()) {
         failed = true;
@@ -543,10 +581,47 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
         if (extent_changed) {
             CreateOutput(in.upscale_size);
         }
-        if (!CreateContext(in.render_size, in.upscale_size, in.depth_inverted, in.hdr)) {
+        bool started = CreateContext(in.render_size, in.upscale_size, in.depth_inverted, in.hdr);
+        if (!started) {
+            // Out of video memory, typically: an RX 9060 XT 8 GB with 6.2 GB offered got error 3
+            // for 2560x1440 -> 3840x2160, and with FSR given up for the session frame generation
+            // waited for ever. The recycled images (up to 512 MiB) go back to the driver first.
+            const u64 freed = memory_allocator.ReleaseRecycledImages();
+            LOG_WARNING(Render_Vulkan,
+                        "AMD FSR {} couldn't start at {}x{} -> {}x{}: {} MiB of recycled images "
+                        "released, device memory in use {} MiB of a {} MiB budget",
+                        context->provider.name, in.render_size.width, in.render_size.height,
+                        in.upscale_size.width, in.upscale_size.height, freed >> 20,
+                        device.GetDeviceMemoryUsage() >> 20, device.GetDeviceMemoryBudget() >> 20);
+            if (context->provider.name.starts_with('4')) {
+                // FSR 3.1 takes the same inputs and a fraction of FSR 4's memory.
+                fsr4_create_failed = true;
+                const auto lighter = FindFsr4(*context->api, device);
+                if (lighter && !lighter->name.starts_with('4')) {
+                    context->provider = *lighter;
+                    health_done = true; // the output check is for FSR 4
+                }
+            }
+            started = CreateContext(in.render_size, in.upscale_size, in.depth_inverted, in.hdr);
+        }
+        if (!started) {
+            // The game's own upscaler draws meanwhile. Loading a scene is when memory is
+            // shortest, so later tries have a better chance.
+            constexpr std::array<s64, 4> waits_s{10, 30, 90, 240};
+            const bool again = create_failures < waits_s.size();
+            LOG_ERROR(Render_Vulkan,
+                      "AMD FSR couldn't start: the game's own upscaler is used and frame "
+                      "generation waits{}",
+                      again ? fmt::format(", next try in {} s", waits_s[create_failures])
+                            : std::string{" for the rest of this session"});
+            retry_at_ns =
+                again ? SteadyNowNs() + waits_s[create_failures] * s64{1'000'000'000} : s64{0};
+            ++create_failures;
+            render_extent = {};
             failed = true;
             return false;
         }
+        create_failures = 0;
         render_extent = in.render_size;
         upscale_extent = in.upscale_size;
         depth_inverted_input = in.depth_inverted;
@@ -720,6 +795,10 @@ bool Fsr4Upscaler::Upscale(const Inputs& in) {
 #else // _WIN32
 
 struct Fsr4Upscaler::Context {};
+
+bool Fsr4Upscaler::Failed() const noexcept {
+    return failed.load();
+}
 
 bool Fsr4Upscaler::IsAvailable(const Device&) {
     return false; // AMD ships the FSR 4 runtime for Windows only

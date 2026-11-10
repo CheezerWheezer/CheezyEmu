@@ -110,6 +110,10 @@ namespace Vulkan {
         /// images would otherwise leave holes in the shared blocks).
         vk::Image CreateImage(const VkImageCreateInfo &ci, bool dedicated = false) const;
 
+        /// Gives the memory of recycled images back to the driver now (see vk::ImageRecycler).
+        /// Returns the bytes freed.
+        u64 ReleaseRecycledImages() const;
+
         /// CreateImage, but a null image instead of an exception when there is no memory for it.
         vk::Image TryCreateImage(const VkImageCreateInfo &ci, bool dedicated = false) const;
 

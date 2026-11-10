@@ -226,6 +226,10 @@ vk::Image MemoryAllocator::CreateImage(const VkImageCreateInfo &ci, bool dedicat
     return image;
 }
 
+u64 MemoryAllocator::ReleaseRecycledImages() const {
+    return vk::ImageRecycler::ReleaseNow(allocator);
+}
+
 vk::Image MemoryAllocator::TryCreateImage(const VkImageCreateInfo &ci, bool dedicated) const {
     vk::Image image;
     const VkResult result = AllocateImage(ci, dedicated, true, image);
