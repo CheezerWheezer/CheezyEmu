@@ -84,6 +84,8 @@
 #include <QActionGroup>
 #include <QCheckBox>
 #include <QDialog>
+#include <QListWidget>
+#include <QTabWidget>
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QTextBrowser>
@@ -391,9 +393,34 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     // Every window and dialog fits the screen it opens on (small screens, high display scale).
     FitWindow::Install();
     // CHEEZYEMU_DIALOG_SHOT=<png> (test): opens Configure, saves a picture of it, closes it.
+    // CHEEZYEMU_DIALOG_SHOT_OPEN=recommended opens the "Find Best Settings" question instead,
+    // =properties:<game file> that game's Properties. CHEEZYEMU_DIALOG_SHOT_PAGE=<text> first
+    // selects the list entry or tab with that text (a page of Configure, say "Graphics").
     if (const QByteArray shot = qgetenv("CHEEZYEMU_DIALOG_SHOT"); !shot.isEmpty()) {
         QTimer::singleShot(4000, this, [this, path = QString::fromUtf8(shot)] {
-            QTimer::singleShot(2500, this, [path] {
+            const QString page = QString::fromUtf8(qgetenv("CHEEZYEMU_DIALOG_SHOT_PAGE"));
+            if (!page.isEmpty()) {
+                QTimer::singleShot(1500, this, [page] {
+                    QWidget* const dialog = QApplication::activeModalWidget();
+                    if (dialog == nullptr) {
+                        return;
+                    }
+                    for (QListWidget* const list : dialog->findChildren<QListWidget*>()) {
+                        const auto items = list->findItems(page, Qt::MatchFixedString);
+                        if (!items.isEmpty()) {
+                            list->setCurrentItem(items.front());
+                        }
+                    }
+                    for (QTabWidget* const tabs : dialog->findChildren<QTabWidget*>()) {
+                        for (int index = 0; index < tabs->count(); ++index) {
+                            if (tabs->tabText(index).remove(QLatin1Char('&')) == page) {
+                                tabs->setCurrentIndex(index);
+                            }
+                        }
+                    }
+                });
+            }
+            QTimer::singleShot(page.isEmpty() ? 2500 : 3500, this, [path] {
                 if (QWidget* const dialog = QApplication::activeModalWidget()) {
                     const bool saved = dialog->grab().save(path);
                     LOG_INFO(Frontend, "Dialog shot: {}x{} at {},{} minimum {}x{} saved={}",
@@ -402,7 +429,14 @@ MainWindow::MainWindow(bool has_broken_vulkan)
                     dialog->close();
                 }
             });
-            OnConfigure();
+            const QString open = QString::fromUtf8(qgetenv("CHEEZYEMU_DIALOG_SHOT_OPEN"));
+            if (open == QStringLiteral("recommended")) {
+                OnApplyRecommendedSettings();
+            } else if (open.startsWith(QStringLiteral("properties:"))) {
+                OnGameListOpenPerGameProperties(open.mid(11).toStdString());
+            } else {
+                OnConfigure();
+            }
         });
     }
 
