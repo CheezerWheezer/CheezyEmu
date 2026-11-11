@@ -196,17 +196,27 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         pending_bytes = 0;
         pending_freed = 0;
     };
-    // EDEN_NX2_TC_MIN_AGE=<frames>: never evict images used more recently (thrash tests).
+    // Images used in the last 300 frames (about six seconds) stay, unless the device is out of
+    // memory or the cache is more than 512 MiB past its critical threshold. Near the threshold,
+    // the collector deleted anything unused for 10 frames: textures of the scene in view, which
+    // the game drew again at once, so they were created, uploaded and decoded again (ASTC) a
+    // few frames later, around two a frame, for the rest of the session. Other programs using
+    // video memory lower the budget and the threshold with it, so sessions tipped into that at
+    // random: the same Hyrule Field route ran at 44-47 fps with 0-20 frames over 50 ms, or at
+    // 36-39 fps with 100-185. With the limit, the route at the threshold: 46.4 fps, 15 frames.
+    // EDEN_NX2_TC_MIN_AGE=<frames> sets the age (0: the old rule).
     static const u64 min_age = [] {
         const char* value = std::getenv("EDEN_NX2_TC_MIN_AGE");
-        return value != nullptr ? std::strtoull(value, nullptr, 10) : 0ULL;
+        return value != nullptr ? std::strtoull(value, nullptr, 10) : 300ULL;
     }();
     const auto Configure = [&](bool allow_aggressive) {
         high_priority_mode = out_of_memory || used_memory() >= expected_memory;
         aggressive_mode =
             allow_aggressive && (out_of_memory || used_memory() >= critical_memory);
         ticks_to_destroy = aggressive_mode ? 10ULL : high_priority_mode ? 25ULL : 50ULL;
-        ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        if (!out_of_memory && used_memory() < critical_memory + 512_MiB) {
+            ticks_to_destroy = (std::max)(ticks_to_destroy, min_age);
+        }
         num_iterations = aggressive_mode ? 40 : (high_priority_mode ? 20 : 10);
     };
     const auto Cleanup = [&](ImageId image_id) {

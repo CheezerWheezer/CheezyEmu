@@ -28,6 +28,14 @@ Not released yet: this section grows as the work lands.
   captured frames: generated frames now show the arms and hands as the real frames do, running,
   strafing, side hops and a backflip. Not checked inside a crawl tunnel (no save near one), but
   it is the same mesh. `EDEN_NX2_OOT_INFLUENCES=0` brings the old behaviour back, to compare.
+- **Sessions that ran slow for no visible reason.** The same Hyrule Field walk ran at 44-47 fps
+  in some sessions and 36-39 fps with 100-185 hitches in others. In the slow ones video memory
+  use had crept up to the texture cache's limit (the game grows a 1 GB block of its memory a
+  little, and other programs such as a browser or Discord lower the driver's budget), and from
+  then on the cache deleted textures still on screen and re-created them a few frames later,
+  about two a frame for the rest of the session. It now keeps textures used in the last 300
+  frames unless the card is really out of memory. At the limit, same walk: 185 hitches before,
+  15 to 31 after. `EDEN_NX2_TC_MIN_AGE=0` brings the old rule back.
 - **Less hitching while walking around.**
   - The buffer collector ran in emergency mode on every frame in Ocarina of Time: the game keeps
     about 1.5 GB of buffers in use, and "more than 1 GB of buffers" was the emergency. It threw
