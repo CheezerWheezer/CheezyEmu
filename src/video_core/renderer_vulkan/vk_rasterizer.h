@@ -409,6 +409,8 @@ private:
         GPUVAddr indices{};
         s32 base_vertex{};
         u32 index_count{};
+        /// Where its origin (constant buffer 4) and its poses (6 and 7) were bound.
+        std::array<DAddr, 3> pose_buffers{};
         std::array<f32, 4> origin{};
         std::array<f32, 320 * 12> bones{}; ///< Link has 282 (two past 280 were left out)
 

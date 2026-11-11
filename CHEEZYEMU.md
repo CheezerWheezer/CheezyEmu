@@ -18,6 +18,18 @@ Not released yet: this section grows as the work lands.
   (FSR 4 or 3.1) is still used, and the built-in one takes over when that cannot start. Frame
   generation stays Windows only. Tested on Windows by forcing it (`EDEN_NX2_FSR_BUILTIN=1`):
   standing and moving in Hyrule Field, 55 fps at Native AA on an RX 6750 XT. Not yet run on Linux.
+- **Ghosting on Link's arms and legs (walking, jumping, crawling) with FSR and frame
+  generation.** His bare forearms, hands and thighs smeared or tore whenever he moved against
+  the background, while his body, hat and gear were fine. Cause: the motion CheezyEmu gives FSR
+  for characters is rebuilt from the game's bones, and it blended every bone slot a mesh's
+  vertices have room for. The limb mesh uses 7 of its 8 slots and keeps other data in the
+  eighth, which put the limbs in the wrong place, so their pixels fell back to the scenery's
+  motion. The game says how many slots each mesh uses, and that count is used now. Checked on
+  captured frames: generated frames now show the arms and hands as the real frames do, running,
+  strafing, side hops and a backflip. Not checked inside a crawl tunnel (no save near one), but
+  it is the same mesh. Also: a mesh drawn twice in a frame with two poses now gets motion for
+  both. `EDEN_NX2_OOT_INFLUENCES=0` and `EDEN_NX2_OOT_MESH_INSTANCES=0` bring the old behaviour
+  back, to compare.
 - **Less hitching while walking around.**
   - The buffer collector ran in emergency mode on every frame in Ocarina of Time: the game keeps
     about 1.5 GB of buffers in use, and "more than 1 GB of buffers" was the emergency. It threw

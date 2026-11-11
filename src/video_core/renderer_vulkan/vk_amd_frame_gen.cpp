@@ -1056,6 +1056,17 @@ void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
                          FgCapture::session, frame_id, in.reset, frame_time_ms,
                          camera.near_plane, camera.far_plane, camera.fov * 57.2958f);
                 FgCapture::stage = 2;
+            } else if (FgCapture::stage == 3) {
+                // The next frame's motion too ("motion1"): what takes the second saved frame
+                // back to the first, to check the vectors against the two pictures.
+                FgCapture::Record(*state.owner, *cmdbuf, in.motion_vectors.image,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  in.motion_vectors.aspect, in.render_size.width,
+                                  in.render_size.height, 4,
+                                  fmt::format("{}_motion1_{}x{}_{}_id{}.raw", FgCapture::session,
+                                              in.render_size.width, in.render_size.height,
+                                              static_cast<u32>(in.motion_vectors.format),
+                                              frame_id));
             }
         }
 

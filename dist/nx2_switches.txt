@@ -61,6 +61,10 @@ EDEN_NX2_FENCE_BATCH=1
 # same time stop waiting for each other. =0 if the GPU driver misbehaves with it.
 #EDEN_NX2_VK_ALLOCATOR=0
 
+# Build 12 fixed ghosting on Link's arms and legs with FSR and frame generation (the motion of
+# his limbs was built from the wrong number of bones). =0 brings the old motion back, to compare.
+#EDEN_NX2_OOT_INFLUENCES=0
+
 # Build 12 cleans up idle buffers only. =1 brings the old rule back (it ran on every frame in
 # Ocarina of Time and caused hitching); only to compare.
 #EDEN_NX2_BUFFER_GC_TOTAL=1
