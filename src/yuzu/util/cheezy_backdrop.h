@@ -193,12 +193,12 @@ private:
     std::array<Beam, 6> Beams() const {
         // angle (deg), spread (deg), sway speed, breathe speed
         static constexpr std::array<std::array<qreal, 4>, 6> shape{{
-            {{30, 2.6, 0.050, 0.21}},
-            {{38, 1.6, 0.070, 0.17}},
-            {{45, 3.4, 0.040, 0.13}},
-            {{53, 1.9, 0.060, 0.23}},
-            {{61, 2.8, 0.035, 0.19}},
-            {{70, 1.5, 0.055, 0.15}},
+            {{28, 4.5, 0.050, 0.21}},
+            {{36, 2.8, 0.070, 0.17}},
+            {{44, 5.5, 0.040, 0.13}},
+            {{52, 3.2, 0.060, 0.23}},
+            {{60, 4.8, 0.035, 0.19}},
+            {{69, 2.6, 0.055, 0.15}},
         }};
         constexpr qreal to_rad = 3.14159265 / 180;
         std::array<Beam, 6> beams;
@@ -215,39 +215,63 @@ private:
         return beams;
     }
 
+    /// How much sunlight reaches a point at `angle` (radians from the source) and `distance`
+    /// (share of the beams' reach): soft bell-shaped beams with a faint halo, broken into finer
+    /// shafts that drift and shimmer, fading with distance.
+    qreal LightAt(const std::array<Beam, 6>& beams, qreal angle, qreal distance) const {
+        if (distance >= 1.0) {
+            return 0.0;
+        }
+        qreal light = 0;
+        for (const Beam& beam : beams) {
+            const qreal across = (angle - beam.angle) / beam.spread;
+            const qreal core = std::exp(-across * across * 1.6);
+            const qreal halo = std::exp(-across * across * 0.18) * 0.22;
+            light += (core + halo) * beam.intensity;
+        }
+        // Finer shafts: light through leaves, slowly shifting.
+        const qreal shafts = 0.72 + 0.16 * std::sin(angle * 97.0 + time * 0.37) +
+                             0.12 * std::sin(angle * 211.0 - time * 0.23 + distance * 3.0);
+        // Strongest a little way in from the source, then fading out.
+        const qreal fall = std::pow(1.0 - distance, 1.6) * std::min(1.0, distance * 6.0 + 0.35);
+        return std::min(1.0, light * shafts) * fall;
+    }
+
     void PaintSun(QPainter& p, const QRect& area) const {
         const QPointF source = Source(area);
         const qreal reach = std::hypot(area.width(), area.height()) * 1.15;
         p.setPen(Qt::NoPen);
         // The glow where the light comes in.
-        QRadialGradient bloom{source, reach * 0.55};
-        bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 70));
-        bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 18));
+        QRadialGradient bloom{source, reach * 0.6};
+        bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 64));
+        bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 16));
         bloom.setColorAt(1, QColor(0xFF, 0xC8, 0x5A, 0));
         p.setBrush(bloom);
         p.drawRect(area);
-        // Each beam: three wedges of shrinking width (soft edges), fading with distance.
-        static constexpr std::array<std::array<qreal, 2>, 3> layers{
-            {{{1.0, 0.30}}, {{0.6, 0.35}}, {{0.28, 0.45}}}};
-        for (const Beam& beam : Beams()) {
-            for (const auto& layer : layers) {
-                const qreal half = beam.spread * layer[0];
-                QPainterPath wedge;
-                wedge.moveTo(source);
-                wedge.lineTo(source + QPointF(std::cos(beam.angle - half),
-                                              std::sin(beam.angle - half)) * reach);
-                wedge.lineTo(source + QPointF(std::cos(beam.angle + half),
-                                              std::sin(beam.angle + half)) * reach);
-                wedge.closeSubpath();
-                const int alpha = int(95 * beam.intensity * layer[1]);
-                QRadialGradient fall{source, reach};
-                fall.setColorAt(0.0, QColor(0xFF, 0xEC, 0xB8, alpha));
-                fall.setColorAt(0.45, QColor(0xFF, 0xD8, 0x86, int(alpha * 0.55)));
-                fall.setColorAt(0.85, QColor(0xFF, 0xC8, 0x5A, 0));
-                p.setBrush(fall);
-                p.drawPath(wedge);
+
+        // The beams, computed per pixel at a fifth of the size and scaled up smoothly: no edges.
+        const int w = std::max(16, area.width() / 5);
+        const int h = std::max(16, area.height() / 5);
+        if (rays.width() != w || rays.height() != h) {
+            rays = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
+        }
+        const auto beams = Beams();
+        const qreal sx = qreal(area.width()) / w;
+        const qreal sy = qreal(area.height()) / h;
+        for (int y = 0; y < h; ++y) {
+            auto* const row = reinterpret_cast<QRgb*>(rays.scanLine(y));
+            for (int x = 0; x < w; ++x) {
+                const qreal px = area.left() + (x + 0.5) * sx - source.x();
+                const qreal py = area.top() + (y + 0.5) * sy - source.y();
+                const qreal light =
+                    LightAt(beams, std::atan2(py, px), std::hypot(px, py) / reach);
+                const int a = std::clamp(int(light * 120), 0, 255);
+                // Warm, a little whiter where it is brightest (premultiplied).
+                row[x] = qRgba(a * 255 / 255, a * (220 + light * 30) / 255,
+                               a * (150 + light * 70) / 255, a);
             }
         }
+        p.drawImage(area, rays);
     }
 
     void PaintMotes(QPainter& p, const QRect& area) const {
@@ -256,21 +280,13 @@ private:
         const auto beams = Beams();
         p.setPen(Qt::NoPen);
         for (const Mote& mote : motes) {
-            // How much sunlight is on this mote: inside a beam, near its middle, not too far.
+            // Motes catch the light: bright inside a beam, barely there in the shade.
             const QPointF d = mote.pos - source;
-            const qreal angle = std::atan2(d.y(), d.x());
-            const qreal distance = std::hypot(d.x(), d.y()) / reach;
-            qreal light = 0;
-            for (const Beam& beam : beams) {
-                const qreal across = std::abs(angle - beam.angle) / beam.spread;
-                if (across < 1.2) {
-                    const qreal edge = 1.0 - across / 1.2;
-                    light += edge * edge * beam.intensity;
-                }
-            }
-            light = std::min(1.0, light) * std::clamp(1.1 - distance, 0.0, 1.0);
+            const qreal light =
+                std::min(1.0, 1.5 * LightAt(beams, std::atan2(d.y(), d.x()),
+                                            std::hypot(d.x(), d.y()) / reach));
             const qreal twinkle = 0.8 + 0.2 * std::sin(time * 2.3 + mote.seed);
-            const int alpha = int((34 + 221 * light) * twinkle);
+            const int alpha = int((30 + 225 * light) * twinkle);
             const qreal r = mote.size * (1.0 + 1.6 * light);
             QRadialGradient glow{mote.pos, r * 2.4};
             glow.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, alpha));
@@ -280,6 +296,8 @@ private:
             p.drawEllipse(mote.pos, r * 2.4, r * 2.4);
         }
     }
+
+    mutable QImage rays; ///< PaintSun's light, at a fifth of the size
 
     std::vector<Mote> motes;
     QRectF bounds;
