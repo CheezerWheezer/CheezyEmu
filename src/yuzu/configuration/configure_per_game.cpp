@@ -609,6 +609,9 @@ void ConfigurePerGame::LoadConfiguration() {
     }
 
     ui->display_filename->setText(QString::fromStdString(file->GetName()));
+    // Long names: show their start, not their end (a line edit shows the cursor's end).
+    ui->display_name->setCursorPosition(0);
+    ui->display_filename->setCursorPosition(0);
 
     if (loader != nullptr) {
         ui->display_format->setText(

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <string>
+#include <QFont>
+#include <QFontMetrics>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QStringList>
@@ -98,6 +100,11 @@ bool RecommendedSettingsDialog::Ask(QWidget* parent, const QString& host_text) {
     auto* const use = box.addButton(tr("Use recommended settings"), QMessageBox::AcceptRole);
     box.addButton(tr("Not now"), QMessageBox::RejectRole);
     box.setDefaultButton(use);
+    // The theme draws the default button's text bold, but the button is sized for normal text:
+    // the label was cut off ("Jse recommended setting").
+    QFont bold = use->font();
+    bold.setBold(true);
+    use->setMinimumWidth(QFontMetrics{bold}.horizontalAdvance(use->text()) + 40);
     box.exec();
     return box.clickedButton() == use;
 }

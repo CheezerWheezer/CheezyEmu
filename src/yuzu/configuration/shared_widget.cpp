@@ -6,6 +6,7 @@
 
 #include "yuzu/configuration/shared_widget.h"
 
+#include <algorithm>
 #include <functional>
 #include <limits>
 #include <typeindex>
@@ -358,24 +359,38 @@ QWidget* Widget::CreateSlider(bool reversed, float multiplier, const QString& gi
     }
 
     // A box to type the number in, next to the slider, in place of the read-only value: an
-    // exact frame rate limit or sharpness is hard to hit with a trackpad or a controller. Only
-    // where the number shown is the setting's own value.
-    if (setting.IsIntegral() && !reversed && multiplier == default_multiplier) {
+    // exact frame rate limit or sharpness is hard to hit with a trackpad or a controller. It
+    // shows the number the value label showed (reversed sliders and multipliers included, as
+    // the sharpness percentage) and sets the nearest slider position.
+    if (setting.IsIntegral() && multiplier > 0.0f) {
+        const int max_val = std::strtol(setting.MaxVal().c_str(), nullptr, 0);
+        const float scale = multiplier == default_multiplier ? 1.0f : multiplier;
+        const auto to_shown = [=](int value) {
+            return static_cast<int>((reversed ? max_val - value : value) * scale + 0.5f);
+        };
+        const auto from_shown = [=](int shown) {
+            const int value = static_cast<int>(shown / scale + 0.5f);
+            return reversed ? max_val - value : value;
+        };
         auto* const box = new QSpinBox(this);
-        box->setRange(slider->minimum(), slider->maximum());
-        box->setValue(slider->value());
+        const int shown_a = to_shown(slider->minimum());
+        const int shown_b = to_shown(slider->maximum());
+        box->setRange((std::min)(shown_a, shown_b), (std::max)(shown_a, shown_b));
+        box->setValue(to_shown(slider->value()));
         box->setSuffix(suffix);
         box->setKeyboardTracking(false); // the value is taken when typing ends
         box->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
         feedback->hide();
         layout->addWidget(box);
-        slider->connect(slider, &QAbstractSlider::valueChanged, box, [box](int value) {
+        slider->connect(slider, &QAbstractSlider::valueChanged, box, [box, to_shown](int value) {
             const QSignalBlocker blocker{box};
-            box->setValue(value);
+            box->setValue(to_shown(value));
         });
         const bool per_game = !Settings::IsConfiguringGlobal();
         box->connect(box, QOverload<int>::of(&QSpinBox::valueChanged), slider,
-                     [slider_ = slider, touch, per_game](int value) {
+                     [slider_ = slider, touch, per_game, from_shown](int shown) {
+                         const int value = std::clamp(from_shown(shown), slider_->minimum(),
+                                                      slider_->maximum());
                          if (slider_->value() == value) {
                              return;
                          }
