@@ -824,6 +824,11 @@ PipelineCache::~PipelineCache() {
                    std::chrono::steady_clock::now() - from)
             .count();
     };
+    // The precache that carried on after Skip: its threads stop after their current build.
+    if (precache_after_skip.joinable()) {
+        precache_after_skip.request_stop();
+        precache_after_skip.join();
+    }
     const size_t builds = workers.PendingWork();
     serialization_stop.request_stop();
     background_pipelines.Stop();
@@ -1047,6 +1052,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
                                       const VideoCore::DiskResourceLoadCallback& callback) {
     if (title_id == 0) {
         return;
+    }
+    if (precache_after_skip.joinable()) {
+        precache_after_skip.request_stop();
+        precache_after_skip.join();
     }
     if (!pipeline_cache_filename.empty()) {
         background_pipelines.Stop();
@@ -1440,6 +1449,9 @@ struct PipelineCache::RecipeRun {
     std::vector<u64> built; ///< Graphics key hashes this run built
     std::atomic<size_t> skipped{};
     std::atomic<size_t> not_for_this_gpu{};
+    /// Set when the run carries on during the game (after Skip): the jobs then leave the game's
+    /// pipeline maps alone, which the GPU thread changes.
+    std::atomic<bool> in_game{false};
 };
 
 bool PipelineCache::NormalizeCachedGraphicsKey(GraphicsPipelineCacheKey& key,
@@ -1611,7 +1623,9 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
             if (compute) {
                 VideoCommon::CheckComputeRecord(envs[0], compute_key.shared_memory_size,
                                                 compute_key.workgroup_size);
-                if (compute_cache.contains(compute_key)) {
+                // During the game (after Skip) the GPU thread changes compute_cache: not read.
+                if (!run->in_game.load(std::memory_order_relaxed) &&
+                    compute_cache.contains(compute_key)) {
                     ++run->skipped;
                     return false;
                 }
@@ -1633,7 +1647,8 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
                     return false;
                 }
             }
-            if (graphics_cache.contains(graphics_key)) {
+            if (!run->in_game.load(std::memory_order_relaxed) &&
+                graphics_cache.contains(graphics_key)) {
                 ++run->skipped;
                 return false;
             }
@@ -1950,6 +1965,33 @@ void PipelineCache::MakeShaderRecipe(u64 title_id, const std::filesystem::path& 
     }
 }
 
+namespace {
+/// How many of `threads` the shader precache lets build with `room` bytes the system can still
+/// commit (Common::GetSystemCommitRoom).
+size_t PrecacheThreadsForRoom(u64 room, size_t threads) {
+    return room < (u64{3} << 30)    ? 1
+           : room < (u64{6} << 30)  ? (std::max<size_t>)(threads / 4, 1)
+           : room < (u64{10} << 30) ? (std::max<size_t>)(threads / 2, 1)
+                                    : threads;
+}
+
+/// Skip on the loading screen hands the rest of the precache to the game session (on by
+/// default); EDEN_NX2_PRECACHE_AFTER_SKIP=0 stops it at Skip as before.
+bool PrecacheAfterSkip() {
+    const char* const value = std::getenv("EDEN_NX2_PRECACHE_AFTER_SKIP");
+    return value == nullptr || value[0] != '0';
+}
+
+/// Test: EDEN_NX2_PRECACHE_SKIP_AFTER=<seconds> presses Skip that long into the precache.
+bool PrecacheSkipDue(std::chrono::steady_clock::time_point begin) {
+    static const long seconds = [] {
+        const char* const value = std::getenv("EDEN_NX2_PRECACHE_SKIP_AFTER");
+        return value != nullptr ? std::strtol(value, nullptr, 10) : -1L;
+    }();
+    return seconds >= 0 && std::chrono::steady_clock::now() - begin >= std::chrono::seconds{seconds};
+}
+} // Anonymous namespace
+
 void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                                     std::unordered_set<u64> precached, std::stop_token stop_loading,
                                     const VideoCore::DiskResourceLoadCallback& callback,
@@ -2034,17 +2076,30 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
     const size_t hardware_threads = std::clamp<size_t>(std::thread::hardware_concurrency(), 1, 64);
     const size_t num_threads = hardware_threads > 4 ? hardware_threads - 2
                                                     : (std::max<size_t>)(hardware_threads - 1, 1);
-    // How many of them may start another build: fewer when the system is short of memory. A
-    // PC froze during this build when another program had taken nearly all of the commit limit
-    // (56 GB) and 16 threads were compiling the largest pipelines.
-    std::atomic<size_t> allowed_threads{num_threads};
+    // Shared by the build threads and, after Skip, the thread that carries on during the game.
+    // The build threads are its last member: destroyed (joined) first.
+    struct BuildState {
+        std::vector<PrecacheJob> jobs;
+        std::vector<u8> built;
+        std::atomic<size_t> next{};
+        std::atomic<size_t> done{};
+        std::atomic<bool> cancel{false};
+        // How many of the threads may start another build: fewer when the system is short of
+        // memory (a PC froze during this build when another program had taken nearly all of the
+        // commit limit and 16 threads were compiling the largest pipelines), none during the
+        // game while its own shaders build.
+        std::atomic<size_t> allowed_threads{};
+        std::vector<std::jthread> threads;
+    };
+    const auto state = std::make_shared<BuildState>();
+    state->jobs = std::move(jobs);
+    state->built.resize(state->jobs.size());
+    state->allowed_threads = num_threads;
+    const size_t num_jobs = state->jobs.size();
     u32 short_of_memory_ticks = 0;
     u32 memory_check_ticks = 0;
-    std::vector<u8> built(jobs.size());
-    std::atomic<size_t> next{};
-    std::atomic<size_t> done{};
-    std::atomic<bool> cancel{false};
     bool skipped = false;
+    bool after_skip = false;
     auto last_progress = begin;
     size_t last_done = 0;
     double last_cpu = ProcessCpuSeconds();
@@ -2052,54 +2107,59 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
     LOG_INFO(Render_Vulkan,
              "Shader precache: {} cached graphics pipelines, {} recipe pipelines and {} of {} "
              "compute programs to build on {} threads",
-             graphics_jobs, recipe_end - recipe_begin, jobs.size() - recipe_end, file_entries,
+             graphics_jobs, recipe_end - recipe_begin, num_jobs - recipe_end, file_entries,
              num_threads);
-    if (!jobs.empty()) {
-        std::vector<std::jthread> threads;
+    if (num_jobs != 0) {
         for (size_t thread = 0; thread < num_threads; ++thread) {
-            threads.emplace_back([&jobs, &built, &next, &done, &cancel, &allowed_threads, thread] {
+            state->threads.emplace_back([s = state.get(), thread] {
                 Common::SetCurrentThreadName("VkShaderPrecache");
                 Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
-                while (!cancel.load(std::memory_order_relaxed)) {
-                    if (thread >= allowed_threads.load(std::memory_order_relaxed)) {
+                while (!s->cancel.load(std::memory_order_relaxed)) {
+                    if (thread >= s->allowed_threads.load(std::memory_order_relaxed)) {
                         std::this_thread::sleep_for(std::chrono::milliseconds{200});
                         continue;
                     }
-                    const size_t index = next.fetch_add(1);
-                    if (index >= jobs.size()) {
+                    const size_t index = s->next.fetch_add(1);
+                    if (index >= s->jobs.size()) {
                         break;
                     }
                     try {
                         // Built and destroyed here: only the driver's cache keeps it.
-                        built[index] = jobs[index].build();
+                        s->built[index] = s->jobs[index].build();
                     } catch (const std::exception& e) {
                         LOG_DEBUG(Render_Vulkan, "Shader precache: {}", e.what());
                     }
-                    jobs[index].build = {};
-                    done.fetch_add(1);
+                    s->jobs[index].build = {};
+                    s->done.fetch_add(1);
                 }
             });
         }
-        while (done < jobs.size()) {
-            if (stop_loading.stop_requested() || ShaderWarm::TakeSkipWarm()) {
-                // Every thread stops after its current build; the scope end joins them.
-                cancel = true;
+        while (state->done < num_jobs) {
+            if (stop_loading.stop_requested()) {
+                // Every thread stops after its current build.
+                state->cancel = true;
                 skipped = true;
                 break;
             }
+            if (ShaderWarm::TakeSkipWarm() || PrecacheSkipDue(begin)) {
+                skipped = true;
+                if (PrecacheAfterSkip()) {
+                    after_skip = true;
+                } else {
+                    state->cancel = true;
+                }
+                break;
+            }
             if (callback) {
-                callback(VideoCore::LoadCallbackStage::Warm, done, jobs.size());
+                callback(VideoCore::LoadCallbackStage::Warm, state->done, num_jobs);
             }
             // Once a second: how much memory the system can still hand out decides how many
             // threads build. Under 1.5 GiB for half a minute, the rest is left for later.
             if (++memory_check_ticks >= 10) {
                 memory_check_ticks = 0;
                 if (const auto room = Common::GetSystemCommitRoom()) {
-                    const size_t allowed = *room < (u64{3} << 30)    ? 1
-                                           : *room < (u64{6} << 30)  ? (std::max<size_t>)(num_threads / 4, 1)
-                                           : *room < (u64{10} << 30) ? (std::max<size_t>)(num_threads / 2, 1)
-                                                            : num_threads;
-                    if (allowed != allowed_threads.exchange(allowed)) {
+                    const size_t allowed = PrecacheThreadsForRoom(*room, num_threads);
+                    if (allowed != state->allowed_threads.exchange(allowed)) {
                         LOG_INFO(Render_Vulkan,
                                  "Shader precache: {} MiB of memory left on this system, {} of {} "
                                  "threads build",
@@ -2112,7 +2172,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                                     "left for 30 seconds; the remaining shaders are built on a "
                                     "later start. Close other programs, or let Windows manage "
                                     "the page file size.");
-                        cancel = true;
+                        state->cancel = true;
                         skipped = true;
                         break;
                     }
@@ -2127,13 +2187,13 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                 LOG_INFO(Render_Vulkan,
                          "Shader precache: {} of {} done after {:.0f} s ({:.0f} a second on {:.1f} "
                          "CPU cores{})",
-                         done.load(), jobs.size(),
+                         state->done.load(), num_jobs,
                          std::chrono::duration<double>(now - begin).count(),
-                         static_cast<double>(done.load() - last_done) / window,
+                         static_cast<double>(state->done.load() - last_done) / window,
                          (cpu - last_cpu) / window,
                          HostAllocatorComparison() ? (compare_one_heap ? ", process heap" : ", own heaps")
                                                    : "");
-                last_done = done.load();
+                last_done = state->done.load();
                 last_cpu = cpu;
                 if (HostAllocatorComparison()) {
                     compare_one_heap = !compare_one_heap;
@@ -2143,53 +2203,142 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
             std::this_thread::sleep_for(std::chrono::milliseconds{100});
         }
     }
-    const size_t total_built = static_cast<size_t>(std::count(built.begin(), built.end(), u8{1}));
-    if (compute_pending && !skipped) {
-        if (const auto stamp_done = stamp(file_entries)) {
-            ShaderWarm::WriteWarmMarker(warm_file, *stamp_done);
-        }
-    }
-    const size_t precached_before = precached.size();
-    for (size_t index = 0; index < graphics_jobs; ++index) {
-        if (built[index]) {
-            precached.insert(jobs[index].graphics_hash);
-        }
-    }
-    if (recipe) {
-        // What the recipe built is on the list too, so neither a later recipe (a new build's,
-        // with more pipelines) nor the disk cache's own records build it again; and a recipe
-        // looked at to the end is marked done for this driver.
-        precached.insert(recipe->built.begin(), recipe->built.end());
-        if (!skipped && !stop_loading.stop_requested()) {
-            if (const auto done_stamp = ShaderWarm::CurrentWarmStamp(
-                    recipe->file, recipe->records, device.GetDriverVersion(), device.GetDeviceID(),
+
+    // What a finished, skipped or stopped run leaves: markers for a run looked at to the end,
+    // the list of pipelines built, the driver cache written. Here, or after Skip at the end of
+    // the build during the game.
+    auto finish = [this, state, recipe, precached = std::move(precached), title_id, graphics_jobs,
+                   compute_pending, file_entries, warm_file, begin](bool complete, bool stopped,
+                                                                    const char* how) mutable {
+        const size_t total_built = static_cast<size_t>(
+            std::count(state->built.begin(), state->built.end(), u8{1}));
+        if (compute_pending && complete) {
+            if (const auto stamp_done = ShaderWarm::CurrentWarmStamp(
+                    warm_file, file_entries, device.GetDriverVersion(), device.GetDeviceID(),
                     CACHE_VERSION)) {
-                ShaderWarm::WriteWarmMarker(recipe->file, *done_stamp);
+                ShaderWarm::WriteWarmMarker(warm_file, *stamp_done);
             }
         }
+        const size_t precached_before = precached.size();
+        for (size_t index = 0; index < graphics_jobs; ++index) {
+            if (state->built[index]) {
+                precached.insert(state->jobs[index].graphics_hash);
+            }
+        }
+        if (recipe) {
+            // What the recipe built is on the list too, so neither a later recipe (a new build's,
+            // with more pipelines) nor the disk cache's own records build it again; and a recipe
+            // looked at to the end is marked done for this driver.
+            precached.insert(recipe->built.begin(), recipe->built.end());
+            if (complete) {
+                if (const auto done_stamp = ShaderWarm::CurrentWarmStamp(
+                        recipe->file, recipe->records, device.GetDriverVersion(),
+                        device.GetDeviceID(), CACHE_VERSION)) {
+                    ShaderWarm::WriteWarmMarker(recipe->file, *done_stamp);
+                }
+            }
+            LOG_INFO(Render_Vulkan,
+                     "Shader recipe: {} of {} pipelines built now, {} were built before or twice "
+                     "in the file, {} need a feature this GPU lacks",
+                     recipe->built.size(), recipe->records, recipe->skipped.load(),
+                     recipe->not_for_this_gpu.load());
+        }
+        if (precached.size() != precached_before) {
+            ShaderWarm::WritePrecachedPipelines(
+                ShaderWarm::PrecachedPipelinesPath(title_id),
+                {device.GetDriverVersion(), device.GetDeviceID(), CACHE_VERSION}, precached);
+        }
+        if (!stopped && total_built != 0) {
+            // Without this, the builds reach the file only at the next boot, game change or clean
+            // close, and are lost if the app ends otherwise.
+            QueueVulkanPipelineCacheSave();
+        }
+        const size_t done = state->done.load();
+        const size_t not_needed = recipe ? recipe->skipped + recipe->not_for_this_gpu : 0;
         LOG_INFO(Render_Vulkan,
-                 "Shader recipe: {} of {} pipelines built now, {} were built before or twice in "
-                 "the file, {} need a feature this GPU lacks",
-                 recipe->built.size(), recipe->records, recipe->skipped.load(),
-                 recipe->not_for_this_gpu.load());
+                 "Shader precache: {}, {} built, {} not needed, {} failed, {} not reached, {:.1f} s",
+                 how, total_built, not_needed, done - std::min(done, total_built + not_needed),
+                 state->jobs.size() - std::min(state->jobs.size(), done),
+                 std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count());
+    };
+
+    if (after_skip) {
+        // Skip on the loading screen: the game starts now and the rest builds while it runs, on
+        // one or two threads, paused while the game builds its own shaders or memory is short.
+        // A pipeline the game needs before then is built by the game as before.
+        if (recipe) {
+            recipe->in_game = true;
+        }
+        const size_t game_threads = hardware_threads >= 12 ? 2 : 1;
+        state->allowed_threads = 0;
+        LOG_INFO(Render_Vulkan,
+                 "Shader precache: skipped at {} of {}; the rest builds during the game on up to "
+                 "{} threads (EDEN_NX2_PRECACHE_AFTER_SKIP=0 stops at Skip instead)",
+                 state->done.load(), num_jobs, game_threads);
+        precache_after_skip = std::jthread([this, state, game_threads,
+                                            finish = std::move(finish)](std::stop_token stop) mutable {
+            Common::SetCurrentThreadName("VkPrecacheAfterSkip");
+            Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
+            auto last_log = std::chrono::steady_clock::now();
+            size_t logged_done = state->done.load();
+            u32 short_ticks = 0;
+            u32 minutes = 0;
+            bool gave_up = false;
+            while (state->done < state->jobs.size() && !stop.stop_requested()) {
+                size_t allowed = game_threads;
+                if (const auto room = Common::GetSystemCommitRoom()) {
+                    allowed = (std::min)(allowed, PrecacheThreadsForRoom(*room, game_threads));
+                    // The game itself needs the room: nothing builds under 3 GiB, and after a
+                    // minute of that the rest waits for the next start.
+                    if (*room < (u64{3} << 30)) {
+                        allowed = 0;
+                        if (++short_ticks >= 60) {
+                            LOG_WARNING(Render_Vulkan,
+                                        "Shader precache: under 3 GiB of memory left on this "
+                                        "system for a minute; the rest is built on a later start");
+                            gave_up = true;
+                            break;
+                        }
+                    } else {
+                        short_ticks = 0;
+                    }
+                }
+                // The game's own shader builds go first.
+                if (workers.PendingWork() != 0) {
+                    allowed = 0;
+                }
+                state->allowed_threads = allowed;
+                if (const auto now = std::chrono::steady_clock::now();
+                    now - last_log >= std::chrono::minutes{1}) {
+                    LOG_INFO(Render_Vulkan,
+                             "Shader precache during the game: {} of {} done, {} in the last "
+                             "minute",
+                             state->done.load(), state->jobs.size(),
+                             state->done.load() - logged_done);
+                    last_log = now;
+                    logged_done = state->done.load();
+                    // Every five minutes the driver's cache is written, so a crash or a forced
+                    // close keeps what was built (the next start finds it in the driver cache).
+                    if (++minutes % 5 == 0) {
+                        QueueVulkanPipelineCacheSave();
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::seconds{1});
+            }
+            const bool complete = state->done >= state->jobs.size();
+            state->cancel = true;
+            state->threads.clear();
+            finish(complete, !complete && stop.stop_requested(),
+                   complete  ? "finished during the game"
+                   : gave_up ? "stopped during the game, short of memory"
+                             : "stopped during the game (closed)");
+        });
+        return;
     }
-    if (precached.size() != precached_before) {
-        ShaderWarm::WritePrecachedPipelines(
-            ShaderWarm::PrecachedPipelinesPath(title_id),
-            {device.GetDriverVersion(), device.GetDeviceID(), CACHE_VERSION}, precached);
-    }
-    if (!stop_loading.stop_requested() && total_built != 0) {
-        // Without this, the builds reach the file only at the next boot, game change or clean
-        // close, and are lost if the app ends otherwise.
-        QueueVulkanPipelineCacheSave();
-    }
-    const size_t not_needed = recipe ? recipe->skipped + recipe->not_for_this_gpu : 0;
-    LOG_INFO(Render_Vulkan,
-             "Shader precache: {}, {} built, {} not needed, {} failed, {} not reached, {:.1f} s",
-             stop_loading.stop_requested() ? "stopped" : (skipped ? "skipped" : "finished"),
-             total_built, not_needed, done - std::min(done.load(), total_built + not_needed),
-             jobs.size() - std::min(jobs.size(), done.load()),
-             std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count());
+    state->cancel = true;
+    state->threads.clear();
+    finish(!skipped && !stop_loading.stop_requested(), stop_loading.stop_requested(),
+           stop_loading.stop_requested() ? "stopped" : (skipped ? "skipped" : "finished"));
 }
 
 void PipelineCache::QueueVulkanPipelineCacheFlush() {

@@ -252,7 +252,7 @@ private:
     /// missing reads guessed) are built, then thrown away. They only fill the driver's shader
     /// cache, so a later build of the same pipeline finds the driver's work done. Reports progress
     /// through `callback` and returns when it is done, skipped from the loading screen or the load
-    /// is stopped.
+    /// is stopped. After Skip the rest carries on during the game (precache_after_skip).
     void PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                          std::unordered_set<u64> precached, std::stop_token stop_loading,
                          const VideoCore::DiskResourceLoadCallback& callback,
@@ -360,6 +360,9 @@ private:
     Common::ThreadWorker serialization_thread;
     DynamicFeatures dynamic_features;
     PipelinePrebuild<GraphicsPipelineCacheKey, GraphicsPipeline> background_pipelines;
+    /// The shader precache's rest after Skip on the loading screen, built during the game
+    /// (PrecacheShaders). Stopped first in the destructor and at the next load.
+    std::jthread precache_after_skip;
 };
 
 } // namespace Vulkan
