@@ -218,11 +218,14 @@ private:
                                                     const ShaderInfo* shader,
                                                     std::span<const u64> keep_pointers = {});
 
+    /// `throwaway`: the caller destroys the pipeline right away (the shader precache). Such a
+    /// pipeline is never handed to a worker, which would build it after it is gone.
     ComputePipelineCacheEntry CreateComputePipeline(ShaderPools& pools,
                                                      const ComputePipelineCacheKey& key,
                                                      Shader::Environment& env,
                                                      PipelineStatistics* statistics,
-                                                     bool build_in_parallel);
+                                                     bool build_in_parallel,
+                                                     bool throwaway = false);
 
     void SerializeVulkanPipelineCache(const std::filesystem::path& filename,
                                       const vk::PipelineCache& pipeline_cache, u32 cache_version);

@@ -1630,7 +1630,7 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
                     return false;
                 }
                 ShaderPools pools;
-                return CreateComputePipeline(pools, compute_key, envs[0], nullptr, false)
+                return CreateComputePipeline(pools, compute_key, envs[0], nullptr, false, true)
                            .pipeline != nullptr;
             }
             VideoCommon::CheckGraphicsRecord(graphics_key.unique_hashes, envs.size());
@@ -2053,7 +2053,8 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                                     static const GuessMissing guess{};
                                     env.SetGuessMissing(&guess);
                                     ShaderPools pools;
-                                    return CreateComputePipeline(pools, key, env, nullptr, false)
+                                    return CreateComputePipeline(pools, key, env, nullptr, false,
+                                                                 true)
                                                .pipeline != nullptr;
                                 }});
             }
@@ -3578,7 +3579,7 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(const ComputePipe
 
 ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(
     ShaderPools& pools, const ComputePipelineCacheKey& key, Shader::Environment& env,
-    PipelineStatistics* statistics, bool build_in_parallel) try {
+    PipelineStatistics* statistics, bool build_in_parallel, bool throwaway) try {
     auto hash = key.Hash();
     if (device.HasBrokenCompute()) {
         LOG_ERROR(Render_Vulkan, "Skipping {:#016x}", hash);
@@ -3634,6 +3635,12 @@ ComputePipelineCacheEntry PipelineCache::CreateComputePipeline(
     }
     const bool deferred = program.info.uses_software_matrix &&
                           device.DefersSoftwareMatrixPipelines();
+    if (deferred && throwaway) {
+        // The precache destroys what it builds at once, and the deferred worker would build this
+        // one after that (a crash after the precache on AMD). The game builds it on that worker
+        // when it needs it, without waiting, so the precache leaves it out.
+        return {.failure = "software matrix pipeline left to the game's deferred builds"};
+    }
     Common::ThreadWorker* const thread_worker{deferred            ? &deferred_workers
                                               : build_in_parallel ? &workers
                                                                   : nullptr};
