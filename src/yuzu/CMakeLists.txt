@@ -220,6 +220,8 @@ add_executable(yuzu
     util/cheezy_backdrop.h
     util/rounded_popups.cpp
     util/rounded_popups.h
+    util/menu_sounds.cpp
+    util/menu_sounds.h
     util/limitable_input_dialog.cpp
     util/limitable_input_dialog.h
     util/overlay_dialog.cpp

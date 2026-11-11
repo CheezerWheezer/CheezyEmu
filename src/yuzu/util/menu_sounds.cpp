@@ -1,0 +1,475 @@
+// SPDX-FileCopyrightText: 2026 CheezyEmu contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#include "yuzu/util/menu_sounds.h"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <numbers>
+#include <vector>
+
+#include <QDir>
+#include <QFile>
+#include <QGuiApplication>
+
+#include <SDL3/SDL.h>
+
+#include "common/logging.h"
+#include "qt_common/config/uisettings.h"
+
+namespace {
+
+constexpr int Rate = 48000;
+constexpr double TwoPi = 2.0 * std::numbers::pi;
+
+/// The volume setting (0 to 100) as a gain, on a curve that sounds even across the slider.
+float Gain(int percent) {
+    return static_cast<float>(std::pow(std::clamp(percent, 0, 100) / 100.0, 1.7));
+}
+
+/// A tiny white-noise source.
+struct Noise {
+    uint32_t state = 0x9E3779B9u;
+    float Next() {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return static_cast<float>(state) / 2147483648.0f - 1.0f;
+    }
+};
+
+/// The click (mono): a soft wooden tick. A short tone that drops from 2.1 to 1.5 kHz, a little
+/// low body under it and a breath of noise at the very start.
+const std::vector<float>& ClickWave() {
+    static const std::vector<float> wave = [] {
+        const int n = Rate * 75 / 1000;
+        std::vector<float> w(n);
+        Noise noise;
+        double phase = 0.0;
+        float lowpass = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            const double t = double(i) / Rate;
+            phase += TwoPi * (1500.0 + 600.0 * std::exp(-t / 0.0035)) / Rate;
+            const double tone = std::sin(phase) * std::exp(-t / 0.011);
+            const double body = std::sin(TwoPi * 430.0 * t) * std::exp(-t / 0.020) * 0.4;
+            lowpass += 0.35f * (noise.Next() - lowpass);
+            const double breath = lowpass * std::exp(-t / 0.0012) * 0.5;
+            const double attack = std::min(1.0, t / 0.0005);
+            const double tail = std::min(1.0, double(n - i) / (Rate * 0.005));
+            w[i] = static_cast<float>((tone + body + breath) * attack * tail * 0.32);
+        }
+        return w;
+    }();
+    return wave;
+}
+
+/// The chime (stereo): four bell notes rising (D, A, D, F#) and spreading left to right, in a
+/// small soft room.
+const std::vector<float>& ChimeWave() {
+    static const std::vector<float> wave = [] {
+        const int n = Rate * 26 / 10;
+        std::vector<float> left(n), right(n);
+        struct Note {
+            double freq, start, pan, gain;
+        };
+        constexpr std::array<Note, 4> notes{{
+            {587.33, 0.000, -0.30, 1.00},
+            {880.00, 0.075, -0.10, 0.85},
+            {1174.66, 0.150, 0.10, 0.72},
+            {1479.98, 0.225, 0.30, 0.58},
+        }};
+        // A bell: the note, its octave and a little of the bright, slightly off partials that
+        // fade sooner.
+        constexpr std::array<double, 4> ratio{1.0, 2.0, 3.0, 4.07};
+        constexpr std::array<double, 4> level{1.0, 0.32, 0.10, 0.05};
+        constexpr std::array<double, 4> decay{0.85, 0.42, 0.22, 0.12};
+        for (const Note& note : notes) {
+            const double angle = (note.pan + 1.0) * std::numbers::pi / 4.0;
+            const double gl = std::cos(angle) * note.gain;
+            const double gr = std::sin(angle) * note.gain;
+            for (int i = int(note.start * Rate); i < n; ++i) {
+                const double t = double(i) / Rate - note.start;
+                double s = 0.0;
+                for (size_t k = 0; k < ratio.size(); ++k) {
+                    s += std::sin(TwoPi * note.freq * ratio[k] * t) * level[k] *
+                         std::exp(-t / decay[k]);
+                }
+                s *= std::min(1.0, t / 0.004);
+                left[i] += static_cast<float>(s * gl);
+                right[i] += static_cast<float>(s * gr);
+            }
+        }
+        // The room: damped feedback delays and two all-passes per side (a small Schroeder
+        // reverb), slightly different left and right so it feels wide.
+        const auto room = [&](const std::vector<float>& in, double offset_ms) {
+            std::vector<float> out(n, 0.0f);
+            for (const double ms : {29.7, 37.1, 41.1, 43.7}) {
+                const int d = int((ms + offset_ms) * Rate / 1000.0);
+                std::vector<float> line(d, 0.0f);
+                float damp = 0.0f;
+                for (int i = 0; i < n; ++i) {
+                    const float y = line[i % d];
+                    damp += 0.25f * (y - damp);
+                    line[i % d] = in[i] + damp * 0.80f;
+                    out[i] += y * 0.25f;
+                }
+            }
+            for (const double ms : {5.0, 1.7}) {
+                const int d = int((ms + offset_ms * 0.1) * Rate / 1000.0);
+                std::vector<float> line(d, 0.0f);
+                for (int i = 0; i < n; ++i) {
+                    const float delayed = line[i % d];
+                    const float x = out[i];
+                    const float y = delayed - 0.5f * x;
+                    line[i % d] = x + 0.5f * y;
+                    out[i] = y;
+                }
+            }
+            return out;
+        };
+        const std::vector<float> wet_l = room(left, 0.0);
+        const std::vector<float> wet_r = room(right, 0.6);
+        std::vector<float> w(size_t(n) * 2);
+        float peak = 0.0f;
+        for (int i = 0; i < n; ++i) {
+            const float tail = std::min(1.0f, float(n - i) / (Rate * 0.05f));
+            w[2 * i] = (left[i] + wet_l[i] * 0.18f) * tail;
+            w[2 * i + 1] = (right[i] + wet_r[i] * 0.18f) * tail;
+            peak = std::max({peak, std::abs(w[2 * i]), std::abs(w[2 * i + 1])});
+        }
+        for (float& s : w) {
+            s *= 0.45f / peak;
+        }
+        return w;
+    }();
+    return wave;
+}
+
+/// The mixer: clicks, the chime and the hum, made a block at a time on SDL's audio thread.
+struct Synth {
+    // Set before each block.
+    float volume = 0.0f;     ///< The volume setting as a gain
+    float hum_target = 0.0f; ///< 1 to fade the hum in, 0 to fade it out
+
+    std::array<int, 3> click_pos{-1, -1, -1}; ///< Three clicks can ring at once
+    std::array<float, 3> click_gain{};
+    size_t next_click = 0;
+    int chime_pos = -1;
+    float chime_gain = 0.0f;
+
+    // The hum: a warm A-major pad. Each note is a pair of slightly detuned tones, one per side,
+    // that slowly beat against each other; each note swells on its own slow cycle, with soft
+    // air under it.
+    struct Voice {
+        double freq;
+        float amp;
+        double cycle; ///< Seconds per swell
+        double offset;
+    };
+    static constexpr std::array<Voice, 6> pad{{
+        {110.00, 0.55f, 13.0, 0.0},
+        {164.81, 0.42f, 17.0, 1.3},
+        {220.00, 0.30f, 19.0, 2.1},
+        {277.18, 0.17f, 23.0, 0.7},
+        {329.63, 0.12f, 29.0, 2.9},
+        {493.88, 0.05f, 31.0, 4.2},
+    }};
+    std::array<double, pad.size() * 2> phase{};
+    std::array<float, pad.size()> swell{};
+    double hum_time = 0.0;
+    int64_t hum_samples = 0;
+    float hum_level = 0.0f;
+    float air_l = 0.0f;
+    float air_r = 0.0f;
+    float air_gain = 0.0f;
+    Noise noise;
+
+    void StartClick(float gain) {
+        click_pos[next_click] = 0;
+        click_gain[next_click] = gain;
+        next_click = (next_click + 1) % click_pos.size();
+    }
+
+    void StartChime(float gain) {
+        chime_pos = 0;
+        chime_gain = gain;
+    }
+
+    [[nodiscard]] bool Silent() const {
+        return chime_pos < 0 && hum_level <= 0.0f && hum_target <= 0.0f &&
+               std::all_of(click_pos.begin(), click_pos.end(), [](int p) { return p < 0; });
+    }
+
+    /// `frames` stereo frames into `out`.
+    void Mix(float* out, int frames) {
+        const std::vector<float>& click = ClickWave();
+        const std::vector<float>& chime = ChimeWave();
+        for (int f = 0; f < frames; ++f) {
+            float l = 0.0f;
+            float r = 0.0f;
+            for (size_t k = 0; k < click_pos.size(); ++k) {
+                if (click_pos[k] >= 0) {
+                    const float s = click[click_pos[k]] * click_gain[k];
+                    l += s;
+                    r += s;
+                    if (++click_pos[k] >= int(click.size())) {
+                        click_pos[k] = -1;
+                    }
+                }
+            }
+            if (chime_pos >= 0) {
+                l += chime[2 * chime_pos] * chime_gain;
+                r += chime[2 * chime_pos + 1] * chime_gain;
+                if (++chime_pos >= int(chime.size() / 2)) {
+                    chime_pos = -1;
+                }
+            }
+            if (hum_level > 0.0f || hum_target > 0.0f) {
+                const auto [hl, hr] = Hum();
+                l += hl;
+                r += hr;
+            }
+            out[2 * f] = l;
+            out[2 * f + 1] = r;
+        }
+    }
+
+    std::pair<float, float> Hum() {
+        // Fades in over 2.5 s and out over 0.9 s, eased.
+        if (hum_level < hum_target) {
+            hum_level = std::min(hum_target, hum_level + 1.0f / (Rate * 2.5f));
+        } else if (hum_level > hum_target) {
+            hum_level = std::max(hum_target, hum_level - 1.0f / (Rate * 0.9f));
+        }
+        // The slow swells, every 64 samples.
+        if ((hum_samples++ & 63) == 0) {
+            for (size_t v = 0; v < pad.size(); ++v) {
+                swell[v] = pad[v].amp * static_cast<float>(
+                    0.65 + 0.35 * std::sin(TwoPi * hum_time / pad[v].cycle + pad[v].offset));
+            }
+            air_gain = static_cast<float>(0.10 * (0.6 + 0.4 * std::sin(TwoPi * hum_time / 37.0)));
+        }
+        hum_time += 1.0 / Rate;
+        float l = 0.0f;
+        float r = 0.0f;
+        for (size_t v = 0; v < pad.size(); ++v) {
+            for (int side = 0; side < 2; ++side) {
+                double& ph = phase[v * 2 + side];
+                ph += TwoPi * pad[v].freq * (side == 0 ? 0.9991 : 1.0009) / Rate;
+                if (ph >= TwoPi) {
+                    ph -= TwoPi;
+                }
+                const float s =
+                    swell[v] * static_cast<float>(std::sin(ph) + 0.12 * std::sin(2.0 * ph));
+                (side == 0 ? l : r) += s;
+            }
+        }
+        air_l += 0.06f * (noise.Next() - air_l);
+        air_r += 0.06f * (noise.Next() - air_r);
+        l += air_l * air_gain;
+        r += air_r * air_gain;
+        const float overall = static_cast<float>(0.85 + 0.15 * std::sin(TwoPi * hum_time / 41.0));
+        const float eased = hum_level * hum_level * (3.0f - 2.0f * hum_level);
+        const float gain = 0.09f * overall * eased * volume;
+        return {l * gain, r * gain};
+    }
+};
+
+// Shared between the UI thread (which sets them) and SDL's audio thread (which reads them).
+std::atomic<uint32_t> click_requests{0};
+std::atomic<float> click_request_gain{0.0f};
+std::atomic<uint32_t> chime_requests{0};
+std::atomic<float> volume_now{0.0f};
+std::atomic<float> hum_wanted{0.0f};
+std::atomic<bool> silent_now{true};
+
+MenuSounds* instance = nullptr;
+
+struct Player {
+    Synth synth;
+    uint32_t clicks_seen = 0;
+    uint32_t chimes_seen = 0;
+};
+Player player;
+
+void SDLCALL Feed(void* user, SDL_AudioStream* stream, int additional, int /*total*/) {
+    auto* const p = static_cast<Player*>(user);
+    Synth& synth = p->synth;
+    synth.volume = volume_now.load(std::memory_order_relaxed);
+    synth.hum_target = hum_wanted.load(std::memory_order_relaxed);
+    if (const uint32_t c = click_requests.load(); c != p->clicks_seen) {
+        p->clicks_seen = c;
+        synth.StartClick(click_request_gain.load());
+    }
+    if (const uint32_t c = chime_requests.load(); c != p->chimes_seen) {
+        p->chimes_seen = c;
+        synth.StartChime(synth.volume);
+    }
+    std::array<float, 2 * 512> block;
+    int frames = additional / int(2 * sizeof(float));
+    while (frames > 0) {
+        const int count = std::min(frames, 512);
+        synth.Mix(block.data(), count);
+        SDL_PutAudioStreamData(stream, block.data(), count * int(2 * sizeof(float)));
+        frames -= count;
+    }
+    silent_now.store(synth.Silent(), std::memory_order_relaxed);
+}
+
+/// Writes 16-bit stereo 48 kHz samples as a WAV file.
+void WriteWav(const QString& path, const std::vector<float>& stereo) {
+    QFile file{path};
+    if (!file.open(QIODevice::WriteOnly)) {
+        return;
+    }
+    const auto put32 = [&](uint32_t v) { file.write(reinterpret_cast<const char*>(&v), 4); };
+    const auto put16 = [&](uint16_t v) { file.write(reinterpret_cast<const char*>(&v), 2); };
+    const uint32_t bytes = uint32_t(stereo.size() * 2);
+    file.write("RIFF", 4);
+    put32(36 + bytes);
+    file.write("WAVEfmt ", 8);
+    put32(16);
+    put16(1);
+    put16(2);
+    put32(Rate);
+    put32(Rate * 4);
+    put16(4);
+    put16(16);
+    file.write("data", 4);
+    put32(bytes);
+    for (const float s : stereo) {
+        put16(static_cast<uint16_t>(
+            static_cast<int16_t>(std::lround(std::clamp(s, -1.0f, 1.0f) * 32767.0f))));
+    }
+}
+
+/// CHEEZYEMU_SOUND_DUMP: the three sounds as WAV files, at the default volume.
+void Dump(const QString& folder) {
+    QDir{}.mkpath(folder);
+    const float gain = Gain(static_cast<int>(UISettings::values.menu_sound_volume.GetDefault()));
+    std::vector<float> click;
+    for (const float s : ClickWave()) {
+        click.push_back(s * gain);
+        click.push_back(s * gain);
+    }
+    WriteWav(folder + QStringLiteral("/click.wav"), click);
+    std::vector<float> chime = ChimeWave();
+    for (float& s : chime) {
+        s *= gain;
+    }
+    WriteWav(folder + QStringLiteral("/chime.wav"), chime);
+    // 24 seconds of hum: it fades in, plays, and fades out over the last second.
+    Synth synth;
+    synth.volume = gain;
+    synth.hum_target = 1.0f;
+    std::vector<float> hum(size_t(Rate) * 24 * 2);
+    for (size_t at = 0; at < hum.size() / 2; at += 512) {
+        if (at >= size_t(Rate) * 23) {
+            synth.hum_target = 0.0f;
+        }
+        const int count = int(std::min<size_t>(512, hum.size() / 2 - at));
+        synth.Mix(hum.data() + at * 2, count);
+    }
+    WriteWav(folder + QStringLiteral("/hum.wav"), hum);
+    LOG_INFO(Frontend, "Menu sounds written to {}", folder.toStdString());
+}
+
+} // Anonymous namespace
+
+MenuSounds::MenuSounds(std::function<bool()> ambient_wanted_, QObject* parent)
+    : QObject{parent}, ambient_wanted{std::move(ambient_wanted_)} {
+    if (const char* const dump = std::getenv("CHEEZYEMU_SOUND_DUMP");
+        dump != nullptr && dump[0] != '\0') {
+        Dump(QString::fromLocal8Bit(dump));
+        return;
+    }
+    // Made before the sound starts, so the audio thread never waits for them.
+    ClickWave();
+    ChimeWave();
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        LOG_WARNING(Frontend, "Menu sounds: no audio ({}); off", SDL_GetError());
+        return;
+    }
+    const SDL_AudioSpec spec{SDL_AUDIO_F32, 2, Rate};
+    stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, Feed, &player);
+    if (stream == nullptr) {
+        LOG_WARNING(Frontend, "Menu sounds: could not open the sound output ({}); off",
+                    SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+        return;
+    }
+    instance = this;
+    paused = true;
+    connect(&timer, &QTimer::timeout, this, &MenuSounds::Tick);
+    timer.start(200);
+    Tick();
+}
+
+MenuSounds::~MenuSounds() {
+    if (instance == this) {
+        instance = nullptr;
+    }
+    if (stream != nullptr) {
+        SDL_DestroyAudioStream(stream);
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    }
+}
+
+void MenuSounds::Click(int volume) {
+    if (instance == nullptr) {
+        return;
+    }
+    if (volume < 0) {
+        if (!UISettings::values.menu_sounds.GetValue()) {
+            return;
+        }
+        click_request_gain.store(volume_now.load());
+    } else {
+        click_request_gain.store(Gain(volume));
+    }
+    click_requests.fetch_add(1);
+    instance->Wake();
+}
+
+void MenuSounds::Chime() {
+    if (instance == nullptr || !UISettings::values.menu_sounds.GetValue()) {
+        return;
+    }
+    chime_requests.fetch_add(1);
+    instance->Wake();
+}
+
+void MenuSounds::Tick() {
+    volume_now.store(Gain(static_cast<int>(UISettings::values.menu_sound_volume.GetValue())));
+    const bool hum = UISettings::values.menu_ambient.GetValue() &&
+                     QGuiApplication::applicationState() == Qt::ApplicationActive &&
+                     ambient_wanted && ambient_wanted();
+    hum_wanted.store(hum ? 1.0f : 0.0f);
+    if (hum) {
+        Wake();
+        return;
+    }
+    // Nothing playing for three seconds: let the sound device rest.
+    if (paused) {
+        return;
+    }
+    if (!silent_now.load()) {
+        silent_ticks = 0;
+    } else if (++silent_ticks >= 15) {
+        SDL_PauseAudioStreamDevice(stream);
+        paused = true;
+    }
+}
+
+void MenuSounds::Wake() {
+    silent_ticks = 0;
+    if (paused && stream != nullptr) {
+        silent_now.store(false);
+        SDL_ResumeAudioStreamDevice(stream);
+        paused = false;
+    }
+}

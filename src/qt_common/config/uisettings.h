@@ -159,6 +159,12 @@ struct Values {
     // Discord RPC
     Setting<bool> enable_discord_presence{linkage, true, "enable_discord_presence", Category::Ui};
 
+    // Menu sounds (yuzu/util/menu_sounds.cpp): the click and start chime, the home screen hum
+    // and their volume.
+    Setting<bool> menu_sounds{linkage, true, "menu_sounds", Category::Ui};
+    Setting<bool> menu_ambient{linkage, true, "menu_ambient", Category::Ui};
+    Setting<u32, true> menu_sound_volume{linkage, 60, 0, 100, "menu_sound_volume", Category::Ui};
+
     // logging
     Setting<bool> show_console{linkage, false, "showConsole", Category::Ui};
 

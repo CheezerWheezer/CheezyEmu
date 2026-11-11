@@ -25,6 +25,12 @@
 #include "core/core.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "ui_configure_ui.h"
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QSlider>
+#include <QVBoxLayout>
+#include "yuzu/util/menu_sounds.h"
 
 #include "qt_common/config/uisettings.h"
 #include "qt_common/qt_compat.h"
@@ -105,6 +111,35 @@ ConfigureUi::ConfigureUi(Core::System& system_, QWidget* parent)
 
     PopulateResolutionComboBox(ui->screenshot_height, this);
 
+    // Sounds: the click and start chime, the home screen hum, and their volume.
+    {
+        auto* const sounds = new QGroupBox(tr("Sounds"), this);
+        auto* const sounds_layout = new QVBoxLayout(sounds);
+        menu_sounds_box =
+            new QCheckBox(tr("Click when picking a game, chime when starting one"), sounds);
+        menu_ambient_box = new QCheckBox(tr("Ambient hum on the home screen"), sounds);
+        auto* const volume_row = new QHBoxLayout;
+        menu_volume_slider = new QSlider(Qt::Horizontal, sounds);
+        menu_volume_slider->setRange(0, 100);
+        auto* const volume_value = new QLabel(sounds);
+        volume_value->setMinimumWidth(48);
+        connect(menu_volume_slider, &QSlider::valueChanged, volume_value,
+                [volume_value](int value) {
+                    volume_value->setText(QStringLiteral("%1%").arg(value));
+                });
+        // Letting go of the slider plays a click at that volume.
+        connect(menu_volume_slider, &QSlider::sliderReleased, this,
+                [this] { MenuSounds::Click(menu_volume_slider->value()); });
+        volume_row->addWidget(new QLabel(tr("Volume"), sounds));
+        volume_row->addWidget(menu_volume_slider, 1);
+        volume_row->addWidget(volume_value);
+        sounds_layout->addWidget(menu_sounds_box);
+        sounds_layout->addWidget(menu_ambient_box);
+        sounds_layout->addLayout(volume_row);
+        ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->GameListGroupBox) + 1,
+                                         sounds);
+    }
+
     SetConfiguration();
 
     // Force game list reload if any of the relevant settings are changed.
@@ -159,6 +194,10 @@ void ConfigureUi::ApplyConfiguration() {
     UISettings::values.row_1_text_id = ui->row_1_text_combobox->currentData().toUInt();
     UISettings::values.row_2_text_id = ui->row_2_text_combobox->currentData().toUInt();
 
+    UISettings::values.menu_sounds = menu_sounds_box->isChecked();
+    UISettings::values.menu_ambient = menu_ambient_box->isChecked();
+    UISettings::values.menu_sound_volume = static_cast<u32>(menu_volume_slider->value());
+
     UISettings::values.enable_screenshot_save_as = ui->enable_screenshot_save_as->isChecked();
     Common::FS::SetEdenPath(Common::FS::EdenPath::ScreenshotsDir,
                             ui->screenshot_path_edit->text().toStdString());
@@ -185,6 +224,10 @@ void ConfigureUi::SetConfiguration() {
     ui->show_play_time->setChecked(UISettings::values.show_play_time.GetValue());
     ui->folder_icon_size_combobox->setCurrentIndex(
         ui->folder_icon_size_combobox->findData(UISettings::values.folder_icon_size.GetValue()));
+
+    menu_sounds_box->setChecked(UISettings::values.menu_sounds.GetValue());
+    menu_ambient_box->setChecked(UISettings::values.menu_ambient.GetValue());
+    menu_volume_slider->setValue(static_cast<int>(UISettings::values.menu_sound_volume.GetValue()));
 
     ui->enable_screenshot_save_as->setChecked(
         UISettings::values.enable_screenshot_save_as.GetValue());

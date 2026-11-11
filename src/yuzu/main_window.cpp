@@ -47,6 +47,7 @@
 #include "set_play_time_dialog.h"
 #include "util/util.h"
 #include "yuzu/util/rounded_popups.h"
+#include "yuzu/util/menu_sounds.h"
 #include "yuzu/util/fit_window.h"
 #include "yuzu/game/game_list.h"
 #include "yuzu/nup_dialogs.h"
@@ -396,6 +397,13 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     FitWindow::Install();
     // Menus, dropdown lists and tooltips: only their rounded shape, no square box behind it.
     RoundedPopups::Install();
+    // Menu sounds: the hum plays while the game list shows and no game runs or loads.
+    new MenuSounds(
+        [this] {
+            return !emulation_running && game_list != nullptr && game_list->isVisible() &&
+                   !isMinimized() && (loading_screen == nullptr || !loading_screen->isVisible());
+        },
+        this);
     // CHEEZYEMU_DIALOG_SHOT=<png> (test): opens Configure, saves a picture of it, closes it.
     // CHEEZYEMU_DIALOG_SHOT_OPEN=recommended opens the "Find Best Settings" question instead,
     // =properties:<game file> that game's Properties. CHEEZYEMU_DIALOG_SHOT_PAGE=<text> first
@@ -1866,6 +1874,14 @@ void MainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_Firmware_From_ZIP, &MainWindow::OnInstallFirmwareFromZIP);
     connect_menu(ui->action_Install_Keys, &MainWindow::OnInstallDecryptionKeys);
     connect_menu(ui->action_About, &MainWindow::OnAbout);
+    // The CheezyEmu Discord server, in Help above "About".
+    {
+        auto* const discord = new QAction(tr("Join the CheezyEmu Discord..."), ui->menu_Help);
+        ui->menu_Help->insertAction(ui->action_About, discord);
+        connect(discord, &QAction::triggered, this, [] {
+            QDesktopServices::openUrl(QUrl(QStringLiteral("https://discord.gg/vEK4ug6JD")));
+        });
+    }
     connect_menu(ui->action_Eden_Dependencies, &MainWindow::OnEdenDependencies);
     connect_menu(ui->action_Apply_Recommended_Settings, &MainWindow::OnApplyRecommendedSettings);
     connect_menu(ui->action_Restore_Previous_Settings, &MainWindow::OnRestorePreviousSettings);
@@ -2534,6 +2550,7 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
 
     loading_screen->Prepare(QtCommon::system->GetAppLoader());
     loading_screen->show();
+    MenuSounds::Chime();
 
     emulation_running = true;
     if (ui->action_Fullscreen->isChecked()) {

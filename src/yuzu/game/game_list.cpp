@@ -55,6 +55,8 @@
 #include "yuzu/shader_warm_dialog.h"
 #include "yuzu/util/controller_navigation.h"
 #include "yuzu/util/icon_search.h"
+#include "yuzu/util/menu_sounds.h"
+#include <QApplication>
 
 GameList::GameList(FileSys::VirtualFilesystem vfs_, FileSys::ManualContentProvider* provider_,
                    PlayTime::PlayTimeManager& play_time_manager_, Core::System& system_,
@@ -71,6 +73,25 @@ GameList::GameList(FileSys::VirtualFilesystem vfs_, FileSys::ManualContentProvid
     item_model = new GameListModel(vfs, provider, play_time_manager, system, this);
 
     SetupViews();
+
+    // A soft click when the picked game changes (not while typing in the search field, nor
+    // when a list is first filled).
+    for (QAbstractItemView* const view :
+         {static_cast<QAbstractItemView*>(tree_view), static_cast<QAbstractItemView*>(grid_view),
+          static_cast<QAbstractItemView*>(carousel_view)}) {
+        connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this,
+                [this, view](const QModelIndex& current, const QModelIndex& previous) {
+                    if (!current.isValid() || !previous.isValid() || !view->isVisible()) {
+                        return;
+                    }
+                    const QWidget* const focus = QApplication::focusWidget();
+                    if (search_field != nullptr && focus != nullptr &&
+                        search_field->isAncestorOf(focus)) {
+                        return;
+                    }
+                    MenuSounds::Click();
+                });
+    }
 
     search_field = new GameListSearchField(this);
     layout->addWidget(search_field);
