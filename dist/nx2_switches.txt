@@ -75,6 +75,27 @@ EDEN_NX2_FENCE_BATCH=1
 # on depth (water, particles, decals) looks wrong.
 #EDEN_NX2_DEPTH_ALWAYS_MODIFIED=1
 
+# Build 12 keeps textures used in the last 300 frames when video memory is nearly full, instead of
+# deleting textures still on screen and making them again a moment later (whole sessions of
+# hitching). =0 brings the old rule back; only to compare.
+#EDEN_NX2_TC_MIN_AGE=0
+
+# Build 12, AMD with ASTC recompression on BC1 or BC3: textures whose smallest mip levels AMD's
+# driver draws wrong keep BC with those few tiny levels left out, instead of turning uncompressed
+# (0.6 to 0.9 GB less video memory in Ocarina). =0 brings the old rule back, if distant ground
+# shows dark lines.
+#EDEN_NX2_BC_TAIL_TRIM=0
+
+# Build 12: Skip on the "Building shaders" screen starts the game, and the rest keeps building
+# while you play on one thread, paused while the game builds its own shaders. =0 stops at Skip
+# instead, as before; =2 builds on two threads (faster, but costs more frame rate meanwhile).
+#EDEN_NX2_PRECACHE_AFTER_SKIP=0
+
+# Experimental and off: CheezyEmu's own memory heaps for the AMD driver's shader compiler (faster
+# first-time shader builds in tests). The test PC froze twice with it on; whether it was the cause
+# is not known. Leave it off unless you are asked to test it.
+#EDEN_NX2_VK_ALLOCATOR=1
+
 # A test for the white flashes: checks whether a compute shader writes further than the emulator
 # tracks, and tracks exactly what it wrote if so. It found nothing so far. The log says "Compute
 # write extent too small" if it does.

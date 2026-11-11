@@ -62,8 +62,14 @@ Not released yet: this section grows as the work lands.
     done in seconds. Ones never compiled on your PC take the time: an RX 6750 XT with a
     12-thread CPU compiles about 55 a second, so a PC with nothing saved needs half an hour or
     more for everything. The recorded pipelines come first, so pressing **Skip** after a while
-    still leaves you with the ones that matter most; the rest is built on the next start or
-    when the game needs it, as before.
+    still leaves you with the ones that matter most.
+  - **Skip no longer throws the rest away**: the game starts and the rest keeps building while
+    you play, on one thread below normal priority (two cost about 4 fps of 46 on a 6-core
+    CPU; `EDEN_NX2_PRECACHE_AFTER_SKIP=2` allows them). It pauses while the game builds its
+    own shaders and when the PC is short of memory (under 3 GB that Windows can still hand
+    out), and what is not built when you quit is built on the next start.
+    `EDEN_NX2_PRECACHE_AFTER_SKIP=0` stops at Skip, as before.
+  - macOS: the recipe is inside the app (`Contents/Resources/recipes`).
   - It needs about 2.2 GB of disk for the assembled file, next to your shader cache.
   - For any other game the same loading screen builds the compute programs found in the game
     files and the pipelines your earlier sessions saved ("Precache shaders before game
@@ -106,6 +112,20 @@ Not released yet: this section grows as the work lands.
     log says what to change. Frame generation alone keeps about 1.5 GB of RAM: turn it off on
     a 16 GB PC if memory is short, and leave the page file on "System managed size".
   - The log has a "Vulkan memory" line every 30 seconds (video and system memory in use).
+- **Less video memory on AMD with ASTC recompression on BC3 or BC1 (the default on cards under
+  20 GB).** Most of Ocarina's textures are ASTC, which AMD cards cannot read, so they are
+  converted. AMD's driver draws the smallest mip levels of some converted textures wrong (dark
+  lines on distant ground, zortos293/Lichii#448), so those textures were kept uncompressed
+  instead: four times the memory, 3 to 3.5 GB of Ocarina's textures even with BC3 chosen. They
+  now stay BC3 with only their few tiny levels (6x6 pixels and smaller) left out: 0.6 to 0.9 GB
+  less video memory in the same walk, no lines seen, and no more hitching than before (10 boots
+  compared). Two large terrain textures (1.7 GB) still stay uncompressed: leaving out their
+  levels would blur the ground. `EDEN_NX2_BC_TAIL_TRIM=0` brings the old rule back. If you chose
+  Uncompressed yourself, nothing changes.
+  - For reports: with `EDEN_NX2_TC_LOG=1` the log says how much video memory textures really
+    hold, how much of it is ASTC kept uncompressed and in which texture sizes;
+    `EDEN_NX2_BIG_ALLOC_LOG=<MiB>` logs every larger video memory request and
+    `EDEN_NX2_VK_MEMORY_LOG_FRAMES=<n>` the memory every n frames.
 - **New performance bar** (View > Performance Overlay): one black strip with frame rate (with
   frame generation), frame time, a frame rate history, FSR and frame generation status, RAM and
   video memory. Drag it anywhere over the game; it snaps to the edges and remembers its place.

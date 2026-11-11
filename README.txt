@@ -53,8 +53,9 @@ it (the "recipes" folder next to cheezyemu.exe). The first time you start the ga
 screen gathers the shader programs from your own copy of the game (about a minute) and builds
 them all, showing "Building shaders N / M (once)" with the time left. This happens once per GPU
 driver; updating CheezyEmu does not start it over. It can take a long time on a PC with no
-saved shaders: the Skip button starts the game right away, and what was not built is built on
-the next start or while you play, as in earlier builds.
+saved shaders: the Skip button starts the game right away, and the rest keeps building while you
+play (on one thread, paused while the game builds its own shaders). What is still not
+built when you quit is built on the next start.
 
 A shader pack is someone else's saved shaders. Packs still work and are used together with the
 recipe.
