@@ -4716,7 +4716,13 @@ void RasterizerVulkan::FrameDumpPass(const Framebuffer* framebuffer) {
 void RasterizerVulkan::TickFrame() {
     // Every 30 s or so: where the memory the driver gave is, by heap and type (for "out of
     // memory" and "the PC froze" reports).
-    if (++memory_log_frames % 1800 == 600) {
+    // EDEN_NX2_VK_MEMORY_LOG_FRAMES=<n> (diagnostic): every n frames instead.
+    static const u32 memory_log_period = [] {
+        const char* const value = std::getenv("EDEN_NX2_VK_MEMORY_LOG_FRAMES");
+        const u32 frames = value != nullptr ? static_cast<u32>(std::strtoul(value, nullptr, 10)) : 0;
+        return frames != 0 ? frames : 1800u;
+    }();
+    if (++memory_log_frames % memory_log_period == 600 % memory_log_period) {
         device.LogMemoryHeaps();
     }
     if (VideoCore::Nx2Debug::HasRequests()) {

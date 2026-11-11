@@ -1284,6 +1284,7 @@ private:
     boost::container::small_vector<DAddr, 8> early_pages;
     u64 read_back_reads{};
     u64 early_bytes_this_frame{};
+    bool in_garbage_collector{}; ///< EDEN_NX2_BIG_ALLOC_LOG: deletions the collector makes
     u32 pending_early_downloads{};
     u32 early_landing_checks{};
 

@@ -519,6 +519,18 @@ VkResult MemoryAllocator::CreateBufferOutOfMemory(const VkBufferCreateInfo& ci,
     return result;
 }
 
+namespace {
+/// EDEN_NX2_BIG_ALLOC_LOG=<MiB> (diagnostic): logs every buffer or image allocation of at least
+/// that many MiB, with its kind and memory type.
+u64 BigAllocLogBytes() {
+    static const u64 bytes = [] {
+        const char* const value = std::getenv("EDEN_NX2_BIG_ALLOC_LOG");
+        return value != nullptr ? std::strtoull(value, nullptr, 10) << 20 : 0ULL;
+    }();
+    return bytes;
+}
+} // Anonymous namespace
+
 vk::Buffer MemoryAllocator::CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsage usage) const {
     // MESA will do memcpy() if not marked as host cached, so just force mark it for most buffers
     auto const anv_flags = (usage == MemoryUsage::Stream
@@ -562,6 +574,11 @@ vk::Buffer MemoryAllocator::CreateBuffer(const VkBufferCreateInfo &ci, MemoryUsa
         vk::Check(result);
     }
     vmaGetAllocationMemoryProperties(allocator, allocation, &property_flags);
+    if (const u64 log_bytes = BigAllocLogBytes(); log_bytes != 0 && ci.size >= log_bytes) {
+        LOG_INFO(Render_Vulkan, "Big allocation: buffer {} MiB, usage {}, memory type {}, flags {:#x}",
+                 ci.size >> 20, static_cast<u32>(usage), alloc_info.memoryType,
+                 static_cast<u32>(property_flags));
+    }
 
     // Log GPU memory allocation for buffers
     if (GPU::Logging::IsActive() &&

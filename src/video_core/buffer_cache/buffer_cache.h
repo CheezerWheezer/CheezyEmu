@@ -19,6 +19,7 @@
 #include <vector>
 #include <fmt/ranges.h>
 
+#include "common/scope_exit.h"
 #include "common/range_sets.inc"
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/buffer_cache/multi_range_refresh.h"
@@ -78,6 +79,10 @@ BufferCache<P>::~BufferCache() {
 template <class P>
 void BufferCache<P>::RunGarbageCollector(bool aggressive_gc) {
     const StutterTrace::SiteScope site{StutterTrace::Site::BufferCollect};
+    in_garbage_collector = true;
+    SCOPE_EXIT {
+        in_garbage_collector = false;
+    };
     const u64 ticks_to_destroy = aggressive_gc ? 60 : 120;
     int num_iterations = aggressive_gc ? 64 : 32;
     // Their GPU-written data is downloaded first, all with one wait for the GPU: one wait per
@@ -4967,6 +4972,17 @@ template <class P>
 void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
     const StutterTrace::SiteScope site{StutterTrace::Site::BufferDelete};
     ++buffer_deletions;
+    // EDEN_NX2_BIG_ALLOC_LOG=<MiB> (diagnostic): which large buffers go, and why.
+    if (static const u64 log_bytes = [] {
+            const char* const value = std::getenv("EDEN_NX2_BIG_ALLOC_LOG");
+            return value != nullptr ? std::strtoull(value, nullptr, 10) << 20 : 0ULL;
+        }();
+        log_bytes != 0 && slot_buffers[buffer_id].SizeBytes() >= log_bytes) {
+        LOG_INFO(HW_GPU, "Big buffer deleted: {} MiB at {:#x}, {}, frame {}",
+                 slot_buffers[buffer_id].SizeBytes() >> 20, slot_buffers[buffer_id].CpuAddr(),
+                 in_garbage_collector ? "collector" : (do_not_mark ? "joined into a new one" : "other"),
+                 frame_tick);
+    }
     if constexpr (requires { runtime.OnBufferDeleted(slot_buffers[buffer_id]); }) {
         runtime.OnBufferDeleted(slot_buffers[buffer_id]);
     }
