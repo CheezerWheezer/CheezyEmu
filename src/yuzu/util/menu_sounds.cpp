@@ -67,26 +67,28 @@ const std::vector<float>& ClickWave() {
     return wave;
 }
 
-/// The chime (stereo): four bell notes rising (D, A, D, F#) and spreading left to right, in a
-/// small soft room.
+/// The chime (stereo, about 1.2 s): a deep, warm rising chord. Four notes an octave lower than a
+/// bright bell (D, A, D, F#), struck quickly one after another and spreading left to right,
+/// each a warm mallet tone with a slightly detuned twin for body; a soft sub-bass D under them
+/// gives it depth; all in a small soft room.
 const std::vector<float>& ChimeWave() {
     static const std::vector<float> wave = [] {
-        const int n = Rate * 26 / 10;
+        const int n = Rate * 12 / 10;
         std::vector<float> left(n), right(n);
         struct Note {
             double freq, start, pan, gain;
         };
         constexpr std::array<Note, 4> notes{{
-            {587.33, 0.000, -0.30, 1.00},
-            {880.00, 0.075, -0.10, 0.85},
-            {1174.66, 0.150, 0.10, 0.72},
-            {1479.98, 0.225, 0.30, 0.58},
+            {293.66, 0.000, -0.28, 1.00},
+            {440.00, 0.045, -0.09, 0.82},
+            {587.33, 0.090, 0.09, 0.68},
+            {739.99, 0.135, 0.28, 0.52},
         }};
-        // A bell: the note, its octave and a little of the bright, slightly off partials that
-        // fade sooner.
-        constexpr std::array<double, 4> ratio{1.0, 2.0, 3.0, 4.07};
-        constexpr std::array<double, 4> level{1.0, 0.32, 0.10, 0.05};
-        constexpr std::array<double, 4> decay{0.85, 0.42, 0.22, 0.12};
+        // A warm mallet: the note, a detuned twin (slow beating = body), its octave and a
+        // little of the brighter partials, which fade first.
+        constexpr std::array<double, 5> ratio{1.0, 1.004, 2.0, 3.0, 4.2};
+        constexpr std::array<double, 5> level{1.0, 0.38, 0.45, 0.14, 0.06};
+        constexpr std::array<double, 5> decay{0.42, 0.42, 0.26, 0.14, 0.07};
         for (const Note& note : notes) {
             const double angle = (note.pan + 1.0) * std::numbers::pi / 4.0;
             const double gl = std::cos(angle) * note.gain;
@@ -98,10 +100,18 @@ const std::vector<float>& ChimeWave() {
                     s += std::sin(TwoPi * note.freq * ratio[k] * t) * level[k] *
                          std::exp(-t / decay[k]);
                 }
-                s *= std::min(1.0, t / 0.004);
+                s *= std::min(1.0, t / 0.003);
                 left[i] += static_cast<float>(s * gl);
                 right[i] += static_cast<float>(s * gr);
             }
+        }
+        // The sub-bass: a low D that swells in over 12 ms and fades with the chord.
+        for (int i = 0; i < n; ++i) {
+            const double t = double(i) / Rate;
+            const double sub = std::sin(TwoPi * 146.83 * t) * 0.55 * std::min(1.0, t / 0.012) *
+                               std::exp(-t / 0.38);
+            left[i] += static_cast<float>(sub);
+            right[i] += static_cast<float>(sub);
         }
         // The room: damped feedback delays and two all-passes per side (a small Schroeder
         // reverb), slightly different left and right so it feels wide.
@@ -114,7 +124,7 @@ const std::vector<float>& ChimeWave() {
                 for (int i = 0; i < n; ++i) {
                     const float y = line[i % d];
                     damp += 0.25f * (y - damp);
-                    line[i % d] = in[i] + damp * 0.80f;
+                    line[i % d] = in[i] + damp * 0.72f;
                     out[i] += y * 0.25f;
                 }
             }
@@ -137,8 +147,8 @@ const std::vector<float>& ChimeWave() {
         float peak = 0.0f;
         for (int i = 0; i < n; ++i) {
             const float tail = std::min(1.0f, float(n - i) / (Rate * 0.05f));
-            w[2 * i] = (left[i] + wet_l[i] * 0.18f) * tail;
-            w[2 * i + 1] = (right[i] + wet_r[i] * 0.18f) * tail;
+            w[2 * i] = (left[i] + wet_l[i] * 0.24f) * tail;
+            w[2 * i + 1] = (right[i] + wet_r[i] * 0.24f) * tail;
             peak = std::max({peak, std::abs(w[2 * i]), std::abs(w[2 * i + 1])});
         }
         for (float& s : w) {
