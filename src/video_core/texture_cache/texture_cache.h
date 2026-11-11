@@ -722,6 +722,7 @@ void TextureCache<P>::TickFrame() {
         // What the images really hold in device memory (their allocations), by kind: the guest
         // size above understates transcoded ASTC (4x as RGBA8) and host-only formats.
         u64 real_bytes{}, real_astc{}, real_gpu_written{}, real_unbacked{}, in_blocks{};
+        u64 real_astc_rgba8{}, astc_rgba8_images{};
         for (const auto [image_id, image] : slot_images) {
             if constexpr (requires { image->MemoryBlock(); }) {
                 const auto block = image->MemoryBlock();
@@ -731,6 +732,14 @@ void TextureCache<P>::TickFrame() {
                 }
                 if (IsPixelFormatASTC(image->info.format)) {
                     real_astc += block.size;
+                    // Over 2.5 bytes a texel (with mips) is RGBA8; BC1/BC3 take 0.5-1.33.
+                    const u64 texels = u64{image->info.size.width} * image->info.size.height *
+                                       image->info.size.depth *
+                                       static_cast<u64>(image->info.resources.layers);
+                    if (texels != 0 && block.size * 2 > texels * 5) {
+                        real_astc_rgba8 += block.size;
+                        ++astc_rgba8_images;
+                    }
                 } else if (True(image->flags & ImageFlagBits::GpuModified)) {
                     real_gpu_written += block.size;
                 }
@@ -740,10 +749,12 @@ void TextureCache<P>::TickFrame() {
             }
         }
         LOG_INFO(HW_GPU,
-                 "Texture cache: images hold {} MiB of device memory ({} MiB ASTC textures, {} "
+                 "Texture cache: images hold {} MiB of device memory ({} MiB ASTC textures, of "
+                 "them {} MiB in {} images as RGBA8; {} "
                  "MiB GPU-written targets, {} MiB other; {} MiB inside shared blocks), {} "
                  "unbacked; recycled images keep {} MiB",
-                 real_bytes >> 20, real_astc >> 20, real_gpu_written >> 20,
+                 real_bytes >> 20, real_astc >> 20, real_astc_rgba8 >> 20, astc_rgba8_images,
+                 real_gpu_written >> 20,
                  (real_bytes - (std::min)(real_bytes, real_astc + real_gpu_written)) >> 20,
                  in_blocks >> 20, real_unbacked,
                  [&]() -> u64 {
