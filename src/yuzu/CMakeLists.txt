@@ -218,6 +218,7 @@ add_executable(yuzu
     util/fit_window.cpp
     util/fit_window.h
     util/cheezy_backdrop.h
+    util/rounded_popups.cpp
     util/rounded_popups.h
     util/limitable_input_dialog.cpp
     util/limitable_input_dialog.h
