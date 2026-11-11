@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include <boost/algorithm/string/replace.hpp>
 #include "common/httplib.h"
@@ -33,7 +34,7 @@ namespace {
 /// CheezyEmu's Discord application (discord.com/developers/applications): its name is what
 /// Discord shows as "Playing ...". Empty: presence stays off. CHEEZYEMU_DISCORD_APP_ID=<id>
 /// sets it for a test.
-constexpr char CheezyEmuDiscordAppId[] = "";
+constexpr char CheezyEmuDiscordAppId[] = "1570203948462247956";
 
 std::string AppId() {
     if (const char* const forced = std::getenv("CHEEZYEMU_DISCORD_APP_ID");
@@ -138,24 +139,41 @@ void DiscordImpl::Update() {
         // Shown at once with the logo; the game's box art replaces it when the lookup (a
         // network request, off this thread) finds one.
         UpdateGameStatus({}, false);
-        const std::string game_url = fmt::format(
-            "https://raw.githubusercontent.com/eden-emulator/boxart/refs/heads/master/img/{}.png",
-            GetGameString(game_title));
-        lookup = std::jthread([this, game_url](std::stop_token stop) {
-            httplib::SSLClient client(game_url);
-            client.set_connection_timeout(3);
-            client.set_read_timeout(3);
-            client.set_follow_location(true);
+        // Art, first found: CheezyEmu's own (dist/discord/<program id>.png in its repository),
+        // then the boxart collection by name.
+        u64 program_id{};
+        system.GetAppLoader().ReadProgramId(program_id);
+        std::vector<std::string> candidates{
+            fmt::format("https://raw.githubusercontent.com/CheezerWheezer/CheezyEmu/main/dist/"
+                        "discord/{:016x}.png",
+                        program_id),
+            fmt::format("https://raw.githubusercontent.com/eden-emulator/boxart/refs/heads/master/"
+                        "img/{}.png",
+                        GetGameString(game_title)),
+        };
+        lookup = std::jthread([this, candidates = std::move(candidates)](std::stop_token stop) {
+            for (const std::string& url : candidates) {
+                if (stop.stop_requested()) {
+                    return;
+                }
+                httplib::SSLClient client(url);
+                client.set_connection_timeout(3);
+                client.set_read_timeout(3);
+                client.set_follow_location(true);
 #ifdef YUZU_BUNDLED_OPENSSL
-            client.load_ca_cert_store(kCert, sizeof(kCert));
+                client.load_ca_cert_store(kCert, sizeof(kCert));
 #endif
-            httplib::Request request{
-                .method = "HEAD",
-                .path = game_url,
-            };
-            const auto result = client.send(request);
-            if (!stop.stop_requested() && result && result->status == 200) {
-                UpdateGameStatus(game_url, true);
+                httplib::Request request{
+                    .method = "HEAD",
+                    .path = url,
+                };
+                const auto result = client.send(request);
+                if (result && result->status == 200) {
+                    if (!stop.stop_requested()) {
+                        UpdateGameStatus(url, true);
+                    }
+                    return;
+                }
             }
         });
         return;

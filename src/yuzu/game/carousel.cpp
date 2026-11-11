@@ -3,6 +3,7 @@
 
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QGuiApplication>
 #include <QLabel>
 #include <QSlider>
 #include <QPushButton>
@@ -69,7 +70,8 @@ GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
         viewport()->update();
     });
 
-    // The backdrop moves at 60 frames a second while the view is shown.
+    // The backdrop moves at 30 frames a second while the view is shown and CheezyEmu is the
+    // active window (it drifts slowly; a frame cost ~1/4 of a CPU core at 60).
     m_scene = std::make_unique<CheezyBackdrop::Scene>();
     m_frameClock = new QElapsedTimer();
     m_frameClock->start();
@@ -77,13 +79,13 @@ GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
     motion->setTimerType(Qt::PreciseTimer);
     connect(motion, &QTimer::timeout, this, [this] {
         const qreal dt = std::min(0.05, m_frameClock->restart() / 1000.0);
-        if (!isVisible()) {
+        if (!isVisible() || QGuiApplication::applicationState() != Qt::ApplicationActive) {
             return;
         }
         m_scene->Step(dt, QRectF(viewport()->rect()));
         viewport()->update();
     });
-    motion->start(16);
+    motion->start(33);
 }
 
 GameCarousel::~GameCarousel() {

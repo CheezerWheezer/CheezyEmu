@@ -156,8 +156,20 @@ void GameCard::PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& opti
     if (!picture.isNull()) {
         const qreal dpr = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
         const QSize target = tile_rect.size() * dpr;
-        const QPixmap scaled =
-            picture.scaled(target, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        // Scaled once per picture and size (this ran every frame of the moving home view).
+        const QString key = QStringLiteral("%1-%2x%3")
+                                .arg(picture.cacheKey())
+                                .arg(target.width())
+                                .arg(target.height());
+        auto cached = m_scaled.find(key);
+        if (cached == m_scaled.end()) {
+            if (m_scaled.size() > 96) {
+                m_scaled.clear();
+            }
+            cached = m_scaled.insert(key, picture.scaled(target, Qt::KeepAspectRatioByExpanding,
+                                                         Qt::SmoothTransformation));
+        }
+        const QPixmap& scaled = cached.value();
         const QRect source{(scaled.width() - target.width()) / 2,
                            (scaled.height() - target.height()) / 2, target.width(),
                            target.height()};

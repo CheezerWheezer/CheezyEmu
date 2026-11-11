@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <QHash>
+#include <QPixmap>
 #include <QStyledItemDelegate>
 
 /**
@@ -39,6 +41,8 @@ private:
     static constexpr int cardMargin = 8;
 
     qreal m_lift = 1.0;
+    /// Home tile pictures scaled to their tile (PaintHomeTile), by picture and size.
+    mutable QHash<QString, QPixmap> m_scaled;
     QSize m_size;
     QSize m_contentSize;
     int m_padding;

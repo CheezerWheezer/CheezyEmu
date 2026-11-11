@@ -94,7 +94,7 @@ public:
         auto* const random = QRandomGenerator::global();
         if (motes.empty() || bounds != area) {
             bounds = area;
-            motes.resize(std::clamp(int(area.width() * area.height() / 9000), 50, 140));
+            motes.resize(std::clamp(int(area.width() * area.height() / 12000), 40, 90));
             for (Mote& mote : motes) {
                 Spawn(mote, area, random);
             }
@@ -122,40 +122,56 @@ public:
                const QPixmap& previous = {}, qreal previous_strength = 0.0) const {
         p.save();
         p.setRenderHint(QPainter::Antialiasing);
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-
-        QLinearGradient base{area.topLeft(), area.bottomLeft()};
-        base.setColorAt(0, QColor(0x24, 0x1B, 0x12));
-        base.setColorAt(1, QColor(0x10, 0x0C, 0x08));
-        p.fillRect(area, base);
-
-        // The game's picture, blurred, at its own size (never stretched).
-        const auto draw_ambient = [&](const QPixmap& pixmap, qreal strength) {
-            if (pixmap.isNull() || strength <= 0.0) {
-                return;
-            }
-            p.setOpacity(strength);
-            p.drawPixmap(area.topLeft(), pixmap);
-            p.setOpacity(1.0);
-        };
-        draw_ambient(previous, previous_strength);
-        draw_ambient(ambient, ambient_strength);
+        // The layers that don't move (base, the game's blurred picture, the glow where the light
+        // comes in, the vignette) in one picture, made again only when they change.
+        const auto strength = [](qreal v) { return int(std::clamp(v, 0.0, 1.0) * 64 + 0.5); };
+        const std::array<qint64, 6> key{area.width(), area.height(), ambient.cacheKey(),
+                                        previous.cacheKey(), strength(ambient_strength),
+                                        strength(previous_strength)};
+        if (key != still_key || still.size() != area.size()) {
+            still_key = key;
+            still = QPixmap(area.size());
+            QPainter s{&still};
+            s.setRenderHint(QPainter::Antialiasing);
+            const QRect local{QPoint(0, 0), area.size()};
+            QLinearGradient base{local.topLeft(), local.bottomLeft()};
+            base.setColorAt(0, QColor(0x24, 0x1B, 0x12));
+            base.setColorAt(1, QColor(0x10, 0x0C, 0x08));
+            s.fillRect(local, base);
+            const auto draw_ambient = [&](const QPixmap& pixmap, qreal opacity) {
+                if (pixmap.isNull() || opacity <= 0.0) {
+                    return;
+                }
+                s.setOpacity(opacity);
+                s.drawPixmap(0, 0, pixmap);
+                s.setOpacity(1.0);
+            };
+            draw_ambient(previous, previous_strength);
+            draw_ambient(ambient, ambient_strength);
+            const QPointF source = Source(QRectF(local));
+            const qreal reach = std::hypot(local.width(), local.height()) * 1.15;
+            s.setPen(Qt::NoPen);
+            s.setCompositionMode(QPainter::CompositionMode_Screen);
+            QRadialGradient bloom{source, reach * 0.6};
+            bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 64));
+            bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 16));
+            bloom.setColorAt(1, QColor(0xFF, 0xC8, 0x5A, 0));
+            s.setBrush(bloom);
+            s.drawRect(local);
+            s.setCompositionMode(QPainter::CompositionMode_SourceOver);
+            const qreal unit = std::max(local.width(), local.height());
+            QRadialGradient vignette{QPointF(local.width() * 0.35, local.height() * 0.3),
+                                     unit * 0.95};
+            vignette.setColorAt(0.45, QColor(0, 0, 0, 0));
+            vignette.setColorAt(1, QColor(0, 0, 0, 170));
+            s.setBrush(vignette);
+            s.drawRect(local);
+        }
+        p.drawPixmap(area.topLeft(), still);
 
         p.setCompositionMode(QPainter::CompositionMode_Screen);
         PaintSun(p, area);
         PaintMotes(p, area);
-        p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-
-        // A vignette: the far corner and the bottom fall into shade.
-        const qreal unit = std::max(area.width(), area.height());
-        QRadialGradient vignette{
-            QPointF(area.left() + area.width() * 0.35, area.top() + area.height() * 0.3),
-            unit * 0.95};
-        vignette.setColorAt(0.45, QColor(0, 0, 0, 0));
-        vignette.setColorAt(1, QColor(0, 0, 0, 170));
-        p.setPen(Qt::NoPen);
-        p.setBrush(vignette);
-        p.drawRect(area);
         p.restore();
     }
 
@@ -215,13 +231,9 @@ private:
         return beams;
     }
 
-    /// How much sunlight reaches a point at `angle` (radians from the source) and `distance`
-    /// (share of the beams' reach): soft bell-shaped beams with a faint halo, broken into finer
-    /// shafts that drift and shimmer, fading with distance.
-    qreal LightAt(const std::array<Beam, 6>& beams, qreal angle, qreal distance) const {
-        if (distance >= 1.0) {
-            return 0.0;
-        }
+    /// The sunlight across the beams at `angle` (radians from the source): soft bell-shaped
+    /// beams with a faint halo, broken into finer shafts that drift and shimmer.
+    qreal AngleLight(const std::array<Beam, 6>& beams, qreal angle) const {
         qreal light = 0;
         for (const Beam& beam : beams) {
             const qreal across = (angle - beam.angle) / beam.spread;
@@ -229,49 +241,87 @@ private:
             const qreal halo = std::exp(-across * across * 0.18) * 0.22;
             light += (core + halo) * beam.intensity;
         }
-        // Finer shafts: light through leaves, slowly shifting.
         const qreal shafts = 0.72 + 0.16 * std::sin(angle * 97.0 + time * 0.37) +
-                             0.12 * std::sin(angle * 211.0 - time * 0.23 + distance * 3.0);
-        // Strongest a little way in from the source, then fading out.
-        const qreal fall = std::pow(1.0 - distance, 1.6) * std::min(1.0, distance * 6.0 + 0.35);
-        return std::min(1.0, light * shafts) * fall;
+                             0.12 * std::sin(angle * 211.0 - time * 0.23);
+        return std::min(1.0, light * shafts);
+    }
+
+    /// How the light fades with `distance` (share of the beams' reach): strongest a little way
+    /// in from the source, then fading out.
+    static qreal Fall(qreal distance) {
+        if (distance >= 1.0) {
+            return 0.0;
+        }
+        return std::pow(1.0 - distance, 1.6) * std::min(1.0, distance * 6.0 + 0.35);
+    }
+
+    qreal LightAt(const std::array<Beam, 6>& beams, qreal angle, qreal distance) const {
+        return AngleLight(beams, angle) * Fall(distance);
     }
 
     void PaintSun(QPainter& p, const QRect& area) const {
         const QPointF source = Source(area);
         const qreal reach = std::hypot(area.width(), area.height()) * 1.15;
-        p.setPen(Qt::NoPen);
-        // The glow where the light comes in.
-        QRadialGradient bloom{source, reach * 0.6};
-        bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 64));
-        bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 16));
-        bloom.setColorAt(1, QColor(0xFF, 0xC8, 0x5A, 0));
-        p.setBrush(bloom);
-        p.drawRect(area);
-
-        // The beams, computed per pixel at a fifth of the size and scaled up smoothly: no edges.
-        const int w = std::max(16, area.width() / 5);
-        const int h = std::max(16, area.height() / 5);
-        if (rays.width() != w || rays.height() != h) {
+        // The beams, per pixel at a third of the size and scaled up smoothly (no edges),
+        // recomputed 15 times a second. Each pixel's angle bin and distance falloff are kept
+        // for the size; a frame computes only the light per angle.
+        const int w = std::max(16, area.width() / 3);
+        const int h = std::max(16, area.height() / 3);
+        constexpr int bins = 2048;
+        const bool resized = rays.width() != w || rays.height() != h;
+        if (resized) {
             rays = QImage(w, h, QImage::Format_ARGB32_Premultiplied);
-        }
-        const auto beams = Beams();
-        const qreal sx = qreal(area.width()) / w;
-        const qreal sy = qreal(area.height()) / h;
-        for (int y = 0; y < h; ++y) {
-            auto* const row = reinterpret_cast<QRgb*>(rays.scanLine(y));
-            for (int x = 0; x < w; ++x) {
-                const qreal px = area.left() + (x + 0.5) * sx - source.x();
-                const qreal py = area.top() + (y + 0.5) * sy - source.y();
-                const qreal light =
-                    LightAt(beams, std::atan2(py, px), std::hypot(px, py) / reach);
-                const int a = std::clamp(int(light * 120), 0, 255);
-                // Warm, a little whiter where it is brightest (premultiplied).
-                row[x] = qRgba(a * 255 / 255, a * (220 + light * 30) / 255,
-                               a * (150 + light * 70) / 255, a);
+            pixel_bin.resize(size_t(w) * h);
+            pixel_fall.resize(size_t(w) * h);
+            const qreal sx = qreal(area.width()) / w;
+            const qreal sy = qreal(area.height()) / h;
+            angle_min = 10.0;
+            angle_max = -10.0;
+            std::vector<qreal> angles(size_t(w) * h);
+            for (int y = 0; y < h; ++y) {
+                for (int x = 0; x < w; ++x) {
+                    const qreal px = area.left() + (x + 0.5) * sx - source.x();
+                    const qreal py = area.top() + (y + 0.5) * sy - source.y();
+                    const size_t i = size_t(y) * w + x;
+                    angles[i] = std::atan2(py, px);
+                    pixel_fall[i] = float(Fall(std::hypot(px, py) / reach));
+                    angle_min = std::min(angle_min, angles[i]);
+                    angle_max = std::max(angle_max, angles[i]);
+                }
+            }
+            for (size_t i = 0; i < angles.size(); ++i) {
+                pixel_bin[i] = static_cast<uint16_t>(std::clamp(
+                    int((angles[i] - angle_min) / (angle_max - angle_min) * (bins - 1) + 0.5), 0,
+                    bins - 1));
             }
         }
-        p.drawImage(area, rays);
+        if (!resized && time - rays_time < 1.0 / 15.0 && rays_scaled.size() == area.size()) {
+            p.drawPixmap(area.topLeft(), rays_scaled);
+            return;
+        }
+        rays_time = time;
+        const auto beams = Beams();
+        std::array<float, bins> table;
+        for (int k = 0; k < bins; ++k) {
+            table[k] = float(AngleLight(beams, angle_min + (angle_max - angle_min) * k / (bins - 1)));
+        }
+        static constexpr int dither[4][4] = {
+            {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+        for (int y = 0; y < h; ++y) {
+            auto* const row = reinterpret_cast<QRgb*>(rays.scanLine(y));
+            const size_t base = size_t(y) * w;
+            for (int x = 0; x < w; ++x) {
+                const float light = table[pixel_bin[base + x]] * pixel_fall[base + x];
+                const int a = std::min(255, int(light * 120.0f + dither[y & 3][x & 3] / 16.0f));
+                // Warm, a little whiter where it is brightest (premultiplied).
+                row[x] = qRgba(a, a * (220 + int(light * 30)) / 255,
+                               a * (150 + int(light * 70)) / 255, a);
+            }
+        }
+        // Scaled up smoothly once per update, not every frame.
+        rays_scaled = QPixmap::fromImage(
+            rays.scaled(area.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+        p.drawPixmap(area.topLeft(), rays_scaled);
     }
 
     void PaintMotes(QPainter& p, const QRect& area) const {
@@ -286,18 +336,43 @@ private:
                 std::min(1.0, 1.5 * LightAt(beams, std::atan2(d.y(), d.x()),
                                             std::hypot(d.x(), d.y()) / reach));
             const qreal twinkle = 0.8 + 0.2 * std::sin(time * 2.3 + mote.seed);
-            const int alpha = int((30 + 225 * light) * twinkle);
-            const qreal r = mote.size * (1.0 + 1.6 * light);
-            QRadialGradient glow{mote.pos, r * 2.4};
-            glow.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, alpha));
-            glow.setColorAt(0.35, QColor(0xFF, 0xE2, 0x9A, alpha / 2));
-            glow.setColorAt(1, QColor(0xFF, 0xD0, 0x70, 0));
-            p.setBrush(glow);
-            p.drawEllipse(mote.pos, r * 2.4, r * 2.4);
+            const qreal alpha = (30 + 225 * light) * twinkle / 255.0;
+            const qreal r = mote.size * (1.0 + 1.6 * light) * 2.4;
+            p.setOpacity(std::min(1.0, alpha));
+            p.drawPixmap(QRectF(mote.pos.x() - r, mote.pos.y() - r, r * 2, r * 2), MoteSprite(),
+                         QRectF(0, 0, 64, 64));
         }
+        p.setOpacity(1.0);
     }
 
-    mutable QImage rays; ///< PaintSun's light, at a fifth of the size
+    /// A mote's soft glow, drawn once.
+    static const QPixmap& MoteSprite() {
+        static const QPixmap sprite = [] {
+            QPixmap pixmap(64, 64);
+            pixmap.fill(Qt::transparent);
+            QPainter painter{&pixmap};
+            painter.setRenderHint(QPainter::Antialiasing);
+            QRadialGradient glow{QPointF(32, 32), 32};
+            glow.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, 255));
+            glow.setColorAt(0.35, QColor(0xFF, 0xE2, 0x9A, 128));
+            glow.setColorAt(1, QColor(0xFF, 0xD0, 0x70, 0));
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(glow);
+            painter.drawEllipse(QPointF(32, 32), 32, 32);
+            return pixmap;
+        }();
+        return sprite;
+    }
+
+    mutable QImage rays; ///< PaintSun's light, at a third of the size
+    mutable qreal rays_time = -1.0;
+    mutable QPixmap rays_scaled;              ///< `rays` at the view's size
+    mutable QPixmap still;                    ///< The layers that don't move (Paint)
+    mutable std::array<qint64, 6> still_key{};
+    mutable std::vector<uint16_t> pixel_bin;  ///< Per pixel of `rays`: its angle bin
+    mutable std::vector<float> pixel_fall;    ///< Per pixel of `rays`: the distance falloff
+    mutable qreal angle_min = 0.0;
+    mutable qreal angle_max = 1.0;
 
     std::vector<Mote> motes;
     QRectF bounds;
