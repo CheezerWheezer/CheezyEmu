@@ -3038,136 +3038,136 @@ QSlider#HomeTileSizeSlider {
 }
 
 /* ---------------------------------------------------------------------------------------------
- * Honey glass (build 12).
- * Tabs and dropdown fields everywhere: glossy, see-through yellow.
- * On Windows 11, Configure, a game's Properties, menus and dropdown lists are glass windows
- * (util/rounded_popups.cpp sets [glass="true"] and the system's acrylic blur behind them): their
- * own surfaces are see-through honey tints so the blur shows, with lighter glass cards on top.
+ * Honey liquid glass (build 12).
+ * Tabs and dropdown fields everywhere: clear glass capsules lit from the top left (iOS-style
+ * liquid glass); what is picked is a honey lens.
+ * Configure, a game's Properties, menus and dropdown lists are glass windows: CheezyEmu paints
+ * a blurred photo of what is behind them, tinted honey (util/rounded_popups.cpp, which marks
+ * them [glass="true"]). Their own surfaces stay clear so the glass shows; cards, pills and
+ * fields on top are lighter glass with bright top rims, and fields are pressed-in glass.
  * --------------------------------------------------------------------------------------------- */
 QTabBar::tab, QTabBar::tab:top, QTabBar::tab:top:!selected {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 222, 140, 46), stop:0.5 rgba(255, 200, 61, 22), stop:1 rgba(255, 190, 40, 30));
-    border: 1px solid rgba(255, 226, 150, 70);
-    border-top: 1px solid rgba(255, 244, 214, 120);
-    color: #FFE9B0;
+        stop:0 rgba(255, 246, 225, 46), stop:1 rgba(255, 228, 165, 16));
+    border: 1px solid rgba(255, 236, 190, 70);
+    border-color: rgba(255, 252, 240, 200) rgba(255, 236, 190, 55) rgba(255, 236, 190, 105) rgba(255, 248, 225, 150);
+    color: #FFEFC4;
 }
 
 QTabBar::tab:hover:!selected, QTabBar::tab:top:!selected:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 228, 150, 80), stop:1 rgba(255, 196, 50, 50));
-    border: 1px solid rgba(255, 210, 100, 140);
-    color: #FFF4DA;
+        stop:0 rgba(255, 248, 230, 85), stop:1 rgba(255, 228, 165, 40));
+    border-color: rgba(255, 255, 248, 235) rgba(255, 230, 170, 110) rgba(255, 230, 170, 150) rgba(255, 250, 232, 200);
+    color: #FFF6DE;
 }
 
 QTabBar::tab:selected, QTabBar::tab:top:selected {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 236, 160, 235), stop:0.45 rgba(255, 206, 72, 225), stop:1 rgba(240, 168, 30, 220));
-    border: 1px solid rgba(255, 240, 190, 200);
-    border-top: 1px solid rgba(255, 252, 235, 240);
+        stop:0 rgba(255, 244, 190, 225), stop:0.5 rgba(255, 214, 96, 205), stop:1 rgba(255, 196, 52, 200));
+    border: 1px solid rgba(255, 240, 190, 220);
+    border-color: rgba(255, 255, 250, 255) rgba(255, 220, 120, 170) rgba(255, 236, 170, 215) rgba(255, 250, 220, 220);
     color: #2A1C00;
 }
 
 QComboBox {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 222, 140, 34), stop:1 rgba(255, 196, 50, 14));
-    border: 1px solid rgba(255, 226, 150, 60);
-    border-top: 1px solid rgba(255, 244, 214, 95);
+        stop:0 rgba(255, 246, 225, 46), stop:1 rgba(255, 228, 165, 16));
+    border: 1px solid rgba(255, 236, 190, 70);
+    border-color: rgba(255, 252, 240, 200) rgba(255, 236, 190, 55) rgba(255, 236, 190, 105) rgba(255, 248, 225, 150);
 }
 
 QComboBox:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 228, 150, 60), stop:1 rgba(255, 196, 50, 28));
-    border: 1px solid rgba(255, 210, 100, 140);
+        stop:0 rgba(255, 248, 230, 85), stop:1 rgba(255, 228, 165, 40));
+    border-color: rgba(255, 255, 248, 235) rgba(255, 230, 170, 110) rgba(255, 230, 170, 150) rgba(255, 250, 232, 200);
 }
 
 QComboBox:on, QComboBox:focus {
-    border: 1px solid rgba(255, 200, 61, 200);
+    border-color: rgba(255, 255, 250, 255) rgba(255, 220, 120, 170) rgba(255, 236, 170, 215) rgba(255, 250, 220, 220);
 }
 
-/* Glass windows: the window itself is a honey tint over the system blur... */
+/* Glass windows: CheezyEmu paints the glass; the window and its plain containers stay clear... */
 ConfigureDialog[glass="true"], ConfigurePerGame[glass="true"] {
-    background-color: rgba(52, 38, 16, 120);
+    background-color: transparent;
 }
 
-/* ...its plain containers are see-through... */
 ConfigureDialog[glass="true"] QWidget, ConfigurePerGame[glass="true"] QWidget {
     background-color: transparent;
 }
 
-/* ...and the parts you use are lighter glass on top. */
-ConfigureDialog[glass="true"] QTabWidget::pane, ConfigurePerGame[glass="true"] QTabWidget::pane {
-    background-color: rgba(255, 214, 120, 18);
-    border: 1px solid rgba(255, 226, 150, 55);
-    border-radius: 20px;
-}
-
-ConfigureDialog[glass="true"] QGroupBox, ConfigurePerGame[glass="true"] QGroupBox {
-    background-color: rgba(255, 220, 140, 20);
-    border: 1px solid rgba(255, 230, 170, 40);
-    border-top: 1px solid rgba(255, 244, 214, 70);
-    border-radius: 18px;
-}
-
+/* ...and the parts you use are lighter glass on top, lit along the top rim. */
+ConfigureDialog[glass="true"] QTabWidget::pane, ConfigurePerGame[glass="true"] QTabWidget::pane,
+ConfigureDialog[glass="true"] QGroupBox, ConfigurePerGame[glass="true"] QGroupBox,
 ConfigureDialog[glass="true"] QListWidget#selectorList {
-    background-color: rgba(255, 214, 120, 16);
-    border: 1px solid rgba(255, 226, 150, 50);
-    border-radius: 20px;
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(255, 242, 210, 30), stop:1 rgba(255, 228, 170, 10));
+    border: 1px solid rgba(255, 236, 190, 50);
+    border-color: rgba(255, 250, 235, 150) rgba(255, 236, 190, 38) rgba(255, 236, 190, 70) rgba(255, 246, 220, 105);
+    border-radius: 22px;
+}
+
+ConfigureDialog[glass="true"] QTabWidget::pane, ConfigurePerGame[glass="true"] QTabWidget::pane,
+ConfigureDialog[glass="true"] QListWidget#selectorList {
+    border-radius: 24px;
 }
 
 ConfigureDialog[glass="true"] QListWidget#selectorList::item:selected {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 236, 160, 235), stop:1 rgba(240, 168, 30, 220));
+        stop:0 rgba(255, 244, 190, 225), stop:0.5 rgba(255, 214, 96, 205), stop:1 rgba(255, 196, 52, 200));
     color: #2A1C00;
 }
 
 ConfigureDialog[glass="true"] QListWidget#selectorList::item:hover:!selected {
-    background-color: rgba(255, 214, 120, 40);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(255, 248, 230, 85), stop:1 rgba(255, 228, 165, 40));
 }
 
+/* Fields: pressed-in glass (shadowed along the top, catching light along the bottom). */
 ConfigureDialog[glass="true"] QLineEdit, ConfigurePerGame[glass="true"] QLineEdit,
 ConfigureDialog[glass="true"] QSpinBox, ConfigurePerGame[glass="true"] QSpinBox,
 ConfigureDialog[glass="true"] QDoubleSpinBox, ConfigurePerGame[glass="true"] QDoubleSpinBox,
 ConfigureDialog[glass="true"] QPlainTextEdit, ConfigurePerGame[glass="true"] QPlainTextEdit {
-    background-color: rgba(20, 14, 6, 90);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(14, 9, 3, 120), stop:1 rgba(30, 20, 6, 70));
     border: 1px solid rgba(255, 226, 150, 50);
+    border-color: rgba(0, 0, 0, 90) rgba(255, 226, 150, 40) rgba(255, 240, 200, 110) rgba(255, 226, 150, 40);
     border-radius: 12px;
 }
 
 ConfigureDialog[glass="true"] QComboBox, ConfigurePerGame[glass="true"] QComboBox {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 222, 140, 46), stop:1 rgba(255, 196, 50, 20));
-    border: 1px solid rgba(255, 226, 150, 70);
-    border-top: 1px solid rgba(255, 244, 214, 110);
     border-radius: 12px;
 }
 
 ConfigureDialog[glass="true"] QPushButton, ConfigurePerGame[glass="true"] QPushButton {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 230, 160, 60), stop:1 rgba(255, 196, 50, 26));
-    border: 1px solid rgba(255, 226, 150, 80);
-    border-top: 1px solid rgba(255, 246, 220, 130);
+        stop:0 rgba(255, 246, 225, 46), stop:1 rgba(255, 228, 165, 16));
+    border: 1px solid rgba(255, 236, 190, 70);
+    border-color: rgba(255, 252, 240, 200) rgba(255, 236, 190, 55) rgba(255, 236, 190, 105) rgba(255, 248, 225, 150);
     border-radius: 16px;
     color: #FFF1C8;
 }
 
 ConfigureDialog[glass="true"] QPushButton:hover, ConfigurePerGame[glass="true"] QPushButton:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 234, 170, 95), stop:1 rgba(255, 200, 61, 50));
+        stop:0 rgba(255, 248, 230, 85), stop:1 rgba(255, 228, 165, 40));
+    border-color: rgba(255, 255, 248, 235) rgba(255, 230, 170, 110) rgba(255, 230, 170, 150) rgba(255, 250, 232, 200);
 }
 
 ConfigureDialog[glass="true"] QPushButton:default, ConfigurePerGame[glass="true"] QPushButton:default {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 236, 160, 240), stop:1 rgba(240, 168, 30, 230));
-    border: 1px solid rgba(255, 244, 200, 220);
+        stop:0 rgba(255, 244, 190, 225), stop:0.5 rgba(255, 214, 96, 205), stop:1 rgba(255, 196, 52, 200));
+    border-color: rgba(255, 255, 250, 255) rgba(255, 220, 120, 170) rgba(255, 236, 170, 215) rgba(255, 250, 220, 220);
     color: #2A1C00;
 }
 
 ConfigureDialog[glass="true"] QTreeView, ConfigurePerGame[glass="true"] QTreeView,
 ConfigureDialog[glass="true"] QListView, ConfigurePerGame[glass="true"] QListView,
 ConfigureDialog[glass="true"] QTableView, ConfigurePerGame[glass="true"] QTableView {
-    background-color: rgba(20, 14, 6, 70);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(14, 9, 3, 100), stop:1 rgba(30, 20, 6, 60));
     alternate-background-color: rgba(255, 214, 120, 10);
     border: 1px solid rgba(255, 226, 150, 45);
+    border-color: rgba(0, 0, 0, 80) rgba(255, 226, 150, 36) rgba(255, 240, 200, 95) rgba(255, 226, 150, 36);
     border-radius: 16px;
 }
 
@@ -3176,21 +3176,24 @@ ConfigureDialog[glass="true"] QHeaderView::section, ConfigurePerGame[glass="true
 }
 
 ConfigureDialog[glass="true"] QCheckBox::indicator, ConfigurePerGame[glass="true"] QCheckBox::indicator {
-    background-color: rgba(255, 230, 170, 40);
-    border: 1px solid rgba(255, 230, 170, 90);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(255, 246, 220, 70), stop:1 rgba(255, 214, 120, 24));
+    border: 1px solid rgba(255, 230, 170, 100);
+    border-top: 1px solid rgba(255, 252, 238, 190);
 }
 
 ConfigureDialog[glass="true"] QCheckBox::indicator:checked,
 ConfigurePerGame[glass="true"] QCheckBox::indicator:checked {
-    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFE08A, stop:1 #F0A81E);
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #FFF6D6, stop:0.3 #FFE08A, stop:1 #F0A81E);
     border: 1px solid #FFF0C0;
 }
 
-/* Glass menus and dropdown lists: Windows rounds and blurs them; a honey tint on top. */
+/* Glass menus and dropdown lists: CheezyEmu paints the rounded glass; a lit rim on top. */
 QMenu[glass="true"], QComboBoxPrivateContainer[glass="true"] {
-    background-color: rgba(58, 42, 18, 150);
-    border: 1px solid rgba(255, 226, 150, 60);
-    border-radius: 8px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 14px;
 }
 
 QComboBoxPrivateContainer[glass="true"] QAbstractItemView {
@@ -3202,6 +3205,62 @@ QComboBoxPrivateContainer[glass="true"] QAbstractItemView {
 
 QMenu[glass="true"]::item:selected {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 rgba(255, 236, 160, 220), stop:1 rgba(240, 168, 30, 210));
+        stop:0 rgba(255, 244, 190, 225), stop:0.5 rgba(255, 214, 96, 205), stop:1 rgba(255, 196, 52, 200));
+    color: #2A1C00;
+}
+
+/* Liquid glass controls: in glass windows CheezyEmu draws buttons, tabs, dropdown fields, the
+ * picked page and highlighted menu and list items as refracting glass capsules
+ * (util/rounded_popups.cpp); the theme only clears their own backgrounds and sets the text. */
+ConfigureDialog[glass="true"] QPushButton, ConfigurePerGame[glass="true"] QPushButton,
+ConfigureDialog[glass="true"] QPushButton:hover, ConfigurePerGame[glass="true"] QPushButton:hover,
+ConfigureDialog[glass="true"] QPushButton:pressed, ConfigurePerGame[glass="true"] QPushButton:pressed,
+ConfigureDialog[glass="true"] QComboBox, ConfigurePerGame[glass="true"] QComboBox,
+ConfigureDialog[glass="true"] QComboBox:hover, ConfigurePerGame[glass="true"] QComboBox:hover,
+ConfigureDialog[glass="true"] QComboBox:on, ConfigurePerGame[glass="true"] QComboBox:on,
+ConfigureDialog[glass="true"] QComboBox:focus, ConfigurePerGame[glass="true"] QComboBox:focus,
+ConfigureDialog[glass="true"] QTabBar::tab, ConfigurePerGame[glass="true"] QTabBar::tab,
+ConfigureDialog[glass="true"] QTabBar::tab:top, ConfigurePerGame[glass="true"] QTabBar::tab:top,
+ConfigureDialog[glass="true"] QTabBar::tab:top:!selected, ConfigurePerGame[glass="true"] QTabBar::tab:top:!selected,
+ConfigureDialog[glass="true"] QTabBar::tab:hover:!selected, ConfigurePerGame[glass="true"] QTabBar::tab:hover:!selected,
+ConfigureDialog[glass="true"] QTabBar::tab:top:!selected:hover, ConfigurePerGame[glass="true"] QTabBar::tab:top:!selected:hover {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: #FFF6E2;
+}
+
+ConfigureDialog[glass="true"] QPushButton:default, ConfigurePerGame[glass="true"] QPushButton:default,
+ConfigureDialog[glass="true"] QTabBar::tab:selected, ConfigurePerGame[glass="true"] QTabBar::tab:selected,
+ConfigureDialog[glass="true"] QTabBar::tab:top:selected, ConfigurePerGame[glass="true"] QTabBar::tab:top:selected {
+    background-color: transparent;
+    border: 1px solid transparent;
+    color: #2A1C00;
+}
+
+ConfigureDialog[glass="true"] QListWidget#selectorList::item,
+ConfigureDialog[glass="true"] QListWidget#selectorList::item:hover,
+ConfigureDialog[glass="true"] QListWidget#selectorList::item:hover:!selected {
+    background-color: transparent;
+    color: #FFF6E2;
+}
+
+ConfigureDialog[glass="true"] QListWidget#selectorList::item:selected {
+    background-color: transparent;
+    color: #2A1C00;
+}
+
+QMenu[glass="true"]::item:selected {
+    background-color: transparent;
+    color: #2A1C00;
+}
+
+QComboBoxPrivateContainer[glass="true"] QAbstractItemView {
+    selection-background-color: transparent;
+    selection-color: #2A1C00;
+}
+
+QComboBoxPrivateContainer[glass="true"] QAbstractItemView::item:selected,
+QComboBoxPrivateContainer[glass="true"] QAbstractItemView::item:hover {
+    background-color: transparent;
     color: #2A1C00;
 }

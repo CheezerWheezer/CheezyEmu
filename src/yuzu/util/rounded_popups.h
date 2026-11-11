@@ -9,13 +9,13 @@
 /// a square box behind the rounded shape: before such a window first shows, it is made frameless
 /// and see-through, so only the rounded shape is drawn.
 ///
-/// On Windows 11 (22H2 and later) Configure, a game's Properties, menus and dropdown lists are
-/// also glass: the system's acrylic material blurs what is behind them, and the theme tints it
-/// honey yellow (rules on [glass="true"] in the CheezyEmu style). Elsewhere they stay solid.
-/// CHEEZYEMU_GLASS=0 turns the glass off.
+/// Configure, a game's Properties, menus and dropdown lists are honey glass, drawn by CheezyEmu
+/// itself on every system: a blurred, more vivid photo of the window behind, tinted honey, with
+/// a sheen, frost and a bright rim (rules on [glass="true"] in the CheezyEmu style put glass
+/// cards and pills on top). CHEEZYEMU_GLASS=0 turns the glass off.
 namespace RoundedPopups {
 
-/// Whether this system gets the glass (Windows 11 22H2 or later, not turned off).
+/// Whether the glass is on (CHEEZYEMU_GLASS=0 turns it off).
 [[nodiscard]] bool GlassSupported();
 
 /// Call once, after the QApplication exists.
