@@ -3723,10 +3723,12 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
     // forearm, hand and thigh are one mesh each, drawn twice with different bones. Dropping
     // every second draw left one of each pair with the scenery's motion, and FSR and generated
     // frames smeared it whenever Link moved against the background (walking, jumping).
-    // EDEN_NX2_OOT_MESH_INSTANCES=0 brings the old rule back.
+    // Off unless EDEN_NX2_OOT_MESH_INSTANCES=1: it was not what Link's limbs needed (that was
+    // the influence count below), it nearly doubles the overlay's draws in a crowd, and it was
+    // new in a run that ended with the test PC frozen. Kept for testing.
     static const bool track_instances = [] {
         const char* const value = std::getenv("EDEN_NX2_OOT_MESH_INSTANCES");
-        return value == nullptr || value[0] != '0';
+        return value != nullptr && value[0] == '1';
     }();
     const GPUVAddr vertex_address = stream.Address();
     const GPUVAddr index_address = draw.index_buffer.IndexStart();
@@ -3768,6 +3770,10 @@ void RasterizerVulkan::TrackOcarinaActor(u64, bool is_indexed, bool is_indirect)
         layout.weight_count = (std::min)(layout.weight_count, (std::min)(influences, 4u));
         layout.extra_count =
             (std::min)(layout.extra_count, influences > 4 ? influences - 4 : 0u);
+    }
+    // With the count applied the layout is the one stored for this mesh: one entry per mesh.
+    if (!track_instances && std::ranges::any_of(oot_actors, same_mesh)) {
+        return;
     }
     if (std::ranges::any_of(oot_actors, [&](const auto& actor) {
             return same_mesh(actor) && actor.pose_buffers == pose_buffers;

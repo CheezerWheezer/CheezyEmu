@@ -98,11 +98,14 @@ void VKAPI_CALL OnFree(void*, void* memory) {
 }
 
 bool Enabled() {
-    // On since build 12. Measured on an RX 6750 XT building 120,000 pipelines, switching every
-    // 20 seconds between these heaps and the process heap (EDEN_NX2_VK_ALLOCATOR=2): a median
-    // of 55 against 33 pipelines a second where nothing was compiled before. 0 turns it off.
+    // OFF unless EDEN_NX2_VK_ALLOCATOR=1 (or 2, the comparison). It was on by default for an
+    // evening (2026-11-10): shader builds on an RX 6750 XT ran 1.7 times faster with it, but
+    // the test PC froze hard twice that evening (no bugcheck, about once per 1.4 hours of
+    // running), in a shader build and in plain gameplay, and never in the days of the same
+    // tests before it. Not proven to be the cause, but nothing else touches the driver this
+    // deeply, so it does not ship on.
     const char* const value = std::getenv("EDEN_NX2_VK_ALLOCATOR");
-    return value == nullptr || value[0] != '0';
+    return value != nullptr && (value[0] == '1' || value[0] == '2');
 }
 
 } // Anonymous namespace
@@ -129,7 +132,7 @@ const VkAllocationCallbacks* HostAllocator() {
             .pfnInternalFree = nullptr,
         };
         LOG_INFO(Render_Vulkan, "Driver memory: the graphics driver allocates from {} heaps of "
-                                "the emulator's (EDEN_NX2_VK_ALLOCATOR=0 turns it off)", NumHeaps);
+                                "the emulator's (EDEN_NX2_VK_ALLOCATOR, experimental)", NumHeaps);
         return &table;
     }();
     return callbacks;

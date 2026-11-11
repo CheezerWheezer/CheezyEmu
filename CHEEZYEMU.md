@@ -27,9 +27,7 @@ Not released yet: this section grows as the work lands.
   motion. The game says how many slots each mesh uses, and that count is used now. Checked on
   captured frames: generated frames now show the arms and hands as the real frames do, running,
   strafing, side hops and a backflip. Not checked inside a crawl tunnel (no save near one), but
-  it is the same mesh. Also: a mesh drawn twice in a frame with two poses now gets motion for
-  both. `EDEN_NX2_OOT_INFLUENCES=0` and `EDEN_NX2_OOT_MESH_INSTANCES=0` bring the old behaviour
-  back, to compare.
+  it is the same mesh. `EDEN_NX2_OOT_INFLUENCES=0` brings the old behaviour back, to compare.
 - **Less hitching while walking around.**
   - The buffer collector ran in emergency mode on every frame in Ocarina of Time: the game keeps
     about 1.5 GB of buffers in use, and "more than 1 GB of buffers" was the emergency. It threw
@@ -38,11 +36,6 @@ Not released yet: this section grows as the work lands.
     looks at how much is idle. Same PC, same routes, one run each way: 49.6 against 43.6 fps
     standing, 11 against 21 frames over 50 ms on one route and 2 against 4 on the other.
     `EDEN_NX2_BUFFER_GC_TOTAL=1` brings the old rule back.
-  - Windows: the graphics driver's shader compiler shared one memory lock with everything else
-    in the emulator, so pipelines built at the same time waited for each other. The driver now
-    gets heaps of its own. Building shaders that were never compiled, switching between the two
-    every 20 seconds: a median of 55 against 33 pipelines a second. `EDEN_NX2_VK_ALLOCATOR=0`
-    turns it off.
 - **Linux: the update check works.** It failed before any request was sent ("returned null")
   on systems whose certificates are not where the build machine's are (SteamOS). It uses the
   system's certificate bundle now, and the log says why a request failed.

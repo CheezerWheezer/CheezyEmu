@@ -173,6 +173,20 @@ void BufferCache<P>::TickFrame() {
                  extent_probes_held, extent_programs_caught, extent_bytes_caught,
                  extent_extra_marks);
         extent_extra_marks = 0;
+        if constexpr (requires(const Buffer& b) { b.LifetimeUse(); }) {
+            std::string text;
+            for (const auto [buffer_id, buffer] : slot_buffers) {
+                const auto [used, largest_use] = buffer->LifetimeUse();
+                if (buffer->SizeBytes() >= 16_MiB && used != 0) {
+                    text += fmt::format(" [{} MiB at {:#x}: {} MiB ever used, largest use {} KiB]",
+                                        buffer->SizeBytes() >> 20, buffer->CpuAddr(), used,
+                                        largest_use >> 10);
+                }
+            }
+            if (!text.empty()) {
+                LOG_INFO(HW_GPU, "Buffer use:{}", text);
+            }
+        }
     }
 
     // Calculate hits and shots and move hit bits to the right

@@ -143,9 +143,30 @@ Buffer::Buffer(BufferCacheRuntime& runtime, DAddr cpu_addr_, u64 size_bytes_,
     }
 }
 
+std::pair<u64, u64> Buffer::LifetimeUse() const noexcept {
+    return {static_cast<u64>(std::count(used_mib.begin(), used_mib.end(), true)), largest_use};
+}
+
 void Buffer::MarkUsage(u64 offset, u64 size) noexcept {
     const u64 tick = scheduler->CurrentTick();
     uses.Track(offset, size, tick);
+    static const bool lifetime_use = [] {
+        const char* const value = std::getenv("EDEN_NX2_BUFFER_USE");
+        return value != nullptr && value[0] == '1';
+    }();
+    if (lifetime_use && size != 0 && (last_noted_use[0] != offset || last_noted_use[1] != size))
+        [[unlikely]] {
+        last_noted_use = {offset, size};
+        largest_use = (std::max)(largest_use, size);
+        if (used_mib.empty()) {
+            used_mib.resize(static_cast<size_t>(SizeBytes() >> 20) + 1);
+        }
+        const size_t last = (std::min)(static_cast<size_t>((offset + size - 1) >> 20),
+                                       used_mib.size() - 1);
+        for (size_t mib = static_cast<size_t>(offset >> 20); mib <= last; ++mib) {
+            used_mib[mib] = true;
+        }
+    }
     if (UploadReorderCheck* const check = UploadReorderCheck::Active()) [[unlikely]] {
         check->NoteUse(*buffer, offset, size, UploadReorderCheck::Source::Marked);
     }

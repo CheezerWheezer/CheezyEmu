@@ -18,8 +18,8 @@ namespace Vulkan {
 /// on the loading screen. Here each thread allocates from one of several heaps, so they stop
 /// waiting for each other.
 ///
-/// Null when it is off (EDEN_NX2_VK_ALLOCATOR=0) or the platform has no need for it: the driver
-/// then allocates as it always did. The same pointer goes to vkCreateInstance, vkCreateDevice and
+/// Experimental and off: null unless EDEN_NX2_VK_ALLOCATOR=1 (see Enabled in the .cpp for
+/// why), and the driver then allocates as it always did. The same pointer goes to vkCreateInstance, vkCreateDevice and
 /// their destroy calls.
 [[nodiscard]] const VkAllocationCallbacks* HostAllocator();
 

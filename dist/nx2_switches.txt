@@ -57,10 +57,6 @@ EDEN_NX2_FENCE_BATCH=1
 # runtime is Windows only). =1 uses the built-in one on Windows too, to compare the two.
 #EDEN_NX2_FSR_BUILTIN=1
 
-# Build 12, Windows: the graphics driver gets memory heaps of its own, so shaders built at the
-# same time stop waiting for each other. =0 if the GPU driver misbehaves with it.
-#EDEN_NX2_VK_ALLOCATOR=0
-
 # Build 12 fixed ghosting on Link's arms and legs with FSR and frame generation (the motion of
 # his limbs was built from the wrong number of bones). =0 brings the old motion back, to compare.
 #EDEN_NX2_OOT_INFLUENCES=0

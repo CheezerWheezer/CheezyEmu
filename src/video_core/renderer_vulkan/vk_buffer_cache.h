@@ -73,6 +73,10 @@ public:
     /// GPU work recorded now reads or writes [offset, offset + size).
     void MarkUsage(u64 offset, u64 size) noexcept;
 
+    /// EDEN_NX2_BUFFER_USE=1 (diagnostic): how many MiB of the buffer any work ever used, and
+    /// the largest range one use named, in bytes.
+    [[nodiscard]] std::pair<u64, u64> LifetimeUse() const noexcept;
+
     /// An upload recorded now writes [offset, offset + size): uploads of these bytes after it in
     /// this submission run after it (DecideUploadOrder). The check hears of it from the copy.
     void TrackUploadWrite(u64 offset, u64 size) noexcept;
@@ -104,6 +108,9 @@ private:
     /// TEST (EDEN_NX2_GPU_COST): the tick of each 4 KiB page's last use, and the last ranges
     /// noted with their tick (draws bind the same ranges again and again).
     std::vector<u64> use_ticks;
+    std::vector<bool> used_mib; ///< EDEN_NX2_BUFFER_USE: every MiB some work used
+    u64 largest_use{};
+    std::array<u64, 2> last_noted_use{};
     std::array<std::array<u64, 3>, 4> noted_uses{};
     u32 noted_cursor{};
 };
