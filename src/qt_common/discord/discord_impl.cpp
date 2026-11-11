@@ -5,9 +5,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <chrono>
+#include <cstdlib>
 #include <string>
 
-#include <QEventLoop>
 #include <boost/algorithm/string/replace.hpp>
 #include "common/httplib.h"
 
@@ -15,6 +15,7 @@
 #include <fmt/format.h>
 
 #include "common/common_types.h"
+#include "common/logging.h"
 #include "common/string_util.h"
 #include "core/core.h"
 #include "core/loader/loader.h"
@@ -27,20 +28,59 @@
 
 namespace DiscordRPC {
 
+namespace {
+
+/// CheezyEmu's Discord application (discord.com/developers/applications): its name is what
+/// Discord shows as "Playing ...". Empty: presence stays off. CHEEZYEMU_DISCORD_APP_ID=<id>
+/// sets it for a test.
+constexpr char CheezyEmuDiscordAppId[] = "";
+
+std::string AppId() {
+    if (const char* const forced = std::getenv("CHEEZYEMU_DISCORD_APP_ID");
+        forced != nullptr && forced[0] != '\0') {
+        return forced;
+    }
+    return CheezyEmuDiscordAppId;
+}
+
+constexpr char LogoText[] = "CheezyEmu";
+constexpr char LogoUrl[] =
+    "https://raw.githubusercontent.com/CheezerWheezer/CheezyEmu/main/dist/branding/"
+    "cheezyemu_icon.png";
+
+s64 Now() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+} // Anonymous namespace
+
 DiscordImpl::DiscordImpl(Core::System& system_) : system{system_} {
+    const std::string app_id = AppId();
+    if (app_id.empty()) {
+        LOG_INFO(Frontend, "Discord presence: no CheezyEmu application ID in this build; off");
+        return;
+    }
     DiscordEventHandlers handlers{};
-    // The number is the client ID for Eden, it's used for images and the
-    // application name
-    Discord_Initialize("1397286652128264252", &handlers, 1, nullptr);
+    Discord_Initialize(app_id.c_str(), &handlers, 1, nullptr);
+    initialized = true;
 }
 
 DiscordImpl::~DiscordImpl() {
-    Discord_ClearPresence();
-    Discord_Shutdown();
+    if (lookup.joinable()) {
+        lookup.join();
+    }
+    if (initialized) {
+        Discord_ClearPresence();
+        Discord_Shutdown();
+    }
 }
 
 void DiscordImpl::Pause() {
-    Discord_ClearPresence();
+    if (initialized) {
+        Discord_ClearPresence();
+    }
 }
 
 std::string DiscordImpl::GetGameString(const std::string& title) {
@@ -69,68 +109,65 @@ std::string DiscordImpl::GetGameString(const std::string& title) {
     return icon_name;
 }
 
-static constexpr char DEFAULT_DISCORD_TEXT[] = "CheezyEmu is an emulator for the Nintendo Switch";
-static constexpr char DEFAULT_DISCORD_IMAGE[] =
-    "https://git.eden-emu.dev/eden-emu/eden/raw/branch/master/dist/qt_themes/default/icons/256x256/"
-    "eden.png";
-
 void DiscordImpl::UpdateGameStatus(std::string_view game_url, bool has_boxart) {
-    const std::string url = std::string{has_boxart ? game_url : DEFAULT_DISCORD_IMAGE};
-    s64 start_time = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
+    // "Playing CheezyEmu" / "The Legend of Zelda: Ocarina of Time" / "elapsed 12:34".
+    const std::string art = std::string{has_boxart ? game_url : LogoUrl};
+    const std::string title = game_title;
     DiscordRichPresence presence{};
-
-    presence.largeImageKey = url.c_str();
-    presence.largeImageText = game_title.c_str();
-    presence.smallImageKey = DEFAULT_DISCORD_IMAGE;
-    presence.smallImageText = DEFAULT_DISCORD_TEXT;
-    presence.state = game_title.c_str();
-    presence.status_display_type = DiscordStatusDisplayType_State;
-    presence.details = "Currently in game";
-    presence.startTimestamp = start_time;
+    presence.largeImageKey = art.c_str();
+    presence.largeImageText = title.c_str();
+    presence.smallImageKey = LogoUrl;
+    presence.smallImageText = LogoText;
+    presence.details = title.c_str();
+    presence.state = "Playing on CheezyEmu";
+    presence.status_display_type = DiscordStatusDisplayType_Details;
+    presence.startTimestamp = game_start;
     Discord_UpdatePresence(&presence);
 }
 
 void DiscordImpl::Update() {
+    if (!initialized) {
+        return;
+    }
+    if (lookup.joinable()) {
+        lookup.join();
+    }
     if (system.IsPoweredOn()) {
         system.GetAppLoader().ReadTitle(game_title);
-
-        // Used to format Icon URL for yuzu website game compatibility page
-        std::string icon_name = GetGameString(game_title);
-        auto const game_url = fmt::format(
+        game_start = Now();
+        // Shown at once with the logo; the game's box art replaces it when the lookup (a
+        // network request, off this thread) finds one.
+        UpdateGameStatus({}, false);
+        const std::string game_url = fmt::format(
             "https://raw.githubusercontent.com/eden-emulator/boxart/refs/heads/master/img/{}.png",
-            icon_name);
-
-        httplib::SSLClient client(game_url);
-        client.set_connection_timeout(3);
-        client.set_read_timeout(3);
-        client.set_follow_location(true);
-
+            GetGameString(game_title));
+        lookup = std::jthread([this, game_url](std::stop_token stop) {
+            httplib::SSLClient client(game_url);
+            client.set_connection_timeout(3);
+            client.set_read_timeout(3);
+            client.set_follow_location(true);
 #ifdef YUZU_BUNDLED_OPENSSL
-        client.load_ca_cert_store(kCert, sizeof(kCert));
+            client.load_ca_cert_store(kCert, sizeof(kCert));
 #endif
-
-        httplib::Request request{
-            .method = "HEAD",
-            .path = game_url,
-        };
-
-        auto res = client.send(request);
-        UpdateGameStatus(game_url, res && res->status == 200);
-
+            httplib::Request request{
+                .method = "HEAD",
+                .path = game_url,
+            };
+            const auto result = client.send(request);
+            if (!stop.stop_requested() && result && result->status == 200) {
+                UpdateGameStatus(game_url, true);
+            }
+        });
         return;
     }
 
-    s64 start_time = std::chrono::duration_cast<std::chrono::seconds>(
-                         std::chrono::system_clock::now().time_since_epoch())
-                         .count();
     DiscordRichPresence presence{};
-    presence.largeImageKey = DEFAULT_DISCORD_IMAGE;
-    presence.largeImageText = DEFAULT_DISCORD_TEXT;
+    presence.largeImageKey = LogoUrl;
+    presence.largeImageText = LogoText;
     presence.status_display_type = DiscordStatusDisplayType_Name;
-    presence.details = "Currently not in game";
-    presence.startTimestamp = start_time;
+    presence.details = "Picking a game";
+    presence.startTimestamp = Now();
     Discord_UpdatePresence(&presence);
 }
+
 } // namespace DiscordRPC

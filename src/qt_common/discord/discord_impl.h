@@ -9,6 +9,9 @@
 #include "discord.h"
 
 #include <string>
+#include <thread>
+
+#include "common/common_types.h"
 
 namespace Core {
 class System;
@@ -30,6 +33,9 @@ private:
 
     std::string game_title{};
     Core::System& system;
+    bool initialized = false; ///< Only with an application ID (discord_impl.cpp)
+    s64 game_start = 0;       ///< When the game started (the elapsed time Discord shows)
+    std::jthread lookup;      ///< The box art lookup, off the GUI thread
 };
 
 } // namespace DiscordRPC

@@ -311,7 +311,7 @@ jobs:
             -DENABLE_UPDATE_CHECKER=ON
             -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }}
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }}
-            -DUSE_DISCORD_PRESENCE=OFF
+            -DUSE_DISCORD_PRESENCE=ON
             -DYUZU_USE_BUNDLED_SIRIT=OFF
             -DUSE_CCACHE=ON
           )
@@ -361,7 +361,7 @@ jobs:
             -DENABLE_UPDATE_CHECKER=ON \
             -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }} \
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }} \
-            -DUSE_DISCORD_PRESENCE=OFF \
+            -DUSE_DISCORD_PRESENCE=ON \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
             "${launcher[@]}" \
             "-DCMAKE_C_COMPILER=$LLVM_ROOT/bin/clang-cl.exe" \
@@ -392,7 +392,7 @@ jobs:
             -DENABLE_UPDATE_CHECKER=ON \
             -DCHEEZYEMU_BUILD_TAG=${{ env.RELEASE_TAG }} \
             -DCHEEZYEMU_BUILD_PLATFORM=${{ matrix.platform }} \
-            -DUSE_DISCORD_PRESENCE=OFF \
+            -DUSE_DISCORD_PRESENCE=ON \
             -DYUZU_USE_BUNDLED_SIRIT=OFF \
             -DUSE_CCACHE=ON
 
