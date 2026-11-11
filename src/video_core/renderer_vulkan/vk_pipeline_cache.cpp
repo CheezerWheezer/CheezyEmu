@@ -2028,7 +2028,18 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
     }
 
     const auto begin = std::chrono::steady_clock::now();
-    const size_t num_threads = std::clamp<size_t>(std::thread::hardware_concurrency(), 1, 64);
+    // Two CPU threads stay free, and the builds run below normal priority: with the driver's
+    // own heaps (vulkan_host_allocator.h) the builds really do use every thread they get, for as
+    // long as the build lasts, and the rest of the PC has to stay usable meanwhile.
+    const size_t hardware_threads = std::clamp<size_t>(std::thread::hardware_concurrency(), 1, 64);
+    const size_t num_threads = hardware_threads > 4 ? hardware_threads - 2
+                                                    : (std::max<size_t>)(hardware_threads - 1, 1);
+    // How many of them may start another build: fewer when the system is short of memory. A
+    // PC froze during this build when another program had taken nearly all of the commit limit
+    // (56 GB) and 16 threads were compiling the largest pipelines.
+    std::atomic<size_t> allowed_threads{num_threads};
+    u32 short_of_memory_ticks = 0;
+    u32 memory_check_ticks = 0;
     std::vector<u8> built(jobs.size());
     std::atomic<size_t> next{};
     std::atomic<size_t> done{};
@@ -2046,9 +2057,14 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
     if (!jobs.empty()) {
         std::vector<std::jthread> threads;
         for (size_t thread = 0; thread < num_threads; ++thread) {
-            threads.emplace_back([&jobs, &built, &next, &done, &cancel] {
+            threads.emplace_back([&jobs, &built, &next, &done, &cancel, &allowed_threads, thread] {
                 Common::SetCurrentThreadName("VkShaderPrecache");
+                Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
                 while (!cancel.load(std::memory_order_relaxed)) {
+                    if (thread >= allowed_threads.load(std::memory_order_relaxed)) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds{200});
+                        continue;
+                    }
                     const size_t index = next.fetch_add(1);
                     if (index >= jobs.size()) {
                         break;
@@ -2073,6 +2089,34 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
             }
             if (callback) {
                 callback(VideoCore::LoadCallbackStage::Warm, done, jobs.size());
+            }
+            // Once a second: how much memory the system can still hand out decides how many
+            // threads build. Under 1.5 GiB for half a minute, the rest is left for later.
+            if (++memory_check_ticks >= 10) {
+                memory_check_ticks = 0;
+                if (const auto room = Common::GetSystemCommitRoom()) {
+                    const size_t allowed = *room < (u64{3} << 30)    ? 1
+                                           : *room < (u64{6} << 30)  ? (std::max<size_t>)(num_threads / 4, 1)
+                                           : *room < (u64{10} << 30) ? (std::max<size_t>)(num_threads / 2, 1)
+                                                            : num_threads;
+                    if (allowed != allowed_threads.exchange(allowed)) {
+                        LOG_INFO(Render_Vulkan,
+                                 "Shader precache: {} MiB of memory left on this system, {} of {} "
+                                 "threads build",
+                                 *room >> 20, allowed, num_threads);
+                    }
+                    short_of_memory_ticks = *room < (u64{1536} << 20) ? short_of_memory_ticks + 1 : 0;
+                    if (short_of_memory_ticks >= 30) {
+                        LOG_WARNING(Render_Vulkan,
+                                    "Shader precache: the system has had under 1.5 GiB of memory "
+                                    "left for 30 seconds; the remaining shaders are built on a "
+                                    "later start. Close other programs, or let Windows manage "
+                                    "the page file size.");
+                        cancel = true;
+                        skipped = true;
+                        break;
+                    }
+                }
             }
             // For reports of a long first start: how far it is, every 20 seconds.
             if (const auto now = std::chrono::steady_clock::now();
