@@ -16,8 +16,10 @@
 #include <QPushButton>
 #include <QRadialGradient>
 #include <QStyleOption>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <cmath>
+#include <functional>
 #include "common/container/unordered_map.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "core/loader/loader.h"
@@ -83,18 +85,34 @@ public:
         setMinimumHeight(64);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         setAttribute(Qt::WA_TranslucentBackground);
-        timer.setInterval(33);
+        // 60 frames a second; the fill glides to each new value instead of jumping.
+        timer.setInterval(16);
+        timer.setTimerType(Qt::PreciseTimer);
+        clock.start();
         connect(&timer, &QTimer::timeout, this, [this] {
-            phase += 0.033;
-            update();
-            // The screen behind drifts too.
-            if (parentWidget() != nullptr) {
-                window()->update();
+            const qreal dt = std::min(0.05, clock.restart() / 1000.0);
+            phase += dt;
+            const qreal target =
+                maximum > minimum
+                    ? std::clamp(double(value - minimum) / (maximum - minimum), 0.0, 1.0)
+                    : 0.0;
+            shown += (target - shown) * (1.0 - std::exp(-dt * 7.0));
+            if (on_frame) {
+                on_frame(dt); // the screen behind moves too
+            } else {
+                update();
             }
         });
     }
 
+    /// Called every frame with the time since the last one (the loading screen steps its
+    /// backdrop and repaints, this bar included).
+    std::function<void(qreal)> on_frame;
+
     void SetRange(int min_value, int max_value) {
+        if (max_value > min_value && maximum <= minimum) {
+            shown = 0; // a new length: fill from the start
+        }
         minimum = min_value;
         maximum = max_value;
         update();
@@ -137,8 +155,7 @@ protected:
             fill = {inner.left() + (inner.width() - piece) * swing, inner.top(), piece,
                     inner.height()};
         } else {
-            const qreal share = std::clamp(double(value - minimum) / (maximum - minimum), 0.0, 1.0);
-            fill = {inner.left(), inner.top(), std::max(inner.height(), inner.width() * share),
+            fill = {inner.left(), inner.top(), std::max(inner.height(), inner.width() * shown),
                     inner.height()};
         }
         // Melted cheese: rounded ends and a gently wavy top edge.
@@ -201,6 +218,8 @@ protected:
 private:
     QTimer timer;
     qreal phase = 0;
+    qreal shown = 0; ///< The filled share on screen, easing towards the real one
+    QElapsedTimer clock;
     int minimum = 0;
     int maximum = 0;
     int value = 0;
@@ -234,8 +253,14 @@ LoadingScreen::LoadingScreen(QWidget* parent)
         "background: transparent; color: #FFF4DA; font-size: 18pt; font-weight: bold;"));
     ui->value->setStyleSheet(
         QStringLiteral("background: transparent; color: #E8D9B5; font-size: 12pt;"));
-    // The progress bar's values drive the cheese bar drawn in its place.
+    // The progress bar's values drive the cheese bar drawn in its place; its frames move the
+    // backdrop too.
+    scene = std::make_shared<CheezyBackdrop::Scene>();
     cheese_progress = new CheeseProgress(this);
+    static_cast<CheeseProgress*>(cheese_progress)->on_frame = [this](qreal dt) {
+        scene->Step(dt, QRectF(rect()));
+        update();
+    };
     ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->progress_bar) + 1,
                                      cheese_progress);
     ui->progress_bar->setMaximumHeight(0);
@@ -316,7 +341,7 @@ void LoadingScreen::Prepare(Loader::AppLoader& loader) {
     if (std::vector<u8> icon; loader.ReadIcon(icon) == Loader::ResultStatus::Success) {
         game_icon.loadFromData(icon.data(), static_cast<uint>(icon.size()));
     }
-    ambient = CheezyBackdrop::MakeAmbient(game_icon);
+    ambient = {}; // made at the screen's size when painted
     if (loader.ReadLogo(buffer) == Loader::ResultStatus::Success) {
         QPixmap map;
         map.loadFromData(buffer.data(), static_cast<uint>(buffer.size()));
@@ -414,10 +439,11 @@ void LoadingScreen::paintEvent(QPaintEvent* event) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const QRect area = rect();
-    // The home view's backdrop, drifting, with the game's icon as the ambient glow.
-    static qreal phase = 0.0;
-    phase += 0.04;
-    CheezyBackdrop::Paint(p, area, phase, ambient, 0.38);
+    // The home view's moving backdrop, with the game's icon as the ambient glow.
+    if (ambient.size() != area.size() && !game_icon.isNull()) {
+        ambient = CheezyBackdrop::MakeAmbient(game_icon, area.size());
+    }
+    scene->Paint(p, area, ambient, 0.45);
 
     // The game's icon as a glowing rounded tile above the stage text.
     if (!game_icon.isNull()) {

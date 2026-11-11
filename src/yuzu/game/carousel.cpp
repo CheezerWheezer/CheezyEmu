@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <QDateTime>
+#include <QElapsedTimer>
+#include <QLabel>
+#include <QSlider>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QPainter>
@@ -46,31 +49,58 @@ GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
     setObjectName(QStringLiteral("GameCarousel"));
     setFrameShape(QFrame::NoFrame);
     setMouseTracking(true);
-    // Room on the sides for the selected tile's glow and name (the theme paints the margins in
-    // the background's colours).
-    // (The tiles' cells leave room on the sides; no viewport margins, so the backdrop fills the
-    // whole view.)
     // Adding a game folder: the tree view has a row for it, the home view this button.
     m_addButton = new QPushButton(tr("+ Add games"), viewport());
     m_addButton->setObjectName(QStringLiteral("HomeAddGamesButton"));
     m_addButton->setCursor(Qt::PointingHandCursor);
     m_addButton->setToolTip(tr("Add a folder with games"));
     connect(m_addButton, &QPushButton::clicked, this, &GameCarousel::AddDirectoryRequested);
-    // The backdrop drifts slowly (and the clock stays current): ~24 repaints a second while shown.
+    // The tiles' size: a slider in the bottom-right corner, remembered.
+    m_sizeSlider = new QSlider(Qt::Horizontal, viewport());
+    m_sizeSlider->setObjectName(QStringLiteral("HomeTileSizeSlider"));
+    m_sizeSlider->setRange(60, 160);
+    m_sizeSlider->setValue(static_cast<int>(UISettings::values.home_tile_scale.GetValue()));
+    m_sizeSlider->setFixedWidth(150);
+    m_sizeSlider->setCursor(Qt::PointingHandCursor);
+    m_sizeSlider->setToolTip(tr("Game card size"));
+    connect(m_sizeSlider, &QSlider::valueChanged, this, [this](int value) {
+        UISettings::values.home_tile_scale = static_cast<u32>(value);
+        UpdateIconSize();
+        viewport()->update();
+    });
+
+    // The backdrop moves at 60 frames a second while the view is shown.
+    m_scene = std::make_unique<CheezyBackdrop::Scene>();
+    m_frameClock = new QElapsedTimer();
+    m_frameClock->start();
     auto* const motion = new QTimer(this);
+    motion->setTimerType(Qt::PreciseTimer);
     connect(motion, &QTimer::timeout, this, [this] {
+        const qreal dt = std::min(0.05, m_frameClock->restart() / 1000.0);
         if (!isVisible()) {
             return;
         }
-        m_phase += 0.042;
+        m_scene->Step(dt, QRectF(viewport()->rect()));
         viewport()->update();
     });
-    motion->start(42);
+    motion->start(16);
+}
+
+GameCarousel::~GameCarousel() {
+    delete m_frameClock;
+}
+
+void GameCarousel::RebuildAmbient() {
+    m_ambient = CheezyBackdrop::MakeAmbient(m_ambientSource, viewport()->size());
 }
 
 void GameCarousel::resizeEvent(QResizeEvent* event) {
     QListView::resizeEvent(event);
     PlaceAddButton();
+    if (m_ambient.size() != viewport()->size()) {
+        RebuildAmbient();
+        m_ambientPrevious = {};
+    }
 }
 
 void GameCarousel::PlaceAddButton() {
@@ -84,6 +114,13 @@ void GameCarousel::PlaceAddButton() {
     if (m_addButton->pos() != place) {
         m_addButton->move(place);
     }
+    if (m_sizeSlider != nullptr) {
+        const QPoint slider_place{viewport()->width() - 40 - m_sizeSlider->width(),
+                                  viewport()->height() - 36};
+        if (m_sizeSlider->pos() != slider_place) {
+            m_sizeSlider->move(slider_place);
+        }
+    }
 }
 
 void GameCarousel::paintEvent(QPaintEvent* event) {
@@ -93,8 +130,11 @@ void GameCarousel::paintEvent(QPaintEvent* event) {
         painter.setRenderHint(QPainter::Antialiasing);
         const QRect area = viewport()->rect();
 
-        CheezyBackdrop::Paint(painter, area, m_phase, m_ambient, 0.42 * m_ambientFade,
-                              m_ambientPrevious, 0.42 * (1.0 - m_ambientFade));
+        if (m_ambient.size() != area.size() && !m_ambientSource.isNull()) {
+            RebuildAmbient();
+        }
+        m_scene->Paint(painter, area, m_ambient, 0.5 * m_ambientFade, m_ambientPrevious,
+                       0.5 * (1.0 - m_ambientFade));
 
         // A greeting on the left, the clock on the right.
         const int hour = QTime::currentTime().hour();
@@ -161,8 +201,8 @@ void GameCarousel::SetModel(GameListModel* model) {
                 m_liftAnimation->start();
                 // The backdrop takes the picked game's colours, cross-fading from the last.
                 m_ambientPrevious = m_ambient;
-                m_ambient = CheezyBackdrop::MakeAmbient(
-                    current.data(GameListItemPath::LargePictureRole).value<QPixmap>());
+                m_ambientSource = current.data(GameListItemPath::LargePictureRole).value<QPixmap>();
+                RebuildAmbient();
                 if (m_ambientAnimation == nullptr) {
                     m_ambientAnimation = new QVariantAnimation(this);
                     m_ambientAnimation->setStartValue(0.0);
@@ -213,7 +253,10 @@ void GameCarousel::ApplyFilter(const QString& edit_filter_text, GameListModel* m
 
 void GameCarousel::UpdateIconSize() {
     // Big tiles that follow the window's height, whatever the game list's icon size.
-    const int tile = std::clamp(viewport()->height() * 9 / 20, 140, 320);
+    const int tile =
+        std::clamp(static_cast<int>(viewport()->height() * 9 / 20 *
+                                    UISettings::values.home_tile_scale.GetValue() / 100),
+                   90, 460);
     const QSize grid_size(tile + tile / 3, std::max(tile + 120, viewport()->height()));
     if (gridSize() != grid_size) {
         setUpdatesEnabled(false);

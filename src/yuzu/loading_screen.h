@@ -9,6 +9,7 @@
 #include <chrono>
 #include <memory>
 #include <QString>
+#include <memory>
 #include <QPixmap>
 #include <QWidget>
 #include <QtGlobal>
@@ -16,6 +17,10 @@
 #if !QT_CONFIG(movie)
 #define YUZU_QT_MOVIE_MISSING 1
 #endif
+
+namespace CheezyBackdrop {
+class Scene;
+}
 
 namespace Loader {
 class AppLoader;
@@ -85,6 +90,7 @@ private:
     /// The game's icon, painted over the stage text.
     QPixmap game_icon;
     QPixmap ambient; ///< The icon, blurred (CheezyBackdrop)
+    std::shared_ptr<CheezyBackdrop::Scene> scene; ///< The moving backdrop
     std::unique_ptr<QPropertyAnimation> fadeout_animation;
 
     // Definitions for the differences in text and styling for each stage

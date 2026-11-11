@@ -3032,3 +3032,7 @@ QPushButton#HomeAddGamesButton:hover {
     background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFD666, stop:1 #F5B52A);
     color: #2A1C00;
 }
+
+QSlider#HomeTileSizeSlider {
+    background: transparent;
+}
