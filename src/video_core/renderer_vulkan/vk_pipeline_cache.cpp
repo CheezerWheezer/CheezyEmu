@@ -1607,12 +1607,12 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
             in.read(reinterpret_cast<char*>(head.data()), head.size())
                 .read(reinterpret_cast<char*>(ids.data()), std::streamsize{head[1]} * 4);
             const bool compute = head[0] == 1;
-            GraphicsPipelineCacheKey graphics_key;
+            GraphicsPipelineCacheKey recorded_key;
             ComputePipelineCacheKey compute_key;
             if (compute) {
                 in.read(reinterpret_cast<char*>(&compute_key), sizeof(compute_key));
             } else {
-                in.read(reinterpret_cast<char*>(&graphics_key), sizeof(graphics_key));
+                in.read(reinterpret_cast<char*>(&recorded_key), sizeof(recorded_key));
             }
             std::vector<FileEnvironment> envs(head[1]);
             for (size_t index = 0; index < envs.size(); ++index) {
@@ -1633,13 +1633,13 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
                 return CreateComputePipeline(pools, compute_key, envs[0], nullptr, false, true)
                            .pipeline != nullptr;
             }
-            VideoCommon::CheckGraphicsRecord(graphics_key.unique_hashes, envs.size());
+            VideoCommon::CheckGraphicsRecord(recorded_key.unique_hashes, envs.size());
             bool foreign{};
-            if (!NormalizeCachedGraphicsKey(graphics_key, envs, foreign)) {
+            if (!NormalizeCachedGraphicsKey(recorded_key, envs, foreign)) {
                 ++run->not_for_this_gpu;
                 return false;
             }
-            const u64 hash = graphics_key.Hash();
+            const u64 hash = recorded_key.Hash();
             {
                 std::scoped_lock lock{run->mutex};
                 if (!run->claimed.insert(hash).second) {
@@ -1648,13 +1648,13 @@ std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
                 }
             }
             if (!run->in_game.load(std::memory_order_relaxed) &&
-                graphics_cache.contains(graphics_key)) {
+                graphics_cache.contains(recorded_key)) {
                 ++run->skipped;
                 return false;
             }
             std::vector<std::vector<FileEnvironment>> records;
             records.push_back(std::move(envs));
-            const auto pipeline = CreateCachedGraphicsPipeline(graphics_key, records, nullptr);
+            const auto pipeline = CreateCachedGraphicsPipeline(recorded_key, records, nullptr);
             if (pipeline == nullptr || pipeline->Failed()) {
                 return false;
             }

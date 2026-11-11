@@ -353,14 +353,14 @@ protected:
         switch (event->type()) {
         case QEvent::Polish: {
             const bool popup = IsPopup(widget);
-            const bool glass =
+            const bool wants_glass =
                 GlassSupported() && (IsGlassDialog(widget) || IsGlassPopup(widget));
             if (popup) {
                 widget->setAttribute(Qt::WA_TranslucentBackground, true);
                 widget->setWindowFlag(Qt::FramelessWindowHint, true);
                 widget->setWindowFlag(Qt::NoDropShadowWindowHint, true);
             }
-            if (glass && !widget->property("glass").toBool()) {
+            if (wants_glass && !widget->property("glass").toBool()) {
                 widget->setProperty("glass", true);
                 widget->style()->unpolish(widget);
                 widget->style()->polish(widget);
