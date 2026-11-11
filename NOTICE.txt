@@ -14,3 +14,5 @@ CheezyEmu includes code from these projects, under their copyright and licenses:
   - yuzu Emulator Project, GPL-2.0-or-later
   - Sudachi, citra and other projects named in the source files
 Third-party libraries keep their own licenses: see the LICENSES folder and externals/.
+The Nunito font (The Nunito Project Authors) is used under the SIL Open Font License 1.1:
+dist/qt_themes/cheezy/fonts/Nunito-OFL.txt.

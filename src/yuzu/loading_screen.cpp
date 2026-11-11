@@ -12,8 +12,12 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPropertyAnimation>
+#include <QPainterPath>
 #include <QPushButton>
+#include <QRadialGradient>
 #include <QStyleOption>
+#include <QTimer>
+#include <cmath>
 #include "common/container/unordered_map.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "core/loader/loader.h"
@@ -21,6 +25,7 @@
 #include "video_core/rasterizer_interface.h"
 #include "video_core/shader_warm/shader_warm_builder.h"
 #include "yuzu/loading_screen.h"
+#include "yuzu/util/cheezy_backdrop.h"
 
 // Mingw seems to not have QMovie at all. If QMovie is missing then use a single frame instead of an
 // showing the full animation
@@ -46,17 +51,162 @@ QProgressBar::chunk {
 
 constexpr char SKIP_BUTTON_STYLE[] = R"(
 QPushButton {
-  background-color: black;
-  color: white;
-  border: 2px solid white;
-  border-radius: 6px;
-  padding: 6px 24px;
-  font: 12pt "Arial";
+  background-color: rgba(255, 200, 61, 40);
+  color: #FFD966;
+  border: 2px solid #FFC83D;
+  border-radius: 17px;
+  padding: 6px 28px;
+  font-size: 12pt;
+  font-weight: bold;
+}
+QPushButton:hover {
+  background-color: #FFC83D;
+  color: #2A1C00;
 }
 QPushButton:disabled {
-  color: gray;
-  border-color: gray;
+  color: #7A705C;
+  border-color: #4A3E2C;
+  background-color: transparent;
 })";
+
+namespace {
+
+const QColor Cheese{0xFF, 0xC8, 0x3D};
+const QColor CheeseDeep{0xE8, 0x9E, 0x10};
+const QColor Cream{0xFF, 0xF4, 0xDA};
+
+/// The loading bar: a rounded track that fills with cheese (holes drifting along it) and a
+/// little wedge riding its edge; while the length is unknown a piece of cheese glides to and fro.
+class CheeseProgress : public QWidget {
+public:
+    explicit CheeseProgress(QWidget* parent) : QWidget{parent} {
+        setMinimumHeight(64);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        setAttribute(Qt::WA_TranslucentBackground);
+        timer.setInterval(33);
+        connect(&timer, &QTimer::timeout, this, [this] {
+            phase += 0.033;
+            update();
+            // The screen behind drifts too.
+            if (parentWidget() != nullptr) {
+                window()->update();
+            }
+        });
+    }
+
+    void SetRange(int min_value, int max_value) {
+        minimum = min_value;
+        maximum = max_value;
+        update();
+    }
+    void SetValue(int new_value) {
+        value = new_value;
+        update();
+    }
+
+protected:
+    void showEvent(QShowEvent*) override {
+        timer.start();
+    }
+    void hideEvent(QHideEvent*) override {
+        timer.stop();
+    }
+
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter{this};
+        painter.setRenderHint(QPainter::Antialiasing);
+        const int width = std::min(this->width() - 80, 560);
+        // A fat, soft track: a pillow, not a line.
+        const QRectF track{(this->width() - width) / 2.0, height() / 2.0 - 16, double(width), 32};
+        const qreal radius = track.height() / 2;
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0, 70));
+        painter.drawRoundedRect(track.translated(0, 4), radius, radius);
+        painter.setBrush(QColor(0x3A, 0x2E, 0x1E));
+        painter.drawRoundedRect(track, radius, radius);
+        painter.setBrush(QColor(0x2A, 0x21, 0x15));
+        painter.drawRoundedRect(track.adjusted(4, 4, -4, -4), radius - 4, radius - 4);
+
+        const bool busy = maximum <= minimum;
+        const QRectF inner = track.adjusted(4, 4, -4, -4);
+        QRectF fill;
+        if (busy) {
+            // A soft blob of cheese easing back and forth.
+            const qreal piece = inner.width() * 0.32;
+            const qreal swing = (1 - std::cos(phase * 2.2)) / 2;
+            fill = {inner.left() + (inner.width() - piece) * swing, inner.top(), piece,
+                    inner.height()};
+        } else {
+            const qreal share = std::clamp(double(value - minimum) / (maximum - minimum), 0.0, 1.0);
+            fill = {inner.left(), inner.top(), std::max(inner.height(), inner.width() * share),
+                    inner.height()};
+        }
+        // Melted cheese: rounded ends and a gently wavy top edge.
+        QPainterPath melt;
+        const qreal r = fill.height() / 2;
+        melt.moveTo(fill.left() + r, fill.bottom());
+        melt.arcTo(QRectF(fill.left(), fill.top(), 2 * r, 2 * r), 270, -180);
+        const int steps = std::max(2, int(fill.width() / 6));
+        for (int i = 0; i <= steps; ++i) {
+            const qreal x = fill.left() + r + (fill.width() - 2 * r) * i / steps;
+            // The wave fades out towards the rounded ends, so they meet smoothly.
+            const qreal taper = std::sin(3.14159265 * i / steps);
+            const qreal y = fill.top() + taper * (1.6 + 1.6 * std::sin(x / 14.0 + phase * 3.0));
+            melt.lineTo(x, y);
+        }
+        melt.arcTo(QRectF(fill.right() - 2 * r, fill.top(), 2 * r, 2 * r), 90, -180);
+        melt.closeSubpath();
+        QLinearGradient gradient{fill.topLeft(), fill.bottomLeft()};
+        gradient.setColorAt(0, QColor(0xFF, 0xE2, 0x86));
+        gradient.setColorAt(0.5, Cheese);
+        gradient.setColorAt(1, QColor(0xF0, 0xA8, 0x1C));
+        painter.setBrush(gradient);
+        painter.drawPath(melt);
+
+        // Soft oval holes bobbing along, and a shine on top.
+        painter.save();
+        painter.setClipPath(melt);
+        const qreal spacing = 38;
+        const qreal drift = std::fmod(phase * 14, spacing);
+        for (qreal x = inner.left() - spacing + drift; x < fill.right() + spacing; x += spacing) {
+            const int n = int(std::floor((x - inner.left()) / spacing));
+            const qreal w = 5.5 + (n % 3) * 1.6;
+            const qreal y = fill.center().y() + 2 + ((n % 2) ? -3 : 3) +
+                            std::sin(phase * 2 + n) * 1.2;
+            QRadialGradient hole{QPointF(x, y), w};
+            hole.setColorAt(0, QColor(0xC9, 0x84, 0x08, 200));
+            hole.setColorAt(1, QColor(0xE8, 0x9E, 0x10, 60));
+            painter.setBrush(hole);
+            painter.drawEllipse(QPointF(x, y), w, w * 0.8);
+        }
+        painter.setBrush(QColor(255, 255, 255, 70));
+        painter.drawRoundedRect(QRectF(fill.left() + r * 0.6, fill.top() + 4,
+                                       std::max(0.0, fill.width() - r * 1.2), 4),
+                                2, 2);
+        painter.restore();
+
+        if (!busy) {
+            QFont font = this->font();
+            font.setBold(true);
+            font.setPixelSize(15);
+            painter.setFont(font);
+            painter.setPen(Cream);
+            const int percent =
+                int(100.0 * std::clamp(double(value - minimum) / (maximum - minimum), 0.0, 1.0));
+            painter.drawText(QRectF(track.right() + 12, track.top(), 70, track.height()),
+                             Qt::AlignVCenter | Qt::AlignLeft, QStringLiteral("%1%").arg(percent));
+        }
+    }
+
+private:
+    QTimer timer;
+    qreal phase = 0;
+    int minimum = 0;
+    int maximum = 0;
+    int value = 0;
+};
+
+} // Anonymous namespace
 
 constexpr char PROGRESSBAR_STYLE_COMPLETE[] = R"(
 QProgressBar {
@@ -74,6 +224,22 @@ LoadingScreen::LoadingScreen(QWidget* parent)
       previous_stage(VideoCore::LoadCallbackStage::Complete) {
     ui->setupUi(this);
     setMinimumSize(Layout::MinimumSize::Width, Layout::MinimumSize::Height);
+
+    // CheezyEmu's look: the background is painted (paintEvent), the labels sit on it.
+    setStyleSheet(QString{});
+    ui->fade_parent->setStyleSheet(QStringLiteral("background: transparent;"));
+    ui->logo->setStyleSheet(QStringLiteral("background: transparent;"));
+    ui->banner->setStyleSheet(QStringLiteral("background: transparent;"));
+    ui->stage->setStyleSheet(QStringLiteral(
+        "background: transparent; color: #FFF4DA; font-size: 18pt; font-weight: bold;"));
+    ui->value->setStyleSheet(
+        QStringLiteral("background: transparent; color: #E8D9B5; font-size: 12pt;"));
+    // The progress bar's values drive the cheese bar drawn in its place.
+    cheese_progress = new CheeseProgress(this);
+    ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->progress_bar) + 1,
+                                     cheese_progress);
+    ui->progress_bar->setMaximumHeight(0);
+    ui->progress_bar->setVisible(false);
 
     // Create a fade out effect to hide this loading screen widget.
     // When fading opacity, it will fade to the parent widgets background color, which is why we
@@ -112,10 +278,10 @@ LoadingScreen::LoadingScreen(QWidget* parent)
     qRegisterMetaType<VideoCore::LoadCallbackStage>();
 
     stage_translations = {
-        {VideoCore::LoadCallbackStage::Prepare, tr("Loading...")},
-        {VideoCore::LoadCallbackStage::Build, tr("Loading Shaders %1 / %2")},
-        {VideoCore::LoadCallbackStage::Complete, tr("Launching...")},
-        {VideoCore::LoadCallbackStage::Warm, tr("Building shaders %1 / %2 (once)")},
+        {VideoCore::LoadCallbackStage::Prepare, tr("Getting your game ready...")},
+        {VideoCore::LoadCallbackStage::Build, tr("Warming up shaders %1 / %2")},
+        {VideoCore::LoadCallbackStage::Complete, tr("Here we go!")},
+        {VideoCore::LoadCallbackStage::Warm, tr("Building shaders %1 / %2 (just this once)")},
     };
     progressbar_style = {
         {VideoCore::LoadCallbackStage::Prepare, PROGRESSBAR_STYLE_PREPARE},
@@ -145,6 +311,12 @@ void LoadingScreen::Prepare(Loader::AppLoader& loader) {
 #endif
         buffer.clear();
     }
+    // The game's icon, drawn as a big tile over the stage text (paintEvent).
+    game_icon = {};
+    if (std::vector<u8> icon; loader.ReadIcon(icon) == Loader::ResultStatus::Success) {
+        game_icon.loadFromData(icon.data(), static_cast<uint>(icon.size()));
+    }
+    ambient = CheezyBackdrop::MakeAmbient(game_icon);
     if (loader.ReadLogo(buffer) == Loader::ResultStatus::Success) {
         QPixmap map;
         map.loadFromData(buffer.data(), static_cast<uint>(buffer.size()));
@@ -165,13 +337,8 @@ void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size
     const auto now = steady_clock::now();
     // reset the timer if the stage changes
     if (stage != previous_stage) {
-        ui->progress_bar->setStyleSheet(QString::fromUtf8(progressbar_style[stage]));
-        // Hide the progress bar during the prepare stage
-        if (stage == VideoCore::LoadCallbackStage::Prepare) {
-            ui->progress_bar->hide();
-        } else {
-            ui->progress_bar->show();
-        }
+        // The cheese bar shows from the first stage on; the old bar stays hidden.
+        cheese_progress->setVisible(true);
         skip_button->setVisible(stage == VideoCore::LoadCallbackStage::Warm);
         skip_button->setEnabled(true);
         previous_stage = stage;
@@ -223,14 +390,63 @@ void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size
     }
     ui->value->setText(estimate);
     ui->progress_bar->setValue(static_cast<int>(value));
+    auto* const bar = static_cast<CheeseProgress*>(cheese_progress);
+    if (stage == VideoCore::LoadCallbackStage::Prepare) {
+        bar->SetRange(0, 0); // no length known yet: the gliding piece
+    } else {
+        bar->SetRange(ui->progress_bar->minimum(), ui->progress_bar->maximum());
+    }
+    bar->SetValue(static_cast<int>(value));
     previous_time = now;
+
+    // TEST: CHEEZYEMU_LOADING_SHOT=<png> saves a picture of the loading screen 3 s in.
+    if (static bool shot_taken = false; !shot_taken) {
+        if (const QByteArray shot = qgetenv("CHEEZYEMU_LOADING_SHOT"); !shot.isEmpty()) {
+            shot_taken = true;
+            QTimer::singleShot(3000, this, [this, path = QString::fromUtf8(shot)] {
+                window()->grab().save(path);
+            });
+        }
+    }
 }
 
 void LoadingScreen::paintEvent(QPaintEvent* event) {
-    QStyleOption opt;
-    opt.initFrom(this);
     QPainter p(this);
-    style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
+    p.setRenderHint(QPainter::Antialiasing);
+    const QRect area = rect();
+    // The home view's backdrop, drifting, with the game's icon as the ambient glow.
+    static qreal phase = 0.0;
+    phase += 0.04;
+    CheezyBackdrop::Paint(p, area, phase, ambient, 0.38);
+
+    // The game's icon as a glowing rounded tile above the stage text.
+    if (!game_icon.isNull()) {
+        const int tile = std::clamp(area.height() / 4, 96, 220);
+        const QPoint stage_top = ui->stage->mapTo(this, QPoint(0, 0));
+        const QRectF tile_rect{(area.width() - tile) / 2.0,
+                               std::max(24.0, stage_top.y() - tile - 28.0), double(tile),
+                               double(tile)};
+        const qreal radius = tile * 0.12;
+        for (int i = 6; i >= 1; --i) {
+            QColor glow{0xFF, 0xC8, 0x3D};
+            glow.setAlpha(12 + (6 - i) * 6);
+            p.setPen(QPen(glow, 2));
+            p.setBrush(Qt::NoBrush);
+            const qreal spread = 3.0 + i * 2.5;
+            p.drawRoundedRect(tile_rect.adjusted(-spread, -spread, spread, spread),
+                              radius + spread, radius + spread);
+        }
+        p.save();
+        QPainterPath clip;
+        clip.addRoundedRect(tile_rect, radius, radius);
+        p.setClipPath(clip);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        p.drawPixmap(tile_rect.toRect(), game_icon);
+        p.restore();
+        p.setPen(QPen(QColor(0xFF, 0xC8, 0x3D), 4));
+        p.setBrush(Qt::NoBrush);
+        p.drawRoundedRect(tile_rect, radius, radius);
+    }
     QWidget::paintEvent(event);
 }
 

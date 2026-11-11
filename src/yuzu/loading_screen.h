@@ -9,6 +9,7 @@
 #include <chrono>
 #include <memory>
 #include <QString>
+#include <QPixmap>
 #include <QWidget>
 #include <QtGlobal>
 
@@ -79,6 +80,11 @@ private:
 
     QGraphicsOpacityEffect* opacity_effect = nullptr;
     QPushButton* skip_button = nullptr;
+    /// The cheese loading bar drawn in place of the progress bar (loading_screen.cpp).
+    QWidget* cheese_progress = nullptr;
+    /// The game's icon, painted over the stage text.
+    QPixmap game_icon;
+    QPixmap ambient; ///< The icon, blurred (CheezyBackdrop)
     std::unique_ptr<QPropertyAnimation> fadeout_animation;
 
     // Definitions for the differences in text and styling for each stage

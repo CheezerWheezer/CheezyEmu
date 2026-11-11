@@ -84,6 +84,7 @@
 #include <QActionGroup>
 #include <QCheckBox>
 #include <QDialog>
+#include <QFontDatabase>
 #include <QListWidget>
 #include <QTabWidget>
 #include <QDialogButtonBox>
@@ -430,6 +431,16 @@ MainWindow::MainWindow(bool has_broken_vulkan)
                 }
             });
             const QString open = QString::fromUtf8(qgetenv("CHEEZYEMU_DIALOG_SHOT_OPEN"));
+            if (open == QStringLiteral("main")) {
+                // The main window itself (game list, status bar), then close the app.
+                QTimer::singleShot(1500, this, [this, path] {
+                    const bool saved = grab().save(path);
+                    LOG_INFO(Frontend, "Dialog shot: main window {}x{} saved={}", width(),
+                             height(), saved);
+                    close();
+                });
+                return;
+            }
             if (open == QStringLiteral("recommended")) {
                 OnApplyRecommendedSettings();
             } else if (open.startsWith(QStringLiteral("properties:"))) {
@@ -1695,6 +1706,12 @@ void MainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_Load_File, &MainWindow::OnMenuLoadFile);
     connect_menu(ui->action_Load_Folder, &MainWindow::OnMenuLoadFolder);
     connect_menu(ui->action_Install_File_NAND, &MainWindow::OnMenuInstallToNAND);
+    {
+        // Adding a game folder from any game list view (the home view has no list row for it).
+        auto* const add_folder = new QAction(tr("Add Game Folder..."), this);
+        ui->menu_File->insertAction(ui->menu_File->actions().value(0), add_folder);
+        connect(add_folder, &QAction::triggered, this, &MainWindow::OnGameListAddDirectory);
+    }
     connect_menu(ui->action_Exit, &QMainWindow::close);
     connect_menu(ui->action_Load_Amiibo, &MainWindow::OnLoadAmiibo);
 
@@ -6207,6 +6224,13 @@ void MainWindow::UpdateUITheme() {
         }
     }
 
+    // The CheezyEmu theme's rounded font (Nunito, SIL Open Font License, fonts/ in the theme).
+    if (static bool fonts_loaded = false; !fonts_loaded) {
+        fonts_loaded = true;
+        if (QFontDatabase::addApplicationFont(QStringLiteral(":/cheezy/fonts/Nunito.ttf")) < 0) {
+            LOG_WARNING(Frontend, "Could not load the Nunito font");
+        }
+    }
     QString theme_uri{QStringLiteral(":%1/style.qss").arg(current_theme)};
     QFile f(theme_uri);
     if (f.open(QFile::ReadOnly | QFile::Text)) {

@@ -25,9 +25,20 @@ public:
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     void setSize(const QSize& newSize, const QSize& contentSize, const int padding, const int columns);
 
+    /// How far the selected home tile is lifted, 0 to 1 (an easing with overshoot animates it).
+    void setLift(qreal lift) {
+        m_lift = lift;
+    }
+
 private:
+    /// The home view (carousel): a big rounded tile, the selected one lifted with a glowing
+    /// cheese outline and its name under it.
+    void PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& option,
+                       const QModelIndex& index) const;
+
     static constexpr int cardMargin = 8;
 
+    qreal m_lift = 1.0;
     QSize m_size;
     QSize m_contentSize;
     int m_padding;

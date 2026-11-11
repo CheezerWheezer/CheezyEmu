@@ -294,6 +294,7 @@ void GameList::SetupViews() {
     tree_view->SetModel(item_model);
     grid_view->SetModel(item_model);
     carousel_view->SetModel(item_model);
+    connect(carousel_view, &GameCarousel::AddDirectoryRequested, this, &GameList::AddDirectory);
 }
 
 QString GameList::GetLastFilterResultItem() const {

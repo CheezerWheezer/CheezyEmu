@@ -93,6 +93,9 @@ public:
     static constexpr int FileTypeRole = SortRole + 4;
     /// Whether the entry shows a real picture (from the game or the picture cache).
     static constexpr int HasPictureRole = SortRole + 5;
+    /// The picture at up to 512 px (the home view's big tiles); DecorationRole holds it at the
+    /// game list's icon size.
+    static constexpr int LargePictureRole = SortRole + 6;
 
     GameListItemPath() = default;
     GameListItemPath(const QString& game_path, const std::vector<u8>& picture_data,
@@ -139,6 +142,11 @@ public:
         if (!loaded) {
             picture = GetDefaultIcon(size);
         }
+        QPixmap large = picture;
+        if (large.width() > 512 || large.height() > 512) {
+            large = large.scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        }
+        setData(large, LargePictureRole);
         picture = picture.scaled(size, size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
         setData(picture, Qt::DecorationRole);
