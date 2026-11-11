@@ -723,6 +723,8 @@ void TextureCache<P>::TickFrame() {
         // size above understates transcoded ASTC (4x as RGBA8) and host-only formats.
         u64 real_bytes{}, real_astc{}, real_gpu_written{}, real_unbacked{}, in_blocks{};
         u64 real_astc_rgba8{}, astc_rgba8_images{};
+        // RGBA8 ASTC by size: width, height, levels, layers -> bytes, images.
+        std::map<std::tuple<u32, u32, s32, s32>, std::pair<u64, u32>> rgba8_sizes;
         for (const auto [image_id, image] : slot_images) {
             if constexpr (requires { image->MemoryBlock(); }) {
                 const auto block = image->MemoryBlock();
@@ -739,6 +741,12 @@ void TextureCache<P>::TickFrame() {
                     if (texels != 0 && block.size * 2 > texels * 5) {
                         real_astc_rgba8 += block.size;
                         ++astc_rgba8_images;
+                        auto& group = rgba8_sizes[{image->info.size.width,
+                                                   image->info.size.height,
+                                                   image->info.resources.levels,
+                                                   image->info.resources.layers}];
+                        group.first += block.size;
+                        ++group.second;
                     }
                 } else if (True(image->flags & ImageFlagBits::GpuModified)) {
                     real_gpu_written += block.size;
@@ -763,6 +771,30 @@ void TextureCache<P>::TickFrame() {
                      }
                      return 0;
                  }());
+        if (!rgba8_sizes.empty()) {
+            std::vector<std::pair<u64, std::string>> groups;
+            for (const auto& [key, value] : rgba8_sizes) {
+                const auto [width, height, levels, layers] = key;
+                // Levels whose size in 4x4 blocks is level 0's shifted down (BC-safe on AMD).
+                const u32 blocks_x = (width + 3) / 4, blocks_y = (height + 3) / 4;
+                s32 even = 1;
+                while (even < levels &&
+                       ((std::max)(width >> even, 1U) + 3) / 4 == (std::max)(blocks_x >> even, 1U) &&
+                       ((std::max)(height >> even, 1U) + 3) / 4 == (std::max)(blocks_y >> even, 1U)) {
+                    ++even;
+                }
+                groups.emplace_back(value.first, fmt::format("{}x{}x{} {}/{} levels even: {} MiB "
+                                                             "in {}", width, height, layers, even,
+                                                             levels, value.first >> 20,
+                                                             value.second));
+            }
+            std::sort(groups.begin(), groups.end(), std::greater<>{});
+            std::string text;
+            for (size_t i = 0; i < (std::min)(groups.size(), size_t{10}); ++i) {
+                text += (i ? "; " : "") + groups[i].second;
+            }
+            LOG_INFO(HW_GPU, "Texture cache: RGBA8 ASTC by size: {}", text);
+        }
         for (const auto [image_id, image] : slot_images) {
             const u64 bytes = GetScaledImageSizeBytes(*image);
             image_bytes += bytes;

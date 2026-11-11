@@ -74,11 +74,55 @@ using VideoCore::Surface::IsPixelFormatSRGB;
 using VideoCore::Surface::SurfaceType;
 
 namespace {
+// ASTC re-compressed to BC1/BC3 on an AMD driver keeps only the mip levels whose size in 4x4
+// blocks is level 0's shifted down (HasUnevenBlockMips), when those reach 32 texels or less. The
+// AMD driver samples the other levels of a BC copy wrong (dark seams), so these images were kept
+// as RGBA8 instead, four times the memory (Ocarina: 768x768 and 1536x1536 textures, whose last 3
+// levels, 6x6 and smaller, are uneven). Distant surfaces sample the smallest kept level instead.
+// Set by TextureCacheRuntime; EDEN_NX2_BC_TAIL_TRIM=0 turns it off.
+std::atomic<bool> trim_uneven_bc_tail{false};
+
+constexpr u32 BcTailTrimMaxTexels = 32;
+
+// How many levels from 0 have a size in 4x4 blocks equal to level 0's shifted down.
+[[nodiscard]] u32 EvenBlockMipLevels(const VideoCommon::ImageInfo& info, u32 levels) {
+    const u32 blocks_x = Common::DivCeil(info.size.width, 4U);
+    const u32 blocks_y = Common::DivCeil(info.size.height, 4U);
+    u32 level = 1;
+    for (; level < levels; ++level) {
+        const u32 level_x = Common::DivCeil((std::max)(info.size.width >> level, 1U), 4U);
+        const u32 level_y = Common::DivCeil((std::max)(info.size.height >> level, 1U), 4U);
+        if (level_x != (std::max)(blocks_x >> level, 1U) ||
+            level_y != (std::max)(blocks_y >> level, 1U)) {
+            break;
+        }
+    }
+    return level;
+}
+
 [[nodiscard]] u32 HostMipCount(const VideoCommon::ImageInfo& info) {
     if (info.num_samples > 1)
         return 1;
-    return VideoCommon::HostMipLevelCount(info.size.width, info.size.height, info.size.depth,
-                                          static_cast<u32>(info.resources.levels));
+    const u32 levels = VideoCommon::HostMipLevelCount(info.size.width, info.size.height,
+                                                      info.size.depth,
+                                                      static_cast<u32>(info.resources.levels));
+    if (levels > 1 && trim_uneven_bc_tail.load(std::memory_order_relaxed) &&
+        IsPixelFormatASTC(info.format) && info.type == ImageType::e2D && info.size.depth == 1) {
+        const u32 even = EvenBlockMipLevels(info, levels);
+        if (even < levels &&
+            ((std::max)(info.size.width, info.size.height) >> (even - 1)) <= BcTailTrimMaxTexels) {
+            // Not a huge array (IsHugeAstcArray, over 1 GiB as RGBA8): those stay RGBA8.
+            u64 bytes = 0;
+            for (u32 level = 0; level < levels; ++level) {
+                bytes += u64{(std::max)(info.size.width >> level, 1U)} *
+                         (std::max)(info.size.height >> level, 1U) * 4;
+            }
+            if (bytes * static_cast<u64>(info.resources.layers) <= (u64{1} << 30)) {
+                return even;
+            }
+        }
+    }
+    return levels;
 }
 
 [[nodiscard]] std::span<const VideoCommon::ImageCopy> HostImageCopies(
@@ -212,7 +256,8 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
 [[nodiscard]] bool HasUnevenBlockMips(const ImageInfo& info) {
     const u32 blocks_x = Common::DivCeil(info.size.width, 4U);
     const u32 blocks_y = Common::DivCeil(info.size.height, 4U);
-    for (s32 level = 1; level < info.resources.levels; ++level) {
+    // Only the levels the host keeps (HostMipCount drops an uneven tail where it can).
+    for (s32 level = 1; level < static_cast<s32>(HostMipCount(info)); ++level) {
         const u32 level_x = Common::DivCeil((std::max)(info.size.width >> level, 1U), 4U);
         const u32 level_y = Common::DivCeil((std::max)(info.size.height >> level, 1U), 4U);
         if (level_x != (std::max)(blocks_x >> level, 1U) ||
@@ -1300,6 +1345,25 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
       resolution{Settings::values.resolution_info} {
     // Before anything below reads astc_recompression (passes, view formats).
     UseBc3ForSwitch2OnSmallCards(device);
+    {
+        const VkDriverIdKHR id = device.GetDriverID();
+        const char* const trim = std::getenv("EDEN_NX2_BC_TAIL_TRIM");
+        const bool on = (id == VK_DRIVER_ID_AMD_PROPRIETARY ||
+                         id == VK_DRIVER_ID_AMD_OPEN_SOURCE || id == VK_DRIVER_ID_MESA_RADV) &&
+                        !device.IsOptimalAstcSupported() &&
+                        Settings::values.accelerate_astc.GetValue() ==
+                            Settings::AstcDecodeMode::Gpu &&
+                        Settings::GetAstcRecompression() !=
+                            Settings::AstcRecompression::Uncompressed &&
+                        !(trim != nullptr && trim[0] == '0');
+        trim_uneven_bc_tail.store(on, std::memory_order_relaxed);
+        if (on) {
+            LOG_INFO(Render_Vulkan, "BC textures with uneven small mips keep their even levels "
+                                    "down to {} texels instead of turning RGBA8 "
+                                    "(EDEN_NX2_BC_TAIL_TRIM=0 turns this off)",
+                     BcTailTrimMaxTexels);
+        }
+    }
     // Huge ASTC arrays always decode on the GPU (IsHugeAstcArray), whatever the decode setting.
     if (Settings::values.accelerate_astc.GetValue() == Settings::AstcDecodeMode::Gpu ||
         !device.IsOptimalAstcSupported()) {
