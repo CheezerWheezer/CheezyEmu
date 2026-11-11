@@ -3779,8 +3779,13 @@ private:
                         PollSyncpts();
                         return std::nullopt;
                     });
-                system.CoreTiming().ScheduleLoopingEvent(SyncptPollInterval, SyncptPollInterval,
-                                                         m_syncpt_poll);
+                // TEST: EDEN_NX2_SYNCPT_POLL_US=<us> sets the interval (default 500).
+                std::chrono::nanoseconds interval = SyncptPollInterval;
+                if (const char* const us = std::getenv("EDEN_NX2_SYNCPT_POLL_US")) {
+                    interval = std::chrono::microseconds{(std::max)(std::atol(us), 20L)};
+                }
+                LOG_INFO(Service, "nx2:gsv syncpoint poll every {} us", interval.count() / 1000);
+                system.CoreTiming().ScheduleLoopingEvent(interval, interval, m_syncpt_poll);
             }
         } else {
             LOG_ERROR(Service, "nx2:gsv TIPC 204: missing syncpt transfer memory");
@@ -3837,7 +3842,37 @@ private:
         if (acked) {
             m_syncpt_events[1]->Signal(system.Kernel());
         }
+        // TEST: EDEN_NX2_SYNCPT_STATS=1 logs every 10 s how many polls found armed waits.
+        static const bool stats = [] {
+            const char* const value = std::getenv("EDEN_NX2_SYNCPT_STATS");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (stats) [[unlikely]] {
+            bool any_armed = false;
+            for (u32 w = 0; w < words; ++w) {
+                any_armed |= armed[w] != 0;
+            }
+            ++m_poll_stats.polls;
+            m_poll_stats.armed += any_armed ? 1 : 0;
+            m_poll_stats.acks += acked ? 1 : 0;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - m_poll_stats.since >= std::chrono::seconds{10}) {
+                const double secs = std::chrono::duration<double>(now - m_poll_stats.since).count();
+                LOG_INFO(Service, "nx2:gsv syncpoint polls {:.0f}/s, with armed waits {:.0f}/s, "
+                                  "acks (wakeups) {:.0f}/s",
+                         m_poll_stats.polls / secs, m_poll_stats.armed / secs,
+                         m_poll_stats.acks / secs);
+                m_poll_stats = {};
+                m_poll_stats.since = now;
+            }
+        }
     }
+    struct PollStats {
+        u64 polls{};
+        u64 armed{};
+        u64 acks{};
+        std::chrono::steady_clock::time_point since{std::chrono::steady_clock::now()};
+    } m_poll_stats;
 
     // nn::gsv::shim::CalculateRequirements(u64* size, u64* alignment, preference, u32): the 0x40-byte
     // InterModuleUserImagePreference (words 2..17) and a u32 (word 18). A block-linear preference

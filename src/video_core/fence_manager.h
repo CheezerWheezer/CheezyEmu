@@ -129,6 +129,7 @@ public:
             }
         }
         pending_flushes.push_back(committed_flushes);
+        pending_queued_ns.push_back(FenceStats::Enabled() ? FenceStats::Now() : 0);
         QueueFence(new_fence);
         if (!delay_fence) {
             func();
@@ -237,6 +238,7 @@ private:
             VideoCommon::Nx2FastDraw::Break(VideoCommon::Nx2FastDraw::Reason::Fence);
             PopAsyncFlushes(pending_flushes.front());
             pending_flushes.pop_front();
+            pending_queued_ns.pop_front();
             auto operations = std::move(pending_operations.front());
             pending_operations.pop_front();
             for (auto& operation : operations) {
@@ -268,15 +270,17 @@ private:
             TFence fence;
             OperationList operations;
             u8 flushes;
+            u64 queued_ns;
         };
         std::vector<Released> batch;
         batch.reserve(MaxBatch);
         const auto take_front = [&] {
             batch.push_back({std::move(fences.front()), std::move(pending_operations.front()),
-                             pending_flushes.front()});
+                             pending_flushes.front(), pending_queued_ns.front()});
             fences.pop();
             pending_operations.pop_front();
             pending_flushes.pop_front();
+            pending_queued_ns.pop_front();
         };
         while (!stop_token.stop_requested()) {
             {
@@ -290,6 +294,7 @@ private:
             if (!batch.front().fence->IsStubbed()) {
                 WaitFence(batch.front().fence);
             }
+            const u64 gpu_done_ns = FenceStats::Enabled() ? FenceStats::Now() : 0;
             {
                 std::unique_lock lock(guard);
                 while (batch.size() < MaxBatch && !fences.empty() &&
@@ -325,6 +330,15 @@ private:
                     operation();
                 }
                 released.operations.clear();
+            }
+            if (FenceStats::Enabled()) [[unlikely]] {
+                const u64 now = FenceStats::Now();
+                for (const Released& released : batch) {
+                    if (released.queued_ns != 0 && !released.fence->IsStubbed()) {
+                        fence_stats.Add(gpu_done_ns - (std::min)(gpu_done_ns, released.queued_ns),
+                                        now - gpu_done_ns);
+                    }
+                }
             }
             if (!batch.empty()) {
                 VideoCommon::Nx2FastDraw::Break(VideoCommon::Nx2FastDraw::Reason::Fence);
@@ -475,6 +489,58 @@ private:
     /// from 64 operations at most fences: ~30 a fence at Ocarina of Time's water, in bursts).
     std::vector<OperationList> spare_operations; ///< Guarded by uncommitted_guard
     std::deque<u8> pending_flushes; ///< Per fence: the caches that committed downloads
+    std::deque<u64> pending_queued_ns; ///< Per fence: when it was queued (FenceStats)
+
+    /// TEST (EDEN_NX2_FENCE_STATS=1): per 10 s, how long fences took from being queued to the
+    /// host GPU passing them, and from that to their operations having run (cache locks and
+    /// the operations themselves), on the fencing thread.
+    struct FenceStats {
+        static bool Enabled() {
+            static const bool enabled = [] {
+                const char* const value = std::getenv("EDEN_NX2_FENCE_STATS");
+                return value != nullptr && value[0] == '1';
+            }();
+            return enabled;
+        }
+        static u64 Now() {
+            return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
+        }
+        void Add(u64 gpu_ns, u64 release_ns) {
+            ++count;
+            gpu_sum += gpu_ns;
+            release_sum += release_ns;
+            gpu_max = (std::max)(gpu_max, gpu_ns);
+            release_max = (std::max)(release_max, release_ns);
+            gpu_over_20ms += gpu_ns > 20'000'000 ? 1 : 0;
+            release_over_5ms += release_ns > 5'000'000 ? 1 : 0;
+            const u64 now = Now();
+            if (since == 0) {
+                since = now;
+            }
+            if (now - since < 10'000'000'000ULL) {
+                return;
+            }
+            LOG_INFO(HW_GPU,
+                     "Fence stats: {} fences in {:.1f} s; queued to GPU done mean {:.2f} ms max "
+                     "{:.1f} ms ({} over 20 ms); GPU done to released mean {:.3f} ms max {:.1f} ms "
+                     "({} over 5 ms)",
+                     count, (now - since) / 1e9, gpu_sum / 1e6 / count, gpu_max / 1e6,
+                     gpu_over_20ms, release_sum / 1e6 / count, release_max / 1e6,
+                     release_over_5ms);
+            *this = {};
+            since = now;
+        }
+        u64 since{};
+        u64 count{};
+        u64 gpu_sum{};
+        u64 release_sum{};
+        u64 gpu_max{};
+        u64 release_max{};
+        u64 gpu_over_20ms{};
+        u64 release_over_5ms{};
+    } fence_stats;
     u32 skipped_fences{}; ///< Empty fences skipped since the last one made (GPU thread only)
 
     std::mutex guard;
