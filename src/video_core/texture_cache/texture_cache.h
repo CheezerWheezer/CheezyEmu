@@ -719,6 +719,39 @@ void TextureCache<P>::TickFrame() {
         size_t images{};
         std::vector<std::pair<u64, const Image*>> largest;
         std::map<u32, std::pair<u64, u32>> by_format;
+        // What the images really hold in device memory (their allocations), by kind: the guest
+        // size above understates transcoded ASTC (4x as RGBA8) and host-only formats.
+        u64 real_bytes{}, real_astc{}, real_gpu_written{}, real_unbacked{}, in_blocks{};
+        for (const auto [image_id, image] : slot_images) {
+            if constexpr (requires { image->MemoryBlock(); }) {
+                const auto block = image->MemoryBlock();
+                real_bytes += block.size;
+                if (block.block != 0 && block.block_size > block.size) {
+                    in_blocks += block.size;
+                }
+                if (IsPixelFormatASTC(image->info.format)) {
+                    real_astc += block.size;
+                } else if (True(image->flags & ImageFlagBits::GpuModified)) {
+                    real_gpu_written += block.size;
+                }
+                if (True(image->flags & ImageFlagBits::Unbacked)) {
+                    real_unbacked += 1;
+                }
+            }
+        }
+        LOG_INFO(HW_GPU,
+                 "Texture cache: images hold {} MiB of device memory ({} MiB ASTC textures, {} "
+                 "MiB GPU-written targets, {} MiB other; {} MiB inside shared blocks), {} "
+                 "unbacked; recycled images keep {} MiB",
+                 real_bytes >> 20, real_astc >> 20, real_gpu_written >> 20,
+                 (real_bytes - (std::min)(real_bytes, real_astc + real_gpu_written)) >> 20,
+                 in_blocks >> 20, real_unbacked,
+                 [&]() -> u64 {
+                     if constexpr (requires { runtime.GetRecycledImageMemory(); }) {
+                         return runtime.GetRecycledImageMemory() >> 20;
+                     }
+                     return 0;
+                 }());
         for (const auto [image_id, image] : slot_images) {
             const u64 bytes = GetScaledImageSizeBytes(*image);
             image_bytes += bytes;
