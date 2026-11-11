@@ -109,7 +109,15 @@ std::filesystem::path RecipesDir() {
     if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
         return std::filesystem::path{"recipes"};
     }
-    return std::filesystem::path{buffer.data()}.parent_path() / "recipes";
+    // In the app bundle they are data, so they live in Contents/Resources (codesign treats
+    // everything in Contents/MacOS as code); next to the program for a plain build.
+    const auto exe_dir = std::filesystem::path{buffer.data()}.parent_path();
+    std::error_code error;
+    const auto bundled = exe_dir.parent_path() / "Resources" / "recipes";
+    if (std::filesystem::is_directory(bundled, error)) {
+        return bundled;
+    }
+    return exe_dir / "recipes";
 #else
     std::error_code error;
     const auto exe = std::filesystem::read_symlink("/proc/self/exe", error);

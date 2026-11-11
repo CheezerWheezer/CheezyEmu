@@ -270,10 +270,18 @@ add_custom_command(TARGET yuzu POST_BUILD
 
 # Shader recipes (video_core/nx2_recipe.h), also next to the executable: which pipelines a game
 # draws, without any of the game's code. The first start of a game with a recipe builds them.
-add_custom_command(TARGET yuzu POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${PROJECT_SOURCE_DIR}/dist/recipes" "$<TARGET_FILE_DIR:yuzu>/recipes"
-    VERBATIM)
+# In the macOS app bundle they go to Contents/Resources (nx2_precompile.cpp RecipesDir).
+if (APPLE)
+    add_custom_command(TARGET yuzu POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PROJECT_SOURCE_DIR}/dist/recipes" "$<TARGET_BUNDLE_CONTENT_DIR:yuzu>/Resources/recipes"
+        VERBATIM)
+else()
+    add_custom_command(TARGET yuzu POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PROJECT_SOURCE_DIR}/dist/recipes" "$<TARGET_FILE_DIR:yuzu>/recipes"
+        VERBATIM)
+endif()
 
 # AMD FSR 4: AMD's signed FidelityFX DLLs, loaded at runtime from the executable's folder, and the
 # license they are redistributed under (externals/FidelityFX-SDK-2.4).

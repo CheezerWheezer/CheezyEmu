@@ -551,6 +551,11 @@ jobs:
             echo "$leaks" | sort -u
             exit 1
           fi
+          # Shader recipes are data: Contents/Resources (RecipesDir in nx2_precompile.cpp).
+          rm -rf "$app/Contents/MacOS/recipes"
+          mkdir -p "$app/Contents/Resources/recipes"
+          cp -R dist/recipes/. "$app/Contents/Resources/recipes/"
+          ls "$app/Contents/Resources/recipes" | grep -q nx2recipe
           # macdeployqt invalidates the signatures. The programs get the entitlements when the
           # tree has them (the Hypervisor CPU backend needs com.apple.security.hypervisor).
           codesign --force --deep --sign - "$app"
