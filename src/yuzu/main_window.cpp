@@ -46,6 +46,7 @@
 #include "ryujinx_dialog.h"
 #include "set_play_time_dialog.h"
 #include "util/util.h"
+#include "yuzu/util/rounded_popups.h"
 #include "yuzu/util/fit_window.h"
 #include "yuzu/game/game_list.h"
 #include "yuzu/nup_dialogs.h"
@@ -393,6 +394,8 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     QtCommon::Init(this);
     // Every window and dialog fits the screen it opens on (small screens, high display scale).
     FitWindow::Install();
+    // Menus, dropdown lists and tooltips: only their rounded shape, no square box behind it.
+    RoundedPopups::Install();
     // CHEEZYEMU_DIALOG_SHOT=<png> (test): opens Configure, saves a picture of it, closes it.
     // CHEEZYEMU_DIALOG_SHOT_OPEN=recommended opens the "Find Best Settings" question instead,
     // =properties:<game file> that game's Properties. CHEEZYEMU_DIALOG_SHOT_PAGE=<text> first
@@ -431,6 +434,19 @@ MainWindow::MainWindow(bool has_broken_vulkan)
                 }
             });
             const QString open = QString::fromUtf8(qgetenv("CHEEZYEMU_DIALOG_SHOT_OPEN"));
+            if (open == QStringLiteral("menu")) {
+                // A menu, opened over the window: its picture shows whether its corners are
+                // see-through (RoundedPopups).
+                ui->menu_Emulation->popup(mapToGlobal(QPoint(60, 40)));
+                QTimer::singleShot(1500, this, [this, path] {
+                    const bool saved = ui->menu_Emulation->grab().save(path);
+                    LOG_INFO(Frontend, "Dialog shot: menu saved={} translucent={}", saved,
+                             ui->menu_Emulation->testAttribute(Qt::WA_TranslucentBackground));
+                    ui->menu_Emulation->close();
+                    close();
+                });
+                return;
+            }
             if (open == QStringLiteral("main")) {
                 // The main window itself (game list, status bar), then close the app.
                 QTimer::singleShot(1500, this, [this, path] {
