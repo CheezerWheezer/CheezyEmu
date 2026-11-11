@@ -10,6 +10,33 @@ upscaling, AMD frame generation, and the community's AMD performance work.
 
 Not released yet: this section grows as the work lands.
 
+- **Shaders are built in: no shader pack needed for Ocarina of Time.** CheezyEmu now ships a
+  shader recipe for the game: a 2 MB list of the 39,000 pipelines players' sessions drew, with
+  none of the game's code in it. The first time you start the game, the loading screen reads
+  your own copy of the game for its shader programs (about a minute, "Gathering this game's
+  shaders"), puts the two together and builds every pipeline ("Building shaders N / M (once)",
+  with the time left and a **Skip** button). After that, places you visit for the first time
+  already have their shaders. It is done once per GPU driver, and **an update of CheezyEmu
+  does not start it over**: what is built is remembered by driver and cache version, not by
+  build, and a later, bigger recipe only builds what is new.
+  - How long it takes depends on what you already have. With saved shaders from earlier builds
+    it is quick (on the test PC, which had most of them: 9 minutes for the 13,400 it lacked).
+    With nothing saved, expect a long first start on AMD (its driver compiles on about 3 to 4
+    CPU cores however many you have): Skip starts the game at once, and the rest is built on
+    the next start or when the game needs it, as before.
+  - For any other game the same loading screen builds the compute programs found in the game
+    files and the pipelines your earlier sessions saved ("Precache shaders before game
+    start", now on by default; Off in Graphics > Advanced brings build 11's behaviour back).
+  - Your old shader pack still works and is used too.
+  - The shader finder, the recipe format and the assembler are Fritchii's (Frizti), built on
+    zortos293/Lichii#895; program fingerprints follow nxnative's shader_split.py (seedds, MIT).
+    CheezyEmu's part: recipes made straight from a recorded cache (`CHEEZYEMU_MAKE_RECIPE`),
+    and building them through the loading screen's precache.
+- **Windows fit the screen.** On a small laptop or handheld screen, or with a high Windows
+  display scale, Configure and a game's Properties opened larger than the screen: settings were
+  cut off until you dragged the window, and a window could end up stuck outside the screen.
+  Their pages now scroll, the windows have no fixed minimum size, every window and dialog is
+  made to fit the screen it opens on, and one that ends up off the screen is brought back.
 - **White flashes ("flashbang") and stretched, glowing geometry after changing areas**: upstream
   Lichii found the cause and its fix is in (zortos293/Lichii#1199 and #1236, with 99ivs and
   PantACRO4life). Video memory the game had freed kept its old contents on the emulator's side,

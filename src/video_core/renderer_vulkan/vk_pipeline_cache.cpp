@@ -39,6 +39,9 @@
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/memory_manager.h"
 #include "video_core/nx2_perf.h"
+#include "core/file_sys/nx2_shader_extract.h"
+#include "video_core/nx2_precompile.h"
+#include "video_core/nx2_recipe.h"
 #include "video_core/pipeline_cache_files.h"
 #include "video_core/pipeline_cache_policy.h"
 #include "video_core/renderer_vulkan/async_draw_policy.h"
@@ -1224,67 +1227,20 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
             graphics_duplicates.push_back({newest->second.first, record.end - sizeof(key)});
             newest->second.first = record;
         }
-        if (key.state.driver_id != dynamic_features.driver_id ||
-            key.state.driver_version != dynamic_features.driver_version) {
-            // Pipelines from a cache made with another driver (a shared shader pack) are
-            // recompiled from their guest shaders like any other cached pipeline; only the driver
-            // fields of the key say where they came from.
-            key.state.driver_id = dynamic_features.driver_id;
-            key.state.driver_version = dynamic_features.driver_version;
-            if (!dynamic_features.has_extended_dynamic_state_2_logic_op) {
-                key.state.extended_dynamic_state_2_logic_op.Assign(0);
-            }
+        bool foreign{};
+        std::optional<u64> stored_hash;
+        const bool drawable = NormalizeCachedGraphicsKey(key, envs, foreign, &stored_hash);
+        if (foreign) {
             ++foreign_driver_pipelines;
         }
-
-        if ((key.state.extended_dynamic_state != 0) !=
-                dynamic_features.has_extended_dynamic_state ||
-            (key.state.extended_dynamic_state_2 != 0) !=
-                dynamic_features.has_extended_dynamic_state_2 ||
-            (key.state.extended_dynamic_state_2_logic_op != 0) !=
-                dynamic_features.has_extended_dynamic_state_2_logic_op ||
-            (key.state.extended_dynamic_state_3_blend != 0) !=
-                dynamic_features.has_extended_dynamic_state_3_blend ||
-            (key.state.extended_dynamic_state_3_enables != 0) !=
-                dynamic_features.has_extended_dynamic_state_3_enables ||
-            (key.state.color_write_enable_dynamic != 0) !=
-                dynamic_features.has_color_write_enable ||
-            (key.state.dynamic_vertex_input != 0) !=
-                dynamic_features.has_dynamic_vertex_input) {
-            return;
-        }
-
-        // Keys stored before they kept only the attribute types the programs read (and imported
-        // cache version 53 ones) are looked up masked. The pipeline is the same: a type is only
-        // dropped for an attribute no program reads. Records that now share a key are tried
-        // newest first, like those of a pipeline stored again.
-        if (key.state.dynamic_vertex_input != 0) {
-            std::array<u64, Maxwell::MaxShaderProgram> attribute_masks;
-            attribute_masks.fill(~u64{0});
-            size_t env_index = 0;
-            for (size_t stage = 0; stage < Maxwell::MaxShaderProgram; ++stage) {
-                if (key.unique_hashes[stage] != 0 && env_index < envs.size()) {
-                    attribute_masks[stage] = VideoCommon::VertexAttributeMaskOf(envs[env_index++]);
-                }
-            }
-            const u64 stored_hash = key.Hash();
-            key.state.attribute_types = VideoCommon::KeyedAttributeTypes(
-                key.state.attribute_types, key.unique_hashes, attribute_masks);
-            if (const auto used = used_pipelines.find(stored_hash); used != used_pipelines.end()) {
+        if (stored_hash) {
+            if (const auto used = used_pipelines.find(*stored_hash); used != used_pipelines.end()) {
                 const u8 age = used->second;
                 const auto [entry, inserted] = used_pipelines.try_emplace(key.Hash(), age);
                 entry->second = (std::min)(entry->second, age);
             }
         }
-
-        const bool key_requests_provoking_last = key.state.provoking_vertex_last != 0;
-        if (key_requests_provoking_last && !dynamic_features.has_provoking_vertex_last_mode) {
-            return;
-        }
-
-        const bool key_uses_transform_feedback = key.state.xfb_enabled != 0;
-        if (key_uses_transform_feedback && key_requests_provoking_last &&
-            !dynamic_features.has_provoking_vertex_tf_preserve) {
+        if (!drawable) {
             return;
         }
 
@@ -1442,9 +1398,26 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     if (state.statistics) {
         state.statistics->Report();
     }
+    if (const char* const recipe_out = std::getenv("CHEEZYEMU_MAKE_RECIPE");
+        recipe_out != nullptr && *recipe_out != '\0' && !stop_loading.stop_requested()) {
+        MakeShaderRecipe(title_id, std::filesystem::path{recipe_out}, stop_loading);
+    }
     if (precache && !stop_loading.stop_requested()) {
+        // The title's shader recipe, put together with this copy of the game the first time
+        // (the game's files are read for their shader programs: about half a minute).
+        std::shared_ptr<RecipeRun> recipe;
+        if (VideoCommon::Nx2Precompile::Mode() != 0) {
+            if (callback) {
+                callback(VideoCore::LoadCallbackStage::Warm, 0, 0);
+            }
+            const auto file = VideoCommon::Nx2Precompile::EnsurePrecompiledFile(
+                title_id, base_dir, CACHE_VERSION, stop_loading);
+            if (!file.empty() && !stop_loading.stop_requested()) {
+                recipe = AddRecipeJobs(file, precache_graphics, precached_pipelines);
+            }
+        }
         PrecacheShaders(title_id, std::move(precache_graphics), std::move(precached_pipelines),
-                        stop_loading, callback);
+                        stop_loading, callback, std::move(recipe));
     }
     if (stop_loading.stop_requested()) {
         background_pipelines.Stop();
@@ -1453,11 +1426,431 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     }
 }
 
+/// What the jobs of one recipe run share.
+struct PipelineCache::RecipeRun {
+    std::filesystem::path file;
+    /// Where each environment of the file is: offset and size.
+    std::vector<std::pair<u64, u64>> environments;
+    u32 records{};
+    std::mutex mutex;
+    /// Key hashes no job of this run builds (again): built by an earlier precache for this
+    /// driver, a job of the disk cache's, or taken by a job of this run.
+    std::unordered_set<u64> claimed;
+    std::vector<u64> built; ///< Graphics key hashes this run built
+    std::atomic<size_t> skipped{};
+    std::atomic<size_t> not_for_this_gpu{};
+};
+
+bool PipelineCache::NormalizeCachedGraphicsKey(GraphicsPipelineCacheKey& key,
+                                               std::span<const FileEnvironment> envs, bool& foreign,
+                                               std::optional<u64>* stored_hash) const {
+    foreign = false;
+    if (key.state.driver_id != dynamic_features.driver_id ||
+        key.state.driver_version != dynamic_features.driver_version) {
+        // Pipelines from a cache made with another driver (a shared shader pack, a recipe) are
+        // recompiled from their guest shaders like any other cached pipeline; only the driver
+        // fields of the key say where they came from.
+        key.state.driver_id = dynamic_features.driver_id;
+        key.state.driver_version = dynamic_features.driver_version;
+        if (!dynamic_features.has_extended_dynamic_state_2_logic_op) {
+            key.state.extended_dynamic_state_2_logic_op.Assign(0);
+        }
+        foreign = true;
+    }
+
+    if ((key.state.extended_dynamic_state != 0) != dynamic_features.has_extended_dynamic_state ||
+        (key.state.extended_dynamic_state_2 != 0) !=
+            dynamic_features.has_extended_dynamic_state_2 ||
+        (key.state.extended_dynamic_state_2_logic_op != 0) !=
+            dynamic_features.has_extended_dynamic_state_2_logic_op ||
+        (key.state.extended_dynamic_state_3_blend != 0) !=
+            dynamic_features.has_extended_dynamic_state_3_blend ||
+        (key.state.extended_dynamic_state_3_enables != 0) !=
+            dynamic_features.has_extended_dynamic_state_3_enables ||
+        (key.state.color_write_enable_dynamic != 0) != dynamic_features.has_color_write_enable ||
+        (key.state.dynamic_vertex_input != 0) != dynamic_features.has_dynamic_vertex_input) {
+        return false;
+    }
+
+    // Keys stored before they kept only the attribute types the programs read (and imported
+    // cache version 53 ones) are looked up masked. The pipeline is the same: a type is only
+    // dropped for an attribute no program reads. Records that now share a key are tried
+    // newest first, like those of a pipeline stored again.
+    if (key.state.dynamic_vertex_input != 0) {
+        std::array<u64, Maxwell::MaxShaderProgram> attribute_masks;
+        attribute_masks.fill(~u64{0});
+        size_t env_index = 0;
+        for (size_t stage = 0; stage < Maxwell::MaxShaderProgram; ++stage) {
+            if (key.unique_hashes[stage] != 0 && env_index < envs.size()) {
+                attribute_masks[stage] = VideoCommon::VertexAttributeMaskOf(envs[env_index++]);
+            }
+        }
+        if (stored_hash != nullptr) {
+            *stored_hash = key.Hash();
+        }
+        key.state.attribute_types = VideoCommon::KeyedAttributeTypes(
+            key.state.attribute_types, key.unique_hashes, attribute_masks);
+    }
+
+    const bool key_requests_provoking_last = key.state.provoking_vertex_last != 0;
+    if (key_requests_provoking_last && !dynamic_features.has_provoking_vertex_last_mode) {
+        return false;
+    }
+    const bool key_uses_transform_feedback = key.state.xfb_enabled != 0;
+    if (key_uses_transform_feedback && key_requests_provoking_last &&
+        !dynamic_features.has_provoking_vertex_tf_preserve) {
+        return false;
+    }
+    return true;
+}
+
+namespace {
+/// Layout of an assembled recipe file (tools: Fritchii's nx2-precompile README): "NX2PREP1", u32
+/// cache version, u32 environments, u32 records, u32 0; per environment u64 offset and u64 size;
+/// per record u8 kind (0 graphics, 1 compute), u8 environments, u16 0, their u32 indices, the key.
+constexpr std::array<char, 8> RecipeFileMagic{'N', 'X', '2', 'P', 'R', 'E', 'P', '1'};
+constexpr size_t RecipeFileHeader = 24;
+} // Anonymous namespace
+
+std::shared_ptr<PipelineCache::RecipeRun> PipelineCache::AddRecipeJobs(
+    const std::filesystem::path& file, std::vector<PrecacheJob>& jobs,
+    const std::unordered_set<u64>& precached) {
+    namespace ShaderWarm = VideoCommon::ShaderWarm;
+    const std::string name = Common::FS::PathToUTF8String(file.filename());
+    const auto current = ShaderWarm::CurrentWarmStamp(file, 0, device.GetDriverVersion(),
+                                                      device.GetDeviceID(), CACHE_VERSION);
+    if (const auto marker = ShaderWarm::ReadWarmMarker(file);
+        current && marker && marker->Matches(*current)) {
+        LOG_INFO(Render_Vulkan, "Shader recipe: {} is built for this driver ({} pipelines)", name,
+                 marker->entries);
+        return nullptr;
+    }
+    auto run = std::make_shared<RecipeRun>();
+    run->file = file;
+    std::vector<u64> offsets;
+    try {
+        std::ifstream in(file, std::ios::binary | std::ios::ate);
+        in.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        const u64 end = static_cast<u64>(std::streamoff{in.tellg()});
+        in.seekg(0, std::ios::beg);
+        std::array<char, 8> magic;
+        u32 version{}, environments{}, records{}, reserved{};
+        in.read(magic.data(), magic.size())
+            .read(reinterpret_cast<char*>(&version), sizeof(version))
+            .read(reinterpret_cast<char*>(&environments), sizeof(environments))
+            .read(reinterpret_cast<char*>(&records), sizeof(records))
+            .read(reinterpret_cast<char*>(&reserved), sizeof(reserved));
+        if (magic != RecipeFileMagic || version != CACHE_VERSION ||
+            RecipeFileHeader + u64{environments} * 16 > end) {
+            LOG_WARNING(Render_Vulkan, "Shader recipe: {} is not a version {} file", name,
+                        CACHE_VERSION);
+            return nullptr;
+        }
+        run->environments.resize(environments);
+        in.read(reinterpret_cast<char*>(run->environments.data()),
+                static_cast<std::streamsize>(u64{environments} * 16));
+        for (const auto& [offset, size] : run->environments) {
+            if (offset > end || size > end - offset) {
+                throw std::ios_base::failure("environment outside the file");
+            }
+        }
+        offsets.reserve(records);
+        u64 at = RecipeFileHeader + u64{environments} * 16;
+        for (u32 record = 0; record < records; ++record) {
+            std::array<u8, 4> head;
+            in.seekg(static_cast<std::streamoff>(at));
+            in.read(reinterpret_cast<char*>(head.data()), head.size());
+            const u64 key_size = head[0] == 1 ? sizeof(ComputePipelineCacheKey)
+                                              : sizeof(GraphicsPipelineCacheKey);
+            if (head[0] > 1 || head[1] == 0 || head[1] > Maxwell::MaxShaderProgram) {
+                throw std::ios_base::failure("unknown record");
+            }
+            offsets.push_back(at);
+            at += head.size() + u64{head[1]} * 4 + key_size;
+            if (at > end) {
+                throw std::ios_base::failure("record outside the file");
+            }
+        }
+        run->records = records;
+    } catch (const std::exception& e) {
+        LOG_WARNING(Render_Vulkan, "Shader recipe: reading {} failed: {}", name, e.what());
+        return nullptr;
+    }
+    run->claimed = precached;
+    for (const PrecacheJob& job : jobs) {
+        if (job.graphics_hash != 0) {
+            run->claimed.insert(job.graphics_hash);
+        }
+    }
+    jobs.reserve(jobs.size() + offsets.size());
+    for (const u64 offset : offsets) {
+        // The hash stays 0: the run keeps the hashes of what it built (see PrecacheShaders).
+        jobs.push_back({0, [this, run, offset]() -> bool {
+            std::ifstream in(run->file, std::ios::binary);
+            in.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+            in.seekg(static_cast<std::streamoff>(offset));
+            std::array<u8, 4> head;
+            std::array<u32, Maxwell::MaxShaderProgram> ids{};
+            in.read(reinterpret_cast<char*>(head.data()), head.size())
+                .read(reinterpret_cast<char*>(ids.data()), std::streamsize{head[1]} * 4);
+            const bool compute = head[0] == 1;
+            GraphicsPipelineCacheKey graphics_key;
+            ComputePipelineCacheKey compute_key;
+            if (compute) {
+                in.read(reinterpret_cast<char*>(&compute_key), sizeof(compute_key));
+            } else {
+                in.read(reinterpret_cast<char*>(&graphics_key), sizeof(graphics_key));
+            }
+            std::vector<FileEnvironment> envs(head[1]);
+            for (size_t index = 0; index < envs.size(); ++index) {
+                const auto [env_offset, env_size] = run->environments.at(ids[index]);
+                in.seekg(static_cast<std::streamoff>(env_offset));
+                envs[index].Deserialize(in, static_cast<std::streamoff>(env_offset + env_size));
+            }
+            if (compute) {
+                VideoCommon::CheckComputeRecord(envs[0], compute_key.shared_memory_size,
+                                                compute_key.workgroup_size);
+                if (compute_cache.contains(compute_key)) {
+                    ++run->skipped;
+                    return false;
+                }
+                ShaderPools pools;
+                return CreateComputePipeline(pools, compute_key, envs[0], nullptr, false)
+                           .pipeline != nullptr;
+            }
+            VideoCommon::CheckGraphicsRecord(graphics_key.unique_hashes, envs.size());
+            bool foreign{};
+            if (!NormalizeCachedGraphicsKey(graphics_key, envs, foreign)) {
+                ++run->not_for_this_gpu;
+                return false;
+            }
+            const u64 hash = graphics_key.Hash();
+            {
+                std::scoped_lock lock{run->mutex};
+                if (!run->claimed.insert(hash).second) {
+                    ++run->skipped;
+                    return false;
+                }
+            }
+            if (graphics_cache.contains(graphics_key)) {
+                ++run->skipped;
+                return false;
+            }
+            std::vector<std::vector<FileEnvironment>> records;
+            records.push_back(std::move(envs));
+            const auto pipeline = CreateCachedGraphicsPipeline(graphics_key, records, nullptr);
+            if (pipeline == nullptr || pipeline->Failed()) {
+                return false;
+            }
+            std::scoped_lock lock{run->mutex};
+            run->built.push_back(hash);
+            return true;
+        }});
+    }
+    LOG_INFO(Render_Vulkan, "Shader recipe: {} pipelines in {} to look at", offsets.size(), name);
+    return run;
+}
+
+void PipelineCache::MakeShaderRecipe(u64 title_id, const std::filesystem::path& out,
+                                     std::stop_token stop) {
+    namespace Nx2Recipe = VideoCommon::Nx2Recipe;
+    const auto begin = std::chrono::steady_clock::now();
+    const auto seconds = [&begin] {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count();
+    };
+    try {
+        // 1. The recorded cache in the layout the recipe maker reads. A graphics pipeline is
+        //    kept once, as its newest record: keys lose their driver fields and the attribute
+        //    types their programs do not read, as a load masks them, so a pipeline recorded
+        //    with several drivers (shader packs) is one record. Compute programs keep every
+        //    translation (a program is translated again when the game fills a pointer slot).
+        struct Kept {
+            bool compute{};
+            std::vector<std::pair<u64, u64>> envs; ///< Where each is in the cache: begin, end
+            std::vector<char> key;
+        };
+        std::vector<Kept> kept;
+        std::unordered_map<u64, size_t> kept_index;
+        size_t read_records{};
+        std::ifstream in(pipeline_cache_filename, std::ios::binary | std::ios::ate);
+        in.exceptions(std::ifstream::failbit | std::ifstream::badbit);
+        const auto end = in.tellg();
+        in.seekg(static_cast<std::streamoff>(VideoCommon::PipelineCacheMagic.size() +
+                                             sizeof(CACHE_VERSION)));
+        while (in.tellg() != end && !stop.stop_requested()) {
+            u32 num_envs{};
+            in.read(reinterpret_cast<char*>(&num_envs), sizeof(num_envs));
+            if (num_envs == 0 || num_envs > Maxwell::MaxShaderProgram) {
+                throw std::ios_base::failure("unknown record in the pipeline cache");
+            }
+            Kept record;
+            std::vector<FileEnvironment> envs(num_envs);
+            u64 identity{};
+            for (u32 index = 0; index < num_envs; ++index) {
+                const u64 env_begin = static_cast<u64>(std::streamoff{in.tellg()});
+                envs[index].Deserialize(in, end);
+                const u64 env_end = static_cast<u64>(std::streamoff{in.tellg()});
+                record.envs.emplace_back(env_begin, env_end);
+            }
+            record.compute = envs[0].ShaderStage() == Shader::Stage::Compute;
+            if (record.compute) {
+                ComputePipelineCacheKey key;
+                in.read(reinterpret_cast<char*>(&key), sizeof(key));
+                record.key.assign(reinterpret_cast<const char*>(&key),
+                                  reinterpret_cast<const char*>(&key) + sizeof(key));
+                // Every translation: the record's own bytes name it.
+                const u64 here = static_cast<u64>(std::streamoff{in.tellg()});
+                std::vector<char> bytes(static_cast<size_t>(here - record.envs[0].first));
+                in.seekg(static_cast<std::streamoff>(record.envs[0].first));
+                in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                identity = Common::CityHash64(bytes.data(), bytes.size()) ^ 1;
+            } else {
+                GraphicsPipelineCacheKey key;
+                in.read(reinterpret_cast<char*>(&key), sizeof(key));
+                key.state.driver_id = 0;
+                key.state.driver_version = 0;
+                if (key.state.dynamic_vertex_input != 0) {
+                    std::array<u64, Maxwell::MaxShaderProgram> attribute_masks;
+                    attribute_masks.fill(~u64{0});
+                    size_t env_index = 0;
+                    for (size_t stage = 0; stage < Maxwell::MaxShaderProgram; ++stage) {
+                        if (key.unique_hashes[stage] != 0 && env_index < envs.size()) {
+                            attribute_masks[stage] =
+                                VideoCommon::VertexAttributeMaskOf(envs[env_index++]);
+                        }
+                    }
+                    key.state.attribute_types = VideoCommon::KeyedAttributeTypes(
+                        key.state.attribute_types, key.unique_hashes, attribute_masks);
+                }
+                record.key.assign(reinterpret_cast<const char*>(&key),
+                                  reinterpret_cast<const char*>(&key) + sizeof(key));
+                identity = Common::CityHash64(record.key.data(), record.key.size()) & ~u64{1};
+            }
+            ++read_records;
+            const auto [it, added] = kept_index.try_emplace(identity, kept.size());
+            if (added) {
+                kept.push_back(std::move(record));
+            } else {
+                kept[it->second] = std::move(record); // The newest record of the pipeline
+            }
+        }
+        if (stop.stop_requested()) {
+            return;
+        }
+        std::vector<std::vector<char>> env_bytes;
+        std::unordered_map<u64, std::vector<u32>> env_ids;
+        std::vector<char> records;
+        const u32 record_count = static_cast<u32>(kept.size());
+        for (const Kept& record : kept) {
+            const std::array<char, 4> head{static_cast<char>(record.compute ? 1 : 0),
+                                           static_cast<char>(record.envs.size()), 0, 0};
+            records.insert(records.end(), head.begin(), head.end());
+            for (const auto& [env_begin, env_end] : record.envs) {
+                std::vector<char> bytes(static_cast<size_t>(env_end - env_begin));
+                in.seekg(static_cast<std::streamoff>(env_begin));
+                in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                auto& same = env_ids[Common::CityHash64(bytes.data(), bytes.size())];
+                u32 id = ~u32{0};
+                for (const u32 candidate : same) {
+                    if (env_bytes[candidate] == bytes) {
+                        id = candidate;
+                        break;
+                    }
+                }
+                if (id == ~u32{0}) {
+                    id = static_cast<u32>(env_bytes.size());
+                    env_bytes.push_back(std::move(bytes));
+                    same.push_back(id);
+                }
+                records.insert(records.end(), reinterpret_cast<const char*>(&id),
+                               reinterpret_cast<const char*>(&id) + sizeof(id));
+            }
+            records.insert(records.end(), record.key.begin(), record.key.end());
+        }
+        in.close();
+        kept = {};
+        kept_index = {};
+        std::vector<u8> prep;
+        const auto put = [&prep](const void* data, size_t size) {
+            const auto* const bytes = static_cast<const u8*>(data);
+            prep.insert(prep.end(), bytes, bytes + size);
+        };
+        const u32 version = CACHE_VERSION;
+        const u32 env_count = static_cast<u32>(env_bytes.size());
+        const u32 zero = 0;
+        put(RecipeFileMagic.data(), RecipeFileMagic.size());
+        put(&version, sizeof(version));
+        put(&env_count, sizeof(env_count));
+        put(&record_count, sizeof(record_count));
+        put(&zero, sizeof(zero));
+        u64 at = RecipeFileHeader + u64{env_count} * 16 + records.size();
+        for (const auto& bytes : env_bytes) {
+            const u64 size = bytes.size();
+            put(&at, sizeof(at));
+            put(&size, sizeof(size));
+            at += size;
+        }
+        put(records.data(), records.size());
+        records = {};
+        for (auto& bytes : env_bytes) {
+            put(bytes.data(), bytes.size());
+            bytes = {};
+        }
+        LOG_INFO(Render_Vulkan,
+                 "Shader recipe: {} records read, {} distinct pipelines and {} environments "
+                 "({} MiB) in {:.1f} s",
+                 read_records, record_count, env_count, prep.size() >> 20, seconds());
+
+        // 2. The game's programs, to name each environment's program by its fingerprint.
+        const auto roots = VideoCommon::Nx2Precompile::OpenGameFiles(title_id);
+        if (roots.empty()) {
+            LOG_ERROR(Render_Vulkan, "Shader recipe: the game's files cannot be read");
+            return;
+        }
+        const unsigned threads = std::clamp(std::thread::hardware_concurrency(), 1U, 16U);
+        const auto programs = FileSys::Nx2ShaderExtract::Extract(roots, threads, nullptr, stop);
+        if (stop.stop_requested()) {
+            return;
+        }
+        LOG_INFO(Render_Vulkan, "Shader recipe: {} shader programs in {} game files, {:.1f} s",
+                 programs.programs.size(), programs.stats.files, seconds());
+
+        // 3. The recipe: the same without the game's code.
+        u32 game_version = 0;
+        if (const char* const value = std::getenv("CHEEZYEMU_RECIPE_GAME_VERSION")) {
+            game_version = static_cast<u32>(std::strtoul(value, nullptr, 0));
+        }
+        Nx2Recipe::Report report;
+        const auto recipe = Nx2Recipe::MakeRecipe(prep, programs, {title_id, game_version, version},
+                                                  report, threads);
+        std::ofstream file(out, std::ios::binary | std::ios::trunc);
+        file.write(reinterpret_cast<const char*>(recipe.data()),
+                   static_cast<std::streamsize>(recipe.size()));
+        file.close();
+        LOG_INFO(Render_Vulkan,
+                 "Shader recipe: {} written{} ({} KiB) in {:.1f} s: {} pipelines ({} dropped), {} "
+                 "programs ({} not in the game files, {} not lowered), {} environments ({} "
+                 "withheld), {} render states",
+                 Common::FS::PathToUTF8String(out), file ? "" : " FAILED", recipe.size() >> 10,
+                 seconds(), report.records, report.records_dropped, report.programs,
+                 report.programs_missing, report.programs_failed, report.environments,
+                 report.environments_withheld, report.states);
+        for (size_t i = 0; i < std::min<size_t>(report.errors.size(), 12); ++i) {
+            LOG_INFO(Render_Vulkan, "Shader recipe: {}", report.errors[i]);
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR(Render_Vulkan, "Shader recipe: making it failed: {}", e.what());
+    }
+}
+
 void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                                     std::unordered_set<u64> precached, std::stop_token stop_loading,
-                                    const VideoCore::DiskResourceLoadCallback& callback) {
+                                    const VideoCore::DiskResourceLoadCallback& callback,
+                                    std::shared_ptr<RecipeRun> recipe) {
     namespace ShaderWarm = VideoCommon::ShaderWarm;
-    const size_t graphics_jobs = jobs.size();
+    const size_t graphics_jobs = jobs.size() - (recipe ? recipe->records : 0);
+    const size_t recipe_begin = graphics_jobs;
+    const size_t recipe_end = jobs.size();
     const std::filesystem::path warm_file = ShaderWarm::ComputeWarmPath(title_id);
     const std::string path = Common::FS::PathToUTF8String(warm_file);
     const auto stamp = [&](u64 entries) {
@@ -1518,7 +1911,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
             compute_pending = true;
         } catch (const std::exception& e) {
             LOG_WARNING(Render_Vulkan, "Shader precache: reading {} failed: {}", path, e.what());
-            jobs.resize(graphics_jobs);
+            jobs.resize(recipe_end);
             file_entries = 0;
         }
     }
@@ -1534,10 +1927,12 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
     std::atomic<size_t> done{};
     std::atomic<bool> cancel{false};
     bool skipped = false;
+    auto last_progress = begin;
     LOG_INFO(Render_Vulkan,
-             "Shader precache: {} cached graphics pipelines and {} of {} compute programs to "
-             "build on {} threads",
-             graphics_jobs, jobs.size() - graphics_jobs, file_entries, num_threads);
+             "Shader precache: {} cached graphics pipelines, {} recipe pipelines and {} of {} "
+             "compute programs to build on {} threads",
+             graphics_jobs, recipe_end - recipe_begin, jobs.size() - recipe_end, file_entries,
+             num_threads);
     if (!jobs.empty()) {
         std::vector<std::jthread> threads;
         for (size_t thread = 0; thread < num_threads; ++thread) {
@@ -1569,6 +1964,14 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
             if (callback) {
                 callback(VideoCore::LoadCallbackStage::Warm, done, jobs.size());
             }
+            // For reports of a long first start: how far it is, every 20 seconds.
+            if (const auto now = std::chrono::steady_clock::now();
+                now - last_progress >= std::chrono::seconds{20}) {
+                last_progress = now;
+                LOG_INFO(Render_Vulkan, "Shader precache: {} of {} done after {:.0f} s",
+                         done.load(), jobs.size(),
+                         std::chrono::duration<double>(now - begin).count());
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds{100});
         }
     }
@@ -1584,6 +1987,24 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
             precached.insert(jobs[index].graphics_hash);
         }
     }
+    if (recipe) {
+        // What the recipe built is on the list too, so neither a later recipe (a new build's,
+        // with more pipelines) nor the disk cache's own records build it again; and a recipe
+        // looked at to the end is marked done for this driver.
+        precached.insert(recipe->built.begin(), recipe->built.end());
+        if (!skipped && !stop_loading.stop_requested()) {
+            if (const auto done_stamp = ShaderWarm::CurrentWarmStamp(
+                    recipe->file, recipe->records, device.GetDriverVersion(), device.GetDeviceID(),
+                    CACHE_VERSION)) {
+                ShaderWarm::WriteWarmMarker(recipe->file, *done_stamp);
+            }
+        }
+        LOG_INFO(Render_Vulkan,
+                 "Shader recipe: {} of {} pipelines built now, {} were built before or twice in "
+                 "the file, {} need a feature this GPU lacks",
+                 recipe->built.size(), recipe->records, recipe->skipped.load(),
+                 recipe->not_for_this_gpu.load());
+    }
     if (precached.size() != precached_before) {
         ShaderWarm::WritePrecachedPipelines(
             ShaderWarm::PrecachedPipelinesPath(title_id),
@@ -1594,9 +2015,12 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
         // close, and are lost if the app ends otherwise.
         QueueVulkanPipelineCacheSave();
     }
-    LOG_INFO(Render_Vulkan, "Shader precache: {}, {} built, {} failed, {} not reached, {:.1f} s",
+    const size_t not_needed = recipe ? recipe->skipped + recipe->not_for_this_gpu : 0;
+    LOG_INFO(Render_Vulkan,
+             "Shader precache: {}, {} built, {} not needed, {} failed, {} not reached, {:.1f} s",
              stop_loading.stop_requested() ? "stopped" : (skipped ? "skipped" : "finished"),
-             total_built, done - total_built, jobs.size() - std::min(jobs.size(), done.load()),
+             total_built, not_needed, done - std::min(done.load(), total_built + not_needed),
+             jobs.size() - std::min(jobs.size(), done.load()),
              std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count());
 }
 

@@ -12,6 +12,7 @@
 #include "qt_common/config/uisettings.h"
 #include "qt_common/util/vk.h"
 #include "ui_configure.h"
+#include "yuzu/util/fit_window.h"
 #include "yuzu/configuration/configure_applets.h"
 #include "yuzu/configuration/configure_audio.h"
 #include "yuzu/configuration/configure_cpu.h"
@@ -129,7 +130,12 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
                 &ConfigureDialog::HandleApplyButtonClicked);
     }
 
+    // The pages scroll, so the window can be smaller than its longest page and its buttons stay
+    // reachable on a small screen: it opens at the size it always had, or at what the screen has.
     adjustSize();
+    const QSize natural = size();
+    FitWindow::ScrollWrap(ui->tabWidget);
+    FitWindow::OpenAt(this, natural);
     ui->selectorList->setCurrentRow(0);
 
     // Selects the leftmost button on the bottom bar (Cancel as of writing)

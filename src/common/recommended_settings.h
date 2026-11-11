@@ -60,7 +60,7 @@ void ForEachRecommendedSetting(Values& values, const HostProfile& host, Func&& f
     // CheezyEmu's default since build 9 ("Skip only redrawn targets").
     entry(values.native_async_draws, NativeAsyncDraws::Transient);
     entry(values.native_pipeline_wait_ms, 8);
-    entry(values.precache_shaders, PrecacheShaders::Off);
+    entry(values.precache_shaders, PrecacheShaders::Always);
     entry(values.use_video_framerate, false);
     entry(values.mkw_30fps, false);
     entry(values.mkw_dynamic_fps, false);

@@ -64,6 +64,7 @@
 #include "qt_common/qt_common.h"
 #include "qt_common/util/vk.h"
 #include "ui_configure_per_game.h"
+#include "yuzu/util/fit_window.h"
 #include "yuzu/configuration/configuration_shared.h"
 #include "yuzu/configuration/configure_applets.h"
 #include "yuzu/configuration/configure_audio.h"
@@ -413,6 +414,14 @@ ConfigurePerGame::ConfigurePerGame(QWidget* parent, u64 title_id_, const std::st
 
     setFocusPolicy(Qt::ClickFocus);
     setWindowTitle(tr("Properties"));
+    // The tabs scroll as one, so the window is no longer at least 900 wide and fits a small
+    // screen: it opens at the size it always had, or at what the screen has room for.
+    {
+        ensurePolished();
+        const QSize natural = sizeHint().expandedTo(size());
+        FitWindow::ScrollWrap(ui->tabWidget);
+        FitWindow::OpenAt(this, natural);
+    }
 
     addons_tab->SetTitleId(title_id);
 

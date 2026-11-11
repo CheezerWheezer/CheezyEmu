@@ -438,7 +438,7 @@ jobs:
           strip build/release/bin/cheezyemu build/release/bin/cheezyemu-cli
           cp README.txt CHEEZYEMU.md LICENSE.txt NOTICE.txt build/release/bin/
           tar -czf "cheezyemu-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz" \
-            -C build/release/bin cheezyemu cheezyemu-cli nx2_switches.txt README.txt \
+            -C build/release/bin cheezyemu cheezyemu-cli nx2_switches.txt recipes README.txt \
             CHEEZYEMU.md LICENSE.txt NOTICE.txt
           ls -la "cheezyemu-${GITHUB_SHA}-${{ matrix.platform }}.tar.gz"
 
@@ -480,6 +480,7 @@ jobs:
           export ARCH="$arch"
           mkdir -p AppDir/usr/bin
           cp build/release/bin/nx2_switches.txt AppDir/usr/bin/
+          cp -r build/release/bin/recipes AppDir/usr/bin/
           "$tools/linuxdeploy-$arch.AppImage" --appdir AppDir \
             --executable build/release/bin/cheezyemu \
             --executable build/release/bin/cheezyemu-cli \

@@ -46,8 +46,18 @@ Open the file with Notepad. CheezyEmu reads it only when it starts.
 ---------------------------
 
 The first time the game shows something new, CheezyEmu has to build a shader for it, which can
-stutter. Built shaders are saved, so each one is built only once. A shader pack is someone
-else's saved shaders: with it, those stutters never happen.
+stutter. Built shaders are saved, so each one is built only once.
+
+Since build 12 Ocarina of Time needs no shader pack: CheezyEmu comes with a shader recipe for
+it (the "recipes" folder next to cheezyemu.exe). The first time you start the game, the loading
+screen gathers the shader programs from your own copy of the game (about a minute) and builds
+them all, showing "Building shaders N / M (once)" with the time left. This happens once per GPU
+driver; updating CheezyEmu does not start it over. It can take a long time on a PC with no
+saved shaders: the Skip button starts the game right away, and what was not built is built on
+the next start or while you play, as in earlier builds.
+
+A shader pack is someone else's saved shaders. Packs still work and are used together with the
+recipe.
 
 Where shaders are kept
   Each game has its own folder. For Ocarina of Time:
@@ -77,11 +87,13 @@ Moving or sharing your shaders
   vulkan_used.fork-v54.bin) from the folder above into the same folder there. Don't copy the
   "binaries" and "pipelines" files: they only work with your GPU and driver.
 
-Precaching shaders on the loading screen
+Building shaders on the loading screen
   Emulation > Configure > Graphics > Advanced > "Precache shaders before game start":
-  - Always: shaders you haven't used lately are built on the loading screen, a batch per boot
-    (about a minute each), until all of them are done. After that boots are quick again.
-  - Off: they are built the first time they appear in the game, which can stutter.
+  - Always (the default since build 12): the game's recipe, the shaders you haven't used
+    lately and the compute programs found in the game files are built on the loading screen
+    before the game starts. Once everything is built, boots are quick again.
+  - Ask: asks before doing that for a game the first time.
+  - Off: shaders are built the first time they appear in the game, which can stutter.
 
 Building every shader at once (optional)
   1. In nx2_switches.txt, turn on (remove the #):

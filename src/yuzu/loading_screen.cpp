@@ -100,8 +100,9 @@ LoadingScreen::LoadingScreen(QWidget* parent)
     // Shown while shaders are precached: starts the game without waiting for the rest.
     skip_button = new QPushButton(tr("Skip"), this);
     skip_button->setStyleSheet(QString::fromUtf8(SKIP_BUTTON_STYLE));
-    skip_button->setToolTip(tr("Start the game now. The shaders not precached yet are precached "
-                               "on a later launch."));
+    skip_button->setToolTip(tr("Start the game now. The shaders not built yet are built the next "
+                               "time the game starts, or while you play when the game needs "
+                               "them."));
     skip_button->hide();
     ui->verticalLayout->insertWidget(2, skip_button, 0, Qt::AlignHCenter | Qt::AlignTop);
     connect(skip_button, &QPushButton::clicked, this, [this] {
@@ -114,7 +115,7 @@ LoadingScreen::LoadingScreen(QWidget* parent)
         {VideoCore::LoadCallbackStage::Prepare, tr("Loading...")},
         {VideoCore::LoadCallbackStage::Build, tr("Loading Shaders %1 / %2")},
         {VideoCore::LoadCallbackStage::Complete, tr("Launching...")},
-        {VideoCore::LoadCallbackStage::Warm, tr("Precaching shaders %1 / %2")},
+        {VideoCore::LoadCallbackStage::Warm, tr("Building shaders %1 / %2 (once)")},
     };
     progressbar_style = {
         {VideoCore::LoadCallbackStage::Prepare, PROGRESSBAR_STYLE_PREPARE},
@@ -210,8 +211,12 @@ void LoadingScreen::OnLoadProgress(VideoCore::LoadCallbackStage stage, std::size
     }
 
     // update labels and progress bar
-    if (stage == VideoCore::LoadCallbackStage::Build ||
-        stage == VideoCore::LoadCallbackStage::Warm) {
+    if (stage == VideoCore::LoadCallbackStage::Warm && total == 0) {
+        // Before the count is known: the game's files are read for their shader programs.
+        ui->stage->setText(tr("Gathering this game's shaders (once, about a minute)..."));
+        ui->progress_bar->setRange(0, 0);
+    } else if (stage == VideoCore::LoadCallbackStage::Build ||
+               stage == VideoCore::LoadCallbackStage::Warm) {
         ui->stage->setText(stage_translations[stage].arg(value).arg(total));
     } else {
         ui->stage->setText(stage_translations[stage]);

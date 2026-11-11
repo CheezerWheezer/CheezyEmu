@@ -237,6 +237,9 @@ private:
     /// only pipelines built during play.
     void QueueVulkanPipelineCacheSave();
 
+    /// A recipe's precache run: what its jobs share.
+    struct RecipeRun;
+
     /// One build of the shader precache: builds a pipeline and destroys it, true when it built.
     struct PrecacheJob {
         u64 graphics_hash{}; ///< The cached graphics pipeline it builds, 0 for a compute program
@@ -252,7 +255,28 @@ private:
     /// is stopped.
     void PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
                          std::unordered_set<u64> precached, std::stop_token stop_loading,
-                         const VideoCore::DiskResourceLoadCallback& callback);
+                         const VideoCore::DiskResourceLoadCallback& callback,
+                         std::shared_ptr<RecipeRun> recipe = nullptr);
+
+    /// A cached graphics key as this GPU and driver draw it: a key recorded with another driver
+    /// (a shader pack, a recipe) takes this driver's fields (`foreign`), and its attribute types
+    /// are masked to those its programs read (`stored_hash` gets the hash before the masking).
+    /// False when the pipeline needs a dynamic state or a provoking vertex mode this GPU lacks.
+    [[nodiscard]] bool NormalizeCachedGraphicsKey(
+        GraphicsPipelineCacheKey& key, std::span<const VideoCommon::FileEnvironment> envs,
+        bool& foreign, std::optional<u64>* stored_hash = nullptr) const;
+
+    /// Shader recipe (video_core/nx2_recipe.h): one precache job for every pipeline of the
+    /// title's assembled recipe file that is neither built now, nor built by an earlier precache
+    /// for this driver, nor one of `jobs`. Each job reads its own record when it runs, so the
+    /// file's size does not matter. Null when the file is done for this driver or unreadable.
+    [[nodiscard]] std::shared_ptr<RecipeRun> AddRecipeJobs(
+        const std::filesystem::path& file, std::vector<PrecacheJob>& jobs,
+        const std::unordered_set<u64>& precached);
+
+    /// CHEEZYEMU_MAKE_RECIPE=<file>: writes a recipe of every pipeline in the title's recorded
+    /// cache, without the game's code (developer tool; runs on the loading thread).
+    void MakeShaderRecipe(u64 title_id, const std::filesystem::path& out, std::stop_token stop);
 
     const Device& device;
     Scheduler& scheduler;

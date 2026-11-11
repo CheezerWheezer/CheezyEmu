@@ -46,6 +46,7 @@
 #include "ryujinx_dialog.h"
 #include "set_play_time_dialog.h"
 #include "util/util.h"
+#include "yuzu/util/fit_window.h"
 #include "yuzu/game/game_list.h"
 #include "yuzu/nup_dialogs.h"
 #include "yuzu/recommended_settings_dialog.h"
@@ -387,6 +388,23 @@ MainWindow::MainWindow(bool has_broken_vulkan)
     : ui{std::make_unique<Ui::MainWindow>()},
       input_subsystem{std::make_shared<InputCommon::InputSubsystem>()}, user_data_migrator{this} {
     QtCommon::Init(this);
+    // Every window and dialog fits the screen it opens on (small screens, high display scale).
+    FitWindow::Install();
+    // CHEEZYEMU_DIALOG_SHOT=<png> (test): opens Configure, saves a picture of it, closes it.
+    if (const QByteArray shot = qgetenv("CHEEZYEMU_DIALOG_SHOT"); !shot.isEmpty()) {
+        QTimer::singleShot(4000, this, [this, path = QString::fromUtf8(shot)] {
+            QTimer::singleShot(2500, this, [path] {
+                if (QWidget* const dialog = QApplication::activeModalWidget()) {
+                    const bool saved = dialog->grab().save(path);
+                    LOG_INFO(Frontend, "Dialog shot: {}x{} at {},{} minimum {}x{} saved={}",
+                             dialog->width(), dialog->height(), dialog->x(), dialog->y(),
+                             dialog->minimumWidth(), dialog->minimumHeight(), saved);
+                    dialog->close();
+                }
+            });
+            OnConfigure();
+        });
+    }
 
     Common::FS::CreateEdenPaths();
     this->config = std::make_unique<QtConfig>();

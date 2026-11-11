@@ -215,6 +215,8 @@ add_executable(yuzu
     util/clickable_label.h
     util/controller_navigation.cpp
     util/controller_navigation.h
+    util/fit_window.cpp
+    util/fit_window.h
     util/limitable_input_dialog.cpp
     util/limitable_input_dialog.h
     util/overlay_dialog.cpp
@@ -264,6 +266,13 @@ set_target_properties(yuzu PROPERTIES OUTPUT_NAME "cheezyemu")
 add_custom_command(TARGET yuzu POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PROJECT_SOURCE_DIR}/dist/nx2_switches.txt" "$<TARGET_FILE_DIR:yuzu>/nx2_switches.txt"
+    VERBATIM)
+
+# Shader recipes (video_core/nx2_recipe.h), also next to the executable: which pipelines a game
+# draws, without any of the game's code. The first start of a game with a recipe builds them.
+add_custom_command(TARGET yuzu POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/dist/recipes" "$<TARGET_FILE_DIR:yuzu>/recipes"
     VERBATIM)
 
 # AMD FSR 4: AMD's signed FidelityFX DLLs, loaded at runtime from the executable's folder, and the

@@ -700,8 +700,11 @@ struct Values {
     // driver's cache holds them before the game first uses them.
     // Ask: the desktop app asks at launch while the game has no finished precache; where nothing
     // asks, as Off.
+    // Always since build 12: a game's shaders are built before it starts, the first time (from
+    // its shader recipe, the pipelines earlier sessions saved and the game files' own compute
+    // programs), with a Skip button on the loading screen.
     SwitchableSetting<PrecacheShaders> precache_shaders{linkage,
-                                                        PrecacheShaders::Off,
+                                                        PrecacheShaders::Always,
                                                         "precache_shaders",
                                                         Category::RendererAdvanced,
                                                         Specialization::Default,
