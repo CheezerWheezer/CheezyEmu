@@ -236,6 +236,21 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
 // An ASTC 2D array whose RGBA8 decode exceeds 1 GiB (title 1's 8192x8192x68 terrain textures).
 // These stay on the GPU decoder as RGBA8 with trimmed levels (TrimmedHostInfo) even when other
 // ASTC images are re-compressed to BC1/BC3 on the CPU: re-compressing them would not fit either.
+// Above this many bytes as RGBA8, a GPU-decoded ASTC array keeps only its smaller mip levels
+// (TrimmedHostInfo): 1 GiB, 512 MiB on cards with 8 GB of video memory or less, where Ocarina's
+// two 1365x1365x90 terrain arrays (860 MiB each as RGBA8: their uneven block mips keep them out
+// of BC on AMD) then take ~215 MiB in all instead of 1.7 GB. EDEN_NX2_HUGE_ARRAY_MIB=<MiB> sets it.
+[[nodiscard]] u64 HugeAstcArrayBytes(const Device& device) {
+    static const u64 forced = [] {
+        const char* value = std::getenv("EDEN_NX2_HUGE_ARRAY_MIB");
+        return value != nullptr ? std::strtoull(value, nullptr, 10) << 20 : 0ULL;
+    }();
+    if (forced != 0) {
+        return forced;
+    }
+    return device.GetDeviceLocalMemory() <= (u64{8704} << 20) ? (u64{512} << 20) : (u64{1} << 30);
+}
+
 [[nodiscard]] bool IsHugeAstcArray(const Device& device, const ImageInfo& info) {
     if (!IsPixelFormatASTC(info.format) || device.IsOptimalAstcSupported() ||
         info.type != ImageType::e2D || info.size.depth != 1) {
@@ -246,7 +261,7 @@ constexpr VkBorderColor ConvertBorderColor(const std::array<float, 4>& color) {
         bytes += u64{(std::max)(info.size.width >> level, 1U)} *
                  (std::max)(info.size.height >> level, 1U) * 4;
     }
-    return bytes * info.resources.layers > (u64{1} << 30);
+    return bytes * info.resources.layers > HugeAstcArrayBytes(device);
 }
 
 // Whether a block-compressed copy of `info` has a mip level whose size in 4x4 blocks is not its
@@ -485,7 +500,7 @@ constexpr std::array<VkFormat, 2> OpaqueAstcViewFormats{VK_FORMAT_BC1_RGBA_UNORM
         }
         return bytes * info.resources.layers;
     };
-    if (decoded_bytes(0) <= (u64{1} << 30)) {
+    if (decoded_bytes(0) <= HugeAstcArrayBytes(device)) {
         return info;
     }
     const u64 limit = TrimmedAstcArrayLimit(device);
