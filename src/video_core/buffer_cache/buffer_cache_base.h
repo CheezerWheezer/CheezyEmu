@@ -99,6 +99,16 @@ enum class ObtainBufferOperation : u32 {
 static constexpr BufferId NULL_BUFFER_ID{0};
 static constexpr u32 DEFAULT_SKIP_CACHE_SIZE = static_cast<u32>(4_KiB);
 
+/// Uploads of at least this many bytes take BufferCache::BigUploadMemory (zeros filled on the GPU,
+/// the rest in chunks). EDEN_NX2_BIG_UPLOAD_MIB=<MiB> sets it, 0 turns it off.
+inline u64 BigUploadBytes() {
+    static const u64 bytes = [] {
+        const char* const value = std::getenv("EDEN_NX2_BIG_UPLOAD_MIB");
+        return (value != nullptr ? std::strtoull(value, nullptr, 10) : 32ULL) << 20;
+    }();
+    return bytes;
+}
+
 struct Binding {
     DAddr device_addr{};
     GPUVAddr gpu_addr{};
@@ -687,6 +697,14 @@ private:
                                std::span<const BufferCopy> copies);
 
     void MappedUploadMemory(Buffer& buffer, u64 total_size_bytes, std::span<BufferCopy> copies);
+
+    /// A big upload (a whole guest heap bound for the first time): all-zero stretches of guest
+    /// memory are filled on the GPU, the rest goes through staging in chunks (MappedUploadMemory).
+    void BigUploadMemory(Buffer& buffer, std::span<const BufferCopy> copies);
+
+    /// Whether guest memory [device_addr, device_addr + size) reads as zero (false if a page of
+    /// it isn't mapped).
+    [[nodiscard]] bool GuestRangeIsZero(DAddr device_addr, u64 size);
 
     void DownloadBufferMemory(Buffer& buffer_id);
 

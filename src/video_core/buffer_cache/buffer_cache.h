@@ -4540,6 +4540,17 @@ BufferId BufferCache<P>::CreateBuffer(DAddr device_addr, u32 wanted_size,
     wanted_size = static_cast<u32>(device_addr_end - device_addr);
     const OverlapResult overlap = ResolveOverlaps(device_addr, wanted_size);
     const u32 size = static_cast<u32>(overlap.end - overlap.begin);
+    // TEST (EDEN_NX2_BIG_ALLOC_LOG): how a big buffer came to be.
+    if (size >= (256U << 20) && std::getenv("EDEN_NX2_BIG_ALLOC_LOG") != nullptr) {
+        u64 joined = 0;
+        for (const BufferId id : overlap.ids) {
+            joined += slot_buffers[id].SizeBytes();
+        }
+        LOG_INFO(HW_GPU, "Big buffer created: {} MiB at {:#x} for {:#x}+{:#x}, joining {} buffers "
+                         "of {} MiB, frame {}",
+                 size >> 20, overlap.begin, device_addr, wanted_size, overlap.ids.size(),
+                 joined >> 20, frame_tick);
+    }
     const BufferId new_buffer_id =
         slot_buffers.insert(runtime, overlap.begin, size, sparse_compatible);
     auto& new_buffer = slot_buffers[new_buffer_id];
@@ -4754,6 +4765,18 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
                                         [[maybe_unused]] u64 total_size_bytes,
                                         [[maybe_unused]] std::span<BufferCopy> copies) {
     if constexpr (USE_MEMORY_MAPS) {
+        // TEST (EDEN_NX2_BIG_ALLOC_LOG): which buffer a big upload goes to.
+        if (total_size_bytes >= (64ULL << 20) && std::getenv("EDEN_NX2_BIG_ALLOC_LOG") != nullptr) {
+            LOG_INFO(HW_GPU, "Big upload: {} MiB in {} copies into the buffer at {:#x} of {} MiB, "
+                             "largest copy {} MiB",
+                     total_size_bytes >> 20, copies.size(), buffer.CpuAddr(),
+                     buffer.SizeBytes() >> 20,
+                     std::ranges::max(copies, {}, &BufferCopy::size).size >> 20);
+        }
+        if (total_size_bytes >= BigUploadBytes() && BigUploadBytes() != 0) {
+            BigUploadMemory(buffer, copies);
+            return;
+        }
         auto upload_staging = runtime.UploadStagingBuffer(total_size_bytes);
         const std::span<u8> staging_pointer = upload_staging.mapped_span;
         for (BufferCopy& copy : copies) {
@@ -4770,6 +4793,129 @@ void BufferCache<P>::MappedUploadMemory([[maybe_unused]] Buffer& buffer,
         }
         const auto order = runtime.DecideUploadOrder(buffer, copies);
         runtime.CopyBuffer(buffer, upload_staging.buffer, copies, true, order);
+    }
+}
+
+template <class P>
+bool BufferCache<P>::GuestRangeIsZero(DAddr device_addr, u64 size) {
+    while (size != 0) {
+        const u64 in_page = (std::min)(size, Core::DEVICE_PAGESIZE -
+                                                 (device_addr & Core::DEVICE_PAGEMASK));
+        const u8* const host = device_memory.template GetPointer<u8>(device_addr);
+        if (host == nullptr) {
+            return false;
+        }
+        u64 offset = 0;
+        // Eight bytes at a time where aligned; device pages are 4 KiB, so almost all of it.
+        for (; offset + 8 <= in_page; offset += 8) {
+            u64 word;
+            std::memcpy(&word, host + offset, sizeof(word));
+            if (word != 0) {
+                return false;
+            }
+        }
+        for (; offset < in_page; ++offset) {
+            if (host[offset] != 0) {
+                return false;
+            }
+        }
+        device_addr += in_page;
+        size -= in_page;
+    }
+    return true;
+}
+
+template <class P>
+void BufferCache<P>::BigUploadMemory([[maybe_unused]] Buffer& buffer,
+                                     [[maybe_unused]] std::span<const BufferCopy> copies) {
+    if constexpr (USE_MEMORY_MAPS) {
+        // Ocarina of Time binds a whole 1 GiB heap of its memory ~50 s after a save loads (and a
+        // 213 MiB one just before): every byte of it was uploaded in one go, through a 1 GiB
+        // staging buffer made for it (a ~1 s freeze, and 1 GiB more RAM for a moment). The
+        // zeros in it (memory the game hasn't filled yet) are written by the GPU instead, and
+        // the rest is copied in chunks of at most UploadChunkBytes.
+        constexpr u64 Piece = 64_KiB;
+        constexpr u64 UploadChunkBytes = 32_MiB;
+        boost::container::small_vector<BufferCopy, 64> data;
+        u64 zero_bytes = 0;
+        u64 zero_runs = 0;
+        const DAddr buffer_addr = buffer.CpuAddr();
+        const auto emit = [&](bool zero, u64 dst_offset, u64 size) {
+            if (size == 0) {
+                return;
+            }
+            if (zero && dst_offset % 4 == 0 && size % 4 == 0 &&
+                dst_offset + size <= (std::numeric_limits<u32>::max)()) {
+                runtime.ClearBuffer(buffer, static_cast<u32>(dst_offset), size, 0);
+                zero_bytes += size;
+                ++zero_runs;
+                return;
+            }
+            data.push_back(BufferCopy{.src_offset = 0, .dst_offset = dst_offset, .size = size});
+        };
+        for (const BufferCopy& copy : copies) {
+            const DAddr base = buffer_addr + copy.dst_offset;
+            u64 run_start = 0;
+            bool run_zero = false;
+            bool have_run = false;
+            for (u64 pos = 0; pos < copy.size;) {
+                const u64 len = (std::min)(Piece - ((base + pos) % Piece), copy.size - pos);
+                const bool zero = GuestRangeIsZero(base + pos, len);
+                if (!have_run || zero != run_zero) {
+                    if (have_run) {
+                        emit(run_zero, copy.dst_offset + run_start, pos - run_start);
+                    }
+                    run_start = pos;
+                    run_zero = zero;
+                    have_run = true;
+                }
+                pos += len;
+            }
+            if (have_run) {
+                emit(run_zero, copy.dst_offset + run_start, copy.size - run_start);
+            }
+        }
+        // The data in chunks; a copy larger than a chunk is split.
+        boost::container::small_vector<BufferCopy, 64> chunk;
+        u64 data_bytes = 0;
+        size_t next = 0;
+        u64 next_done = 0; // bytes of data[next] already in an earlier chunk
+        while (next < data.size()) {
+            chunk.clear();
+            u64 chunk_bytes = 0;
+            while (next < data.size() && chunk_bytes < UploadChunkBytes) {
+                const BufferCopy& copy = data[next];
+                const u64 take = (std::min)(copy.size - next_done, UploadChunkBytes - chunk_bytes);
+                chunk.push_back(BufferCopy{.src_offset = chunk_bytes,
+                                           .dst_offset = copy.dst_offset + next_done,
+                                           .size = take});
+                chunk_bytes += take;
+                next_done += take;
+                if (next_done == copy.size) {
+                    ++next;
+                    next_done = 0;
+                }
+            }
+            auto upload_staging = runtime.UploadStagingBuffer(chunk_bytes);
+            for (BufferCopy& copy : chunk) {
+                const DAddr device_addr = buffer_addr + copy.dst_offset;
+                device_memory.ReadBlockUnsafe(device_addr,
+                                              upload_staging.mapped_span.data() + copy.src_offset,
+                                              copy.size);
+                if (copy.size >= 256_KiB) {
+                    uploaded_buffer_ranges.emplace_back(device_addr, copy.size);
+                }
+                copy.src_offset += upload_staging.offset;
+            }
+            const auto order = runtime.DecideUploadOrder(buffer, chunk);
+            runtime.CopyBuffer(buffer, upload_staging.buffer, chunk, true, order);
+            data_bytes += chunk_bytes;
+        }
+        if (std::getenv("EDEN_NX2_BIG_ALLOC_LOG") != nullptr) {
+            LOG_INFO(HW_GPU, "Big upload into {:#x}: {} MiB zero filled on the GPU in {} runs, {} "
+                             "MiB copied in chunks",
+                     buffer_addr, zero_bytes >> 20, zero_runs, data_bytes >> 20);
+        }
     }
 }
 
