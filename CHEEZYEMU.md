@@ -70,6 +70,11 @@ Not released yet: this section grows as the work lands.
     out), and what is not built when you quit is built on the next start.
     `EDEN_NX2_PRECACHE_AFTER_SKIP=0` stops at Skip, as before.
   - macOS: the recipe is inside the app (`Contents/Resources/recipes`).
+  - **A crash right after the shader build on AMD cards is fixed.** A few compute shaders
+    (software matrix code) go to a separate slow-build thread on AMD; the shader build threw
+    each one away while that thread still had to build it, and the emulator crashed a few
+    seconds after "Building shaders" finished. The game builds those itself when it needs
+    them, as before.
   - It needs about 2.2 GB of disk for the assembled file, next to your shader cache.
   - For any other game the same loading screen builds the compute programs found in the game
     files and the pipelines your earlier sessions saved ("Precache shaders before game
@@ -133,6 +138,10 @@ Not released yet: this section grows as the work lands.
   (upscaling filter, anti-aliasing, frame generation, docked or handheld), which fullscreen
   hides.
 - **A box to type the number in next to sliders** (frame rate limit, sharpness, speed).
+  Sharpness shows its percentage there too.
+- **Dialogs checked by picture**: the "Use recommended settings" button of Find Best Settings
+  was cut off ("Jse recommended setting"), and a game's Properties showed the end of long game
+  and file names instead of their start. Both fixed.
 - **The status bar fits a small window**: the renderer, accuracy, dock, filter, anti-aliasing
   and FX buttons are one GRAPHICS button that opens the same choices as a menu, the FSR button
   shows the name only (the sizes are in its tooltip and in the performance bar), and
