@@ -218,6 +218,8 @@ struct EarlyTotals {
     std::atomic<u64> served_in_flight{}; ///< Not yet done: the read waited for them
     std::atomic<u64> gpu_side_waits{};   ///< Writes from the GPU's side that waited for one
     std::atomic<u64> gpu_side_wait_ns{};
+    std::atomic<u64> after_draw_waiting{};  ///< Draws after which a draw-written page waited
+    std::atomic<u64> after_draw_recorded{}; ///< Of them, recorded right there (a render pass ends)
 };
 inline EarlyTotals g_early;
 
@@ -456,10 +458,12 @@ inline void MaybeReport(u64 now) {
              "Read trace early downloads: {} recorded ({} KiB) | reads they served: {} found "
              "the bytes in guest memory, {} found them done on the host GPU (landed at the read), "
              "{} waited for them (in the lines above) | writes from the GPU's side that waited "
-             "for one: {} ({:.2f} ms)",
+             "for one: {} ({:.2f} ms) | draws that wrote a read-back page: {} ({} recorded "
+             "right after the draw)",
              take(g_early.recorded), take(g_early.bytes) / 1024, take(g_early.served_landed),
              take(g_early.served_at_read), take(g_early.served_in_flight), gpu_side_waits,
-             static_cast<double>(take(g_early.gpu_side_wait_ns)) / 1e6);
+             static_cast<double>(take(g_early.gpu_side_wait_ns)) / 1e6,
+             take(g_early.after_draw_waiting), take(g_early.after_draw_recorded));
     for (size_t i = 0; i < g_state.areas.size() && i < ShownAreas; ++i) {
         LOG_INFO(HW_GPU, "Read trace area {}",
                  Format(g_state.areas[i].first, g_state.areas[i].second));

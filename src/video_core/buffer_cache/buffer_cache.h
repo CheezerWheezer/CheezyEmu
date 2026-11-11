@@ -996,6 +996,27 @@ void BufferCache<P>::NoteWorkRecorded(bool dispatch) {
             if (!extent_probes.empty()) {
                 RecordComputeExtentProbes();
             }
+        } else if (!early_pages.empty()) {
+            // A draw wrote a page the guest reads back. Its copy waited for the next dispatch or
+            // the frame's end, often milliseconds of GPU work later, while the guest thread that
+            // reads it waited (read trace: the host GPU idle 1.8 ms of a 5.4 ms read).
+            // EDEN_NX2_EARLY_AFTER_DRAWS=1 records it right behind the draw: the render pass ends
+            // there, as a copy can't run inside one.
+            static const bool after_draws = [] {
+                const char* const value = std::getenv("EDEN_NX2_EARLY_AFTER_DRAWS");
+                return value != nullptr && value[0] == '1';
+            }();
+            if constexpr (HAS_READ_TRACE) {
+                if (ReadTrace::Enabled()) [[unlikely]] {
+                    ReadTrace::Count(ReadTrace::g_early.after_draw_waiting);
+                    if (after_draws) {
+                        ReadTrace::Count(ReadTrace::g_early.after_draw_recorded);
+                    }
+                }
+            }
+            if (after_draws) {
+                RecordEarlyDownloads();
+            }
         }
         // Early downloads the host GPU ran go to guest memory, where their reads then find them.
         // Asking the host GPU is a call: after each dispatch, and every few draws.
