@@ -2264,12 +2264,16 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
 
     if (after_skip) {
         // Skip on the loading screen: the game starts now and the rest builds while it runs, on
-        // one or two threads, paused while the game builds its own shaders or memory is short.
+        // one thread, paused while the game builds its own shaders or memory is short.
         // A pipeline the game needs before then is built by the game as before.
         if (recipe) {
             recipe->in_game = true;
         }
-        const size_t game_threads = hardware_threads >= 12 ? 2 : 1;
+        // One thread: two cost about 4 fps of 46 on a 6-core CPU that the game already keeps
+        // busy (Ocarina, RX 6750 XT). EDEN_NX2_PRECACHE_AFTER_SKIP=2 lets two build.
+        const char* const after_skip_env = std::getenv("EDEN_NX2_PRECACHE_AFTER_SKIP");
+        const size_t game_threads =
+            after_skip_env != nullptr && after_skip_env[0] == '2' && hardware_threads >= 12 ? 2 : 1;
         state->allowed_threads = 0;
         LOG_INFO(Render_Vulkan,
                  "Shader precache: skipped at {} of {}; the rest builds during the game on up to "
