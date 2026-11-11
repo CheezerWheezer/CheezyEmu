@@ -16,8 +16,7 @@
 #include <QRandomGenerator>
 
 /// CheezyEmu's moving backdrop for the home view and the loading screen: a warm dark base, the
-/// picked game's picture blurred into an ambient glow, silky ribbons of light flowing across, and
-/// fireflies drifting on a gentle current with short fading trails.
+/// picked game's picture blurred into an ambient glow, and cozy sunbeams with dust motes.
 namespace CheezyBackdrop {
 
 /// A blurred copy of `picture` covering `size` (cropped to its shape, never stretched): made
@@ -82,7 +81,9 @@ inline QPixmap MakeAmbient(const QPixmap& picture, QSize size) {
         image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
 }
 
-/// The moving parts. Step it every frame, then Paint.
+/// The moving parts: sunbeams slanting in from the top-left corner, swaying and breathing
+/// slowly, and dust motes drifting lazily that light up as they float through a beam. Step it
+/// every frame, then Paint.
 class Scene {
 public:
     void Step(qreal dt, const QRectF& area) {
@@ -93,32 +94,26 @@ public:
         auto* const random = QRandomGenerator::global();
         if (motes.empty() || bounds != area) {
             bounds = area;
-            motes.resize(std::clamp(int(area.width() * area.height() / 18000), 24, 70));
+            motes.resize(std::clamp(int(area.width() * area.height() / 9000), 50, 140));
             for (Mote& mote : motes) {
-                Spawn(mote, area, random, true);
+                Spawn(mote, area, random);
             }
         }
         for (Mote& mote : motes) {
-            // A smooth current: the direction turns slowly with place and time.
-            const qreal angle = 1.6 * std::sin(mote.pos.x() * 0.0042 + time * 0.13) +
-                                1.6 * std::cos(mote.pos.y() * 0.0051 - time * 0.11) +
-                                0.8 * std::sin((mote.pos.x() + mote.pos.y()) * 0.0023 + time * 0.07) +
-                                mote.bias;
-            const QPointF velocity{std::cos(angle), std::sin(angle) - 0.25};
+            // Lazy, wandering drift: each mote's heading turns slowly on its own.
+            mote.heading += std::sin(time * mote.turn + mote.seed) * 0.6 * dt;
+            const QPointF velocity{std::cos(mote.heading), std::sin(mote.heading) * 0.6 + 0.15};
             mote.pos += velocity * mote.speed * dt;
-            mote.age += dt;
-            // The trail keeps a point every 70 ms (a short, soft streak), the head is current.
-            mote.trail_timer += dt;
-            if (mote.trail_timer >= 0.07) {
-                mote.trail_timer = 0;
-                for (int k = int(mote.trail.size()) - 1; k > 1; --k) {
-                    mote.trail[k] = mote.trail[k - 1];
-                }
-                mote.trail[1] = mote.trail[0];
+            // Wrap around to the other side, so the room never empties.
+            if (mote.pos.x() < area.left() - 10) {
+                mote.pos.setX(area.right() + 8);
+            } else if (mote.pos.x() > area.right() + 10) {
+                mote.pos.setX(area.left() - 8);
             }
-            mote.trail[0] = mote.pos;
-            if (mote.age > mote.life || !area.adjusted(-40, -40, 40, 40).contains(mote.pos)) {
-                Spawn(mote, area, random, false);
+            if (mote.pos.y() < area.top() - 10) {
+                mote.pos.setY(area.bottom() + 8);
+            } else if (mote.pos.y() > area.bottom() + 10) {
+                mote.pos.setY(area.top() - 8);
             }
         }
     }
@@ -130,7 +125,7 @@ public:
         p.setRenderHint(QPainter::SmoothPixmapTransform);
 
         QLinearGradient base{area.topLeft(), area.bottomLeft()};
-        base.setColorAt(0, QColor(0x22, 0x1A, 0x11));
+        base.setColorAt(0, QColor(0x24, 0x1B, 0x12));
         base.setColorAt(1, QColor(0x10, 0x0C, 0x08));
         p.fillRect(area, base);
 
@@ -147,15 +142,17 @@ public:
         draw_ambient(ambient, ambient_strength);
 
         p.setCompositionMode(QPainter::CompositionMode_Screen);
-        PaintRibbons(p, area);
-        PaintMotes(p);
+        PaintSun(p, area);
+        PaintMotes(p, area);
         p.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
-        // A vignette: the edges fall away, the middle stays lit.
+        // A vignette: the far corner and the bottom fall into shade.
         const qreal unit = std::max(area.width(), area.height());
-        QRadialGradient vignette{QPointF(area.center()), unit * 0.75};
-        vignette.setColorAt(0.5, QColor(0, 0, 0, 0));
-        vignette.setColorAt(1, QColor(0, 0, 0, 160));
+        QRadialGradient vignette{
+            QPointF(area.left() + area.width() * 0.35, area.top() + area.height() * 0.3),
+            unit * 0.95};
+        vignette.setColorAt(0.45, QColor(0, 0, 0, 0));
+        vignette.setColorAt(1, QColor(0, 0, 0, 170));
         p.setPen(Qt::NoPen);
         p.setBrush(vignette);
         p.drawRect(area);
@@ -163,122 +160,124 @@ public:
     }
 
 private:
-    struct Mote {
-        QPointF pos;
-        std::array<QPointF, 10> trail;
-        qreal speed = 0;
-        qreal size = 0;
-        qreal bias = 0;
-        qreal age = 0;
-        qreal life = 0;
-        qreal hue = 0; // under 0.7: cheese, else cream
-        qreal trail_timer = 0;
+    struct Beam {
+        qreal angle;     // radians from the source, pointing down and right
+        qreal spread;    // half width, radians
+        qreal intensity; // 0..1
     };
 
-    static void Spawn(Mote& mote, const QRectF& area, QRandomGenerator* random, bool anywhere) {
+    struct Mote {
+        QPointF pos;
+        qreal heading = 0;
+        qreal turn = 0;
+        qreal seed = 0;
+        qreal speed = 0;
+        qreal size = 0;
+    };
+
+    static void Spawn(Mote& mote, const QRectF& area, QRandomGenerator* random) {
         const auto uniform = [random] { return random->generateDouble(); };
-        mote.pos = {area.left() + uniform() * area.width(),
-                    anywhere ? area.top() + uniform() * area.height()
-                             : area.bottom() + 10 - uniform() * area.height() * 0.3};
-        mote.trail.fill(mote.pos);
-        mote.speed = 14 + uniform() * 26;
-        mote.size = 1.4 + uniform() * 2.6;
-        mote.bias = (uniform() - 0.5) * 1.2;
-        mote.life = 8 + uniform() * 14;
-        mote.age = anywhere ? uniform() * mote.life : 0;
-        mote.hue = uniform();
+        mote.pos = {area.left() + uniform() * area.width(), area.top() + uniform() * area.height()};
+        mote.heading = uniform() * 6.2832;
+        mote.turn = 0.15 + uniform() * 0.35;
+        mote.seed = uniform() * 100;
+        mote.speed = 3 + uniform() * 9;
+        mote.size = 0.9 + uniform() * 1.8;
     }
 
-    void PaintRibbons(QPainter& p, const QRect& area) const {
-        // Three silky bands of light, flowing and folding slowly.
-        struct Ribbon {
-            qreal y, amplitude, width, speed, frequency;
-            int r, g, b, a;
-        };
-        static constexpr std::array<Ribbon, 3> ribbons{{
-            {0.30, 0.10, 0.07, 0.17, 1.3, 0xFF, 0xC8, 0x3D, 34},
-            {0.58, 0.13, 0.10, 0.11, 0.9, 0xFF, 0x96, 0x40, 26},
-            {0.78, 0.08, 0.06, 0.23, 1.7, 0xFF, 0xE0, 0x9A, 22},
+    static QPointF Source(const QRectF& area) {
+        return {area.left() - area.width() * 0.08, area.top() - area.height() * 0.22};
+    }
+
+    /// The beams now: a slow sway and breathing, each at its own pace.
+    std::array<Beam, 6> Beams() const {
+        // angle (deg), spread (deg), sway speed, breathe speed
+        static constexpr std::array<std::array<qreal, 4>, 6> shape{{
+            {{30, 2.6, 0.050, 0.21}},
+            {{38, 1.6, 0.070, 0.17}},
+            {{45, 3.4, 0.040, 0.13}},
+            {{53, 1.9, 0.060, 0.23}},
+            {{61, 2.8, 0.035, 0.19}},
+            {{70, 1.5, 0.055, 0.15}},
         }};
-        constexpr int steps = 48;
-        // Each ribbon is three bands of shrinking width on top of each other (added light), so
-        // it is brightest in its middle and fades out softly at its edges.
-        static constexpr std::array<std::pair<qreal, qreal>, 3> layers{
-            {{1.0, 0.30}, {0.66, 0.35}, {0.33, 0.45}}};
-        for (size_t i = 0; i < ribbons.size(); ++i) {
-            const Ribbon& ribbon = ribbons[i];
-            std::array<qreal, steps + 1> centres;
-            std::array<qreal, steps + 1> halves;
-            for (int k = 0; k <= steps; ++k) {
-                const qreal u = qreal(k) / steps;
-                const qreal wave =
-                    std::sin(u * 6.2832 * ribbon.frequency + time * ribbon.speed * 2 + i * 2.1) *
-                        ribbon.amplitude +
-                    std::sin(u * 6.2832 * ribbon.frequency * 2.3 - time * ribbon.speed * 1.3 +
-                             i) *
-                        ribbon.amplitude * 0.35;
-                centres[k] = area.top() + area.height() * (ribbon.y + wave);
-                halves[k] = area.height() * ribbon.width *
-                            (0.55 + 0.45 * std::sin(u * 9.0 + time * ribbon.speed * 3 + i));
-            }
-            for (const auto& [scale, strength] : layers) {
-                QPainterPath band;
-                for (int k = 0; k <= steps; ++k) {
-                    const QPointF top{area.left() + area.width() * k / steps,
-                                      centres[k] - halves[k] * scale};
-                    if (k == 0) {
-                        band.moveTo(top);
-                    } else {
-                        band.lineTo(top);
-                    }
-                }
-                for (int k = steps; k >= 0; --k) {
-                    band.lineTo(area.left() + area.width() * k / steps,
-                                centres[k] + halves[k] * scale);
-                }
-                band.closeSubpath();
-                const int alpha = int(ribbon.a * 2.2 * strength);
-                const QColor colour{ribbon.r, ribbon.g, ribbon.b, alpha};
-                const QColor clear{ribbon.r, ribbon.g, ribbon.b, 0};
-                QLinearGradient fill{QPointF(area.left(), 0), QPointF(area.right(), 0)};
-                fill.setColorAt(0, clear);
-                fill.setColorAt(0.25 + 0.1 * std::sin(time * 0.2 + i), colour);
-                fill.setColorAt(0.7 + 0.1 * std::cos(time * 0.17 + i), colour);
-                fill.setColorAt(1, clear);
-                p.setPen(Qt::NoPen);
-                p.setBrush(fill);
-                p.drawPath(band);
+        constexpr qreal to_rad = 3.14159265 / 180;
+        std::array<Beam, 6> beams;
+        for (size_t i = 0; i < beams.size(); ++i) {
+            const qreal deg = shape[i][0];
+            const qreal spread = shape[i][1];
+            const qreal sway = shape[i][2];
+            const qreal breathe = shape[i][3];
+            const qreal pulse = 0.5 + 0.5 * std::sin(time * breathe * 1.9 + i * 2.3);
+            beams[i] = {(deg + 2.2 * std::sin(time * sway * 6.2832 + i * 1.7)) * to_rad,
+                        spread * to_rad * (0.85 + 0.15 * std::sin(time * breathe * 4.1 + i)),
+                        0.55 + 0.45 * pulse * pulse};
+        }
+        return beams;
+    }
+
+    void PaintSun(QPainter& p, const QRect& area) const {
+        const QPointF source = Source(area);
+        const qreal reach = std::hypot(area.width(), area.height()) * 1.15;
+        p.setPen(Qt::NoPen);
+        // The glow where the light comes in.
+        QRadialGradient bloom{source, reach * 0.55};
+        bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 70));
+        bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 18));
+        bloom.setColorAt(1, QColor(0xFF, 0xC8, 0x5A, 0));
+        p.setBrush(bloom);
+        p.drawRect(area);
+        // Each beam: three wedges of shrinking width (soft edges), fading with distance.
+        static constexpr std::array<std::array<qreal, 2>, 3> layers{
+            {{{1.0, 0.30}}, {{0.6, 0.35}}, {{0.28, 0.45}}}};
+        for (const Beam& beam : Beams()) {
+            for (const auto& layer : layers) {
+                const qreal half = beam.spread * layer[0];
+                QPainterPath wedge;
+                wedge.moveTo(source);
+                wedge.lineTo(source + QPointF(std::cos(beam.angle - half),
+                                              std::sin(beam.angle - half)) * reach);
+                wedge.lineTo(source + QPointF(std::cos(beam.angle + half),
+                                              std::sin(beam.angle + half)) * reach);
+                wedge.closeSubpath();
+                const int alpha = int(95 * beam.intensity * layer[1]);
+                QRadialGradient fall{source, reach};
+                fall.setColorAt(0.0, QColor(0xFF, 0xEC, 0xB8, alpha));
+                fall.setColorAt(0.45, QColor(0xFF, 0xD8, 0x86, int(alpha * 0.55)));
+                fall.setColorAt(0.85, QColor(0xFF, 0xC8, 0x5A, 0));
+                p.setBrush(fall);
+                p.drawPath(wedge);
             }
         }
     }
 
-    void PaintMotes(QPainter& p) const {
+    void PaintMotes(QPainter& p, const QRect& area) const {
+        const QPointF source = Source(area);
+        const qreal reach = std::hypot(area.width(), area.height()) * 1.15;
+        const auto beams = Beams();
+        p.setPen(Qt::NoPen);
         for (const Mote& mote : motes) {
-            // Fade in, glow, fade out; a little flicker.
-            const qreal life_share = mote.age / mote.life;
-            const qreal fade = std::sin(std::clamp(life_share, 0.0, 1.0) * 3.14159265);
-            const qreal flicker = 0.75 + 0.25 * std::sin(time * 3.1 + mote.bias * 7);
-            const int alpha = int(200 * fade * flicker);
-            if (alpha <= 2) {
-                continue;
+            // How much sunlight is on this mote: inside a beam, near its middle, not too far.
+            const QPointF d = mote.pos - source;
+            const qreal angle = std::atan2(d.y(), d.x());
+            const qreal distance = std::hypot(d.x(), d.y()) / reach;
+            qreal light = 0;
+            for (const Beam& beam : beams) {
+                const qreal across = std::abs(angle - beam.angle) / beam.spread;
+                if (across < 1.2) {
+                    const qreal edge = 1.0 - across / 1.2;
+                    light += edge * edge * beam.intensity;
+                }
             }
-            const QColor colour =
-                mote.hue < 0.7 ? QColor(0xFF, 0xC8, 0x3D) : QColor(0xFF, 0xEE, 0xC2);
-            // The trail: thinner and fainter towards its end.
-            for (size_t k = 1; k < mote.trail.size(); ++k) {
-                const qreal share = 1.0 - qreal(k) / mote.trail.size();
-                QColor c = colour;
-                c.setAlpha(int(alpha * 0.35 * share));
-                p.setPen(QPen(c, mote.size * share, Qt::SolidLine, Qt::RoundCap));
-                p.drawLine(mote.trail[k - 1], mote.trail[k]);
-            }
-            p.setPen(Qt::NoPen);
-            QRadialGradient glow{mote.pos, mote.size * 4};
-            glow.setColorAt(0, QColor(colour.red(), colour.green(), colour.blue(), alpha));
-            glow.setColorAt(0.25, QColor(colour.red(), colour.green(), colour.blue(), alpha / 2));
-            glow.setColorAt(1, QColor(colour.red(), colour.green(), colour.blue(), 0));
+            light = std::min(1.0, light) * std::clamp(1.1 - distance, 0.0, 1.0);
+            const qreal twinkle = 0.8 + 0.2 * std::sin(time * 2.3 + mote.seed);
+            const int alpha = int((34 + 221 * light) * twinkle);
+            const qreal r = mote.size * (1.0 + 1.6 * light);
+            QRadialGradient glow{mote.pos, r * 2.4};
+            glow.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, alpha));
+            glow.setColorAt(0.35, QColor(0xFF, 0xE2, 0x9A, alpha / 2));
+            glow.setColorAt(1, QColor(0xFF, 0xD0, 0x70, 0));
             p.setBrush(glow);
-            p.drawEllipse(mote.pos, mote.size * 4, mote.size * 4);
+            p.drawEllipse(mote.pos, r * 2.4, r * 2.4);
         }
     }
 
