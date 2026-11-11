@@ -40,6 +40,10 @@ public:
         bool reset;
         bool sharpen;
         f32 sharpness; ///< 0 to 1 as FSR takes it: 2 stops of RCAS at 0, none at 1.
+        /// The camera's near plane and vertical field of view (radians) when the caller knows
+        /// them; 0 for the typical ones (a game's DLSS call names no camera).
+        f32 camera_near = 0.0f;
+        f32 camera_fov = 0.0f;
     };
 
     explicit Fsr3Upscaler(const Device& device, Scheduler& scheduler,

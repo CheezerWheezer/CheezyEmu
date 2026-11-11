@@ -295,6 +295,8 @@ add_library(video_core STATIC
     vulkan_common/vulkan_surface.h
     vulkan_common/vulkan_pipeline_binary_cache.cpp
     vulkan_common/vulkan_pipeline_binary_cache.h
+    vulkan_common/vulkan_host_allocator.cpp
+    vulkan_common/vulkan_host_allocator.h
     vulkan_common/vulkan_wrapper.cpp
     vulkan_common/vulkan_wrapper.h
     vulkan_common/nsight_aftermath_tracker.cpp
@@ -614,6 +616,12 @@ if (ENABLE_NVIDIA_DLSS)
     target_link_libraries(video_core PRIVATE version wintrust crypt32)
     target_compile_definitions(video_core PUBLIC EGLANTINE_STREAMLINE)
     message(STATUS "NVIDIA DLSS through Streamline: ${STREAMLINE_INCLUDE_DIR}")
+endif()
+
+# Ocarina of Time's upscaler replacement (AMD FSR, NVIDIA DLSS) and what frame generation takes
+# from it: every desktop build. It was tied to EGLANTINE_STREAMLINE, so only Windows had it.
+if (NOT ANDROID)
+    target_compile_definitions(video_core PUBLIC NX2_OCARINA_UPSCALE)
 endif()
 
 create_target_directory_groups(video_core)

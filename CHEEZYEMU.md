@@ -10,20 +10,48 @@ upscaling, AMD frame generation, and the community's AMD performance work.
 
 Not released yet: this section grows as the work lands.
 
+- **AMD FSR on Linux and macOS (new, needs testing there).** Ocarina's FSR path was only
+  compiled into Windows builds (the status bar said "FSR (WINDOWS ONLY)"). It is in every desktop
+  build now. Where AMD's own runtime is not there, which is every system but Windows, the FSR 3.1
+  passes built into CheezyEmu do the upscale and anti-aliasing from the same inputs (the game's
+  colour, depth and the camera and character motion). On Windows nothing changes: AMD's runtime
+  (FSR 4 or 3.1) is still used, and the built-in one takes over when that cannot start. Frame
+  generation stays Windows only. Tested on Windows by forcing it (`EDEN_NX2_FSR_BUILTIN=1`):
+  standing and moving in Hyrule Field, 55 fps at Native AA on an RX 6750 XT. Not yet run on Linux.
+- **Less hitching while walking around.**
+  - The buffer collector ran in emergency mode on every frame in Ocarina of Time: the game keeps
+    about 1.5 GB of buffers in use, and "more than 1 GB of buffers" was the emergency. It threw
+    away up to 64 buffers a frame that the game bound again a moment later (about 120 buffers
+    created and deleted and 20 memory requests to the driver every second while walking). It now
+    looks at how much is idle. Same PC, same routes, one run each way: 49.6 against 43.6 fps
+    standing, 11 against 21 frames over 50 ms on one route and 2 against 4 on the other.
+    `EDEN_NX2_BUFFER_GC_TOTAL=1` brings the old rule back.
+  - Windows: the graphics driver's shader compiler shared one memory lock with everything else
+    in the emulator, so pipelines built at the same time waited for each other. The driver now
+    gets heaps of its own. Building shaders that were never compiled, switching between the two
+    every 20 seconds: a median of 55 against 33 pipelines a second. `EDEN_NX2_VK_ALLOCATOR=0`
+    turns it off.
+- **Linux: the update check works.** It failed before any request was sent ("returned null")
+  on systems whose certificates are not where the build machine's are (SteamOS). It uses the
+  system's certificate bundle now, and the log says why a request failed.
 - **Shaders are built in: no shader pack needed for Ocarina of Time.** CheezyEmu now ships a
-  shader recipe for the game: a 2 MB list of the 39,000 pipelines players' sessions drew, with
-  none of the game's code in it. The first time you start the game, the loading screen reads
+  shader recipe for the game: a 3 MB list of 116,570 pipelines, with none of the game's code in
+  it. The first 39,000 are the ones players' sessions drew; the other 77,600 come from
+  Fritchii's recipe for the game (Fritchii v5.7, by Frizti), which also predicts pipelines
+  nobody recorded yet. The first time you start the game, the loading screen reads
   your own copy of the game for its shader programs (about a minute, "Gathering this game's
   shaders"), puts the two together and builds every pipeline ("Building shaders N / M (once)",
   with the time left and a **Skip** button). After that, places you visit for the first time
   already have their shaders. It is done once per GPU driver, and **an update of CheezyEmu
   does not start it over**: what is built is remembered by driver and cache version, not by
   build, and a later, bigger recipe only builds what is new.
-  - How long it takes depends on what you already have. With saved shaders from earlier builds
-    it is quick (on the test PC, which had most of them: 9 minutes for the 13,400 it lacked).
-    With nothing saved, expect a long first start on AMD (its driver compiles on about 3 to 4
-    CPU cores however many you have): Skip starts the game at once, and the rest is built on
-    the next start or when the game needs it, as before.
+  - How long it takes depends on what you already have. Shaders saved by earlier builds are
+    done in seconds. Ones never compiled on your PC take the time: an RX 6750 XT with a
+    12-thread CPU compiles about 55 a second, so a PC with nothing saved needs half an hour or
+    more for everything. The recorded pipelines come first, so pressing **Skip** after a while
+    still leaves you with the ones that matter most; the rest is built on the next start or
+    when the game needs it, as before.
+  - It needs about 2.2 GB of disk for the assembled file, next to your shader cache.
   - For any other game the same loading screen builds the compute programs found in the game
     files and the pipelines your earlier sessions saved ("Precache shaders before game
     start", now on by default; Off in Graphics > Advanced brings build 11's behaviour back).

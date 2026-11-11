@@ -29,6 +29,7 @@
 #include "common/settings_enums.h"
 #include "video_core/nx2_read_trace.h"
 #include "video_core/nx2_stutter_trace.h"
+#include "video_core/vulkan_common/vulkan_host_allocator.h"
 #include "video_core/vulkan_common/nsight_aftermath_tracker.h"
 #include "video_core/vulkan_common/vma.h"
 #include "video_core/gpu_crash_context.h"
@@ -2132,6 +2133,10 @@ void Device::LogMemoryHeaps() const {
                             (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? ", device local" : "",
                             (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ? ", host visible" : "",
                             stats.blockBytes >> 20, stats.blockCount, stats.allocationBytes >> 20);
+    }
+    if (const auto use = HostAllocatorUse(); use.allocations != 0) {
+        text += fmt::format(" | driver bookkeeping: {} MiB in use, {} allocations so far",
+                            use.bytes_in_use >> 20, use.allocations);
     }
     LOG_INFO(Render_Vulkan, "Vulkan memory{}", text);
 }

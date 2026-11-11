@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <filesystem>
+#include <system_error>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -213,6 +215,21 @@ RequestResult Fetch(const std::string& url, const std::string& path) {
 
 #ifdef YUZU_BUNDLED_OPENSSL
         client->load_ca_cert_store(kCert, sizeof(kCert));
+#elif !defined(_WIN32)
+        // An AppImage or a portable build carries an OpenSSL whose default certificate folder is
+        // the build machine's, which the player's system may not have: the request then fails
+        // before it is sent (the update check logged "returned null" on SteamOS). Use the
+        // system's own certificate bundle where one of the usual places has it.
+        for (const char* const bundle : {"/etc/ssl/certs/ca-certificates.crt",
+                                         "/etc/pki/tls/certs/ca-bundle.crt",
+                                         "/etc/ssl/ca-bundle.pem", "/etc/ssl/cert.pem",
+                                         "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"}) {
+            std::error_code error;
+            if (std::filesystem::exists(bundle, error)) {
+                client->set_ca_cert_path(bundle);
+                break;
+            }
+        }
 #endif
 
         if (client == nullptr) {
@@ -230,7 +247,8 @@ RequestResult Fetch(const std::string& url, const std::string& path) {
         httplib::Result result = client->send(request);
 
         if (!result) {
-            LOG_ERROR(Common, "GET to {}{} returned null", url, path);
+            LOG_ERROR(Common, "GET to {}{} returned null ({})", url, path,
+                      httplib::to_string(result.error()));
             return {};
         }
 

@@ -450,8 +450,8 @@ void Fsr3Upscaler::Upscale(const Inputs& in) {
     constants.max_upscale_size = constants.upscale_size;
     {
         // Reversed infinite depth (setupDeviceDepthToViewSpaceDepthParams with near = FLT_MAX).
-        const f32 near_plane = CAMERA_NEAR;
-        const f32 fov = CAMERA_FOV;
+        const f32 near_plane = in.camera_near > 0.0f ? in.camera_near : CAMERA_NEAR;
+        const f32 fov = in.camera_fov > 0.0f ? in.camera_fov : CAMERA_FOV;
         const f32 aspect = static_cast<f32>(rw) / static_cast<f32>(rh);
         const f32 cot_half_fov = std::cos(0.5f * fov) / std::sin(0.5f * fov);
         constants.device_to_view_depth = {-1.0f * (0.0f + FLT_EPSILON), near_plane,

@@ -19,6 +19,7 @@
 #include "common/thread.h"
 #include "video_core/vulkan_common/vk_enum_string_helper.h"
 #include "video_core/vulkan_common/vma.h"
+#include "video_core/vulkan_common/vulkan_host_allocator.h"
 #include "video_core/vulkan_common/vulkan_pipeline_binary_cache.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
 
@@ -352,11 +353,11 @@ const char* Exception::what() const noexcept {
 }
 
 void Destroy(VkInstance instance, const InstanceDispatch& dld) noexcept {
-    dld.vkDestroyInstance(instance, nullptr);
+    dld.vkDestroyInstance(instance, HostAllocator());
 }
 
 void Destroy(VkDevice device, const InstanceDispatch& dld) noexcept {
-    dld.vkDestroyDevice(device, nullptr);
+    dld.vkDestroyDevice(device, HostAllocator());
 }
 
 void Destroy(VkDevice device, VkBuffer handle, const DeviceDispatch& dld) noexcept {
@@ -498,7 +499,7 @@ Instance Instance::Create(u32 version, Span<const char*> layers, Span<const char
         .ppEnabledExtensionNames = extensions.data(),
     };
     VkInstance instance;
-    Check(dispatch.vkCreateInstance(&ci, nullptr, &instance));
+    Check(dispatch.vkCreateInstance(&ci, HostAllocator(), &instance));
     if (!Proc(dispatch.vkDestroyInstance, dispatch, "vkDestroyInstance", instance)) {
         // We successfully created an instance but the destroy function couldn't be loaded.
         // This is a good moment to panic.
@@ -966,7 +967,7 @@ Device Device::Create(VkPhysicalDevice physical_device, Span<VkDeviceQueueCreate
         .pEnabledFeatures = nullptr,
     };
     VkDevice device;
-    Check(dispatch.vkCreateDevice(physical_device, &ci, nullptr, &device));
+    Check(dispatch.vkCreateDevice(physical_device, &ci, HostAllocator(), &device));
     Load(device, dispatch);
     return Device(device, dispatch);
 }

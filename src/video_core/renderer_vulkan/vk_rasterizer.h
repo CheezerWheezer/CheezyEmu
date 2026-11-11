@@ -217,7 +217,7 @@ private:
     void TraceDrawFailure(std::string_view reason);
     /// Remembers render target 0 of a draw with one of Ocarina of Time's tonemap shaders.
     void TrackOotTonemappedImage(const GraphicsPipeline& pipeline);
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     void SaveOcarinaHudless();
     void SaveOcarinaPreHud(VkImage source, VkFormat format, VkExtent2D extent);
 #endif
@@ -303,7 +303,7 @@ private:
 
     /// EDEN_NX2_PENDING_WRITE_TRACE: logs bound buffer ranges with collected, unapplied CPU writes.
     void TracePendingCpuWrites(bool compute, std::span<const u64> shader_hashes);
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     bool OcarinaDlssEnabled() const;
     void TrackOcarinaCamera();
     void TrackOcarinaActor(u64 shader_hash, bool is_indexed, bool is_indirect);
@@ -350,7 +350,7 @@ private:
     boost::container::static_vector<VkSampler, MAX_TEXTURES> sampler_handles;
 
     u32 draw_counter = 0;
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     std::optional<u64> oot_camera_sample_frame;
     struct OcarinaMotionTrace {
         const Tegra::MemoryManager* camera_channel{};

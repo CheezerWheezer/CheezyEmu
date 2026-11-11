@@ -30,6 +30,7 @@
 
 #include <fmt/format.h>
 
+#include "video_core/renderer_vulkan/vk_fsr3_upscaler.h"
 #include "video_core/renderer_vulkan/vk_fsr4_upscaler.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 
@@ -1134,7 +1135,7 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_in
         }
     }
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     TrackOcarinaCamera();
     TrackOcarinaActor(pipeline->ShaderHashes()[1], is_indexed, is_indirect);
 #endif
@@ -1202,7 +1203,7 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_in
     }
     submitted = true;
     buffer_cache.NoteWorkRecorded(false);
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     constexpr u64 final_vertex = 0x16aff33d999f993fULL;
     constexpr u64 final_fragment = 0x52402d8e8ab55263ULL;
     const auto hashes = pipeline->ShaderHashes();
@@ -1724,7 +1725,7 @@ void RasterizerVulkan::DrawIndirect() {
 }
 
 VideoCommon::OotNetwork::BypassState* RasterizerVulkan::OotNetworkBypass() {
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     // NVIDIA DLSS replaces the same output pass and takes precedence until its evaluation fails.
     if (OcarinaDlssEnabled() && !(oot_live_dlss && oot_live_dlss->EvaluationFailed())) {
         static bool logged = false;
@@ -2227,7 +2228,7 @@ void RasterizerVulkan::DispatchCompute() {
     };
     const auto indirect_address = kepler_compute->GetIndirectComputeAddress();
     const auto list_slot = kepler_compute->GetIndirectListSlot();
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     // With an FSR preset the game upscales by another ratio with another shader: any pass may be
     // it, and TryOcarinaDlss tells by its images (one scene-size input, one larger output).
     const bool can_replace = OcarinaDlssEnabled() &&
@@ -2333,7 +2334,7 @@ void RasterizerVulkan::DispatchCompute() {
         }
         buffer_cache.NoteWorkRecorded(true);
         SubmitNx2ListCopies();
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
         TryOcarinaDlss(*pipeline, false); // As after a direct dispatch
 #endif
         return;
@@ -2376,7 +2377,7 @@ void RasterizerVulkan::DispatchCompute() {
     if (barrier_first) {
         scheduler.Record([](vk::CommandBuffer cmdbuf) { RecordDispatchBarrier(cmdbuf); });
     }
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     const auto* const replacement =
         can_replace && !byte_addressed_shadow && TryOcarinaDlss(*pipeline, true)
             ? oot_live_dlss.get()
@@ -2389,14 +2390,14 @@ void RasterizerVulkan::DispatchCompute() {
 #endif
     scheduler.Record([this, pipeline, dim, byte_addressed_shadow, bind = std::move(deferred_bind),
                       barrier_recorded = barrier_first
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
                       , replacement
 #endif
                      ](vk::CommandBuffer cmdbuf) {
         if (!barrier_recorded) {
             RecordDispatchBarrier(cmdbuf);
         }
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
         if (replacement && !replacement->EvaluationFailed()) {
             return;
         }
@@ -2427,7 +2428,7 @@ void RasterizerVulkan::DispatchCompute() {
     SubmitNx2ListCopies();
     publish_collision_map();
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     if (!can_replace) {
         TryOcarinaDlss(*pipeline, false);
     }
@@ -3073,12 +3074,19 @@ void RasterizerVulkan::TracePendingCpuWrites(bool compute, std::span<const u64> 
     });
 }
 
-// Outside EGLANTINE_STREAMLINE: Linux and macOS builds call it too.
+namespace {
+/// NVIDIA DLSS through Streamline: only builds with it (Windows) can have it.
+[[nodiscard]] bool NvidiaDlssAvailable() {
+#ifdef EGLANTINE_STREAMLINE
+    return Streamline::IsDlssAvailable();
+#else
+    return false;
+#endif
+}
+} // Anonymous namespace
+
 std::pair<const char*, const char*> RasterizerVulkan::UpscalerIdleReason() const {
-#ifndef _WIN32
-    return {"WINDOWS ONLY", "AMD FSR runs on Windows only: AMD ships its FSR runtime for Windows. "
-                            "On Linux and macOS the game uses its own upscaler."};
-#elif defined(EGLANTINE_STREAMLINE)
+#ifdef NX2_OCARINA_UPSCALE
     constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
     if (program_id != ocarina_program) {
         return {"OOT ONLY", "AMD FSR replaces the game's upscaler in The Legend of Zelda: Ocarina "
@@ -3133,7 +3141,7 @@ std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() co
                            "changing the Frame Generation Type. If it still shows this, AMD's "
                            "swapchain couldn't start (see the log)."};
     }
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
     if (program_id != ocarina_program) {
         return {"OOT ONLY", "AMD frame generation works in The Legend of Zelda: Ocarina of Time "
@@ -3159,12 +3167,15 @@ std::pair<const char*, const char*> RasterizerVulkan::AmdFrameGenIdleReason() co
 #endif
 }
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
 bool RasterizerVulkan::OcarinaDlssEnabled() const {
     constexpr u64 ocarina_program = 0x0400486024DEC000ULL;
+    // AMD's runtime where it is (Windows: FSR 4 or 3.1, and frame generation), else the FSR 3.1
+    // passes built into the emulator, which only need the "AMD FSR" setting.
     return program_id == ocarina_program && !oot_live_failed &&
-           ((Settings::values.nvidia_dlss.GetValue() && Streamline::IsDlssAvailable()) ||
-            Fsr4Upscaler::IsAvailable(device));
+           ((Settings::values.nvidia_dlss.GetValue() && NvidiaDlssAvailable()) ||
+            Fsr4Upscaler::IsAvailable(device) ||
+            (Settings::values.amd_fsr4.GetValue() && Fsr3Upscaler::IsSupported(device)));
 }
 
 /// Capture the two camera matrices from a draw targeting the scene color and depth. Terrain and
@@ -4230,7 +4241,8 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         }
         if (!oot_live_dlss) {
             oot_live_dlss = std::make_unique<OcarinaLiveDlss>(
-                device, scheduler, descriptor_pool, compute_pass_descriptor_queue, memory_allocator);
+                device, scheduler, descriptor_pool, compute_pass_descriptor_queue, memory_allocator,
+                staging_pool);
         }
         const VkExtent2D target_extent{target.size.width, target.size.height};
         const VkExtent2D output_extent = four_k ? VkExtent2D{3840, 2160} : target_extent;
@@ -4571,7 +4583,7 @@ void RasterizerVulkan::AccelerateInlineToMemory(GPUVAddr address, size_t copy_si
     pipeline_cache.InvalidateRegion(*cpu_addr, copy_size);
 }
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
 void RasterizerVulkan::SaveOcarinaPreHud(VkImage source, VkFormat format, VkExtent2D extent) {
     const bool create = !oot_pre_hud || oot_pre_hud_extent.width != extent.width ||
                         oot_pre_hud_extent.height != extent.height || oot_pre_hud_format != format;
@@ -4818,7 +4830,7 @@ void RasterizerVulkan::SaveOcarinaHudless() {
 #endif
 
 bool RasterizerVulkan::OcarinaHudlessReady() const {
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     // EDEN_NX2_AMD_FG_HUDLESS=1 while it is tested: off, the HUD moves with generated frames.
     static const bool enabled = [] {
         const char* const value = std::getenv("EDEN_NX2_AMD_FG_HUDLESS");
@@ -4831,7 +4843,7 @@ bool RasterizerVulkan::OcarinaHudlessReady() const {
 }
 
 void RasterizerVulkan::PresentOcarinaHudless(bool on) {
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     oot_present_hudless = on;
 #endif
 }
@@ -4854,7 +4866,7 @@ std::optional<FramebufferTextureInfo> RasterizerVulkan::AccelerateDisplay(
     if (!image_view) {
         return {};
     }
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     if (oot_present_hudless) {
         // The hudless present pass: the same image as the game presents, without its HUD.
         if (scaled || image_view->ImageHandle() != oot_hudless_source || !OcarinaHudlessReady()) {
@@ -4891,7 +4903,7 @@ std::optional<FramebufferTextureInfo> RasterizerVulkan::AccelerateDisplay(
     info.height = image_view->size.height;
     info.scaled_width = scaled ? resolution.ScaleUp(info.width) : info.width;
     info.scaled_height = scaled ? resolution.ScaleUp(info.height) : info.height;
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     info.anti_aliased = oot_dlss_frame == render_trace_frame && !oot_live_dlss->EvaluationFailed();
     if (oot_4k_scene_frame == render_trace_frame && info.image &&
         info.image == oot_4k_guest_present && info.image_view &&
@@ -5213,7 +5225,7 @@ namespace {
 
 void RasterizerVulkan::UpdateOcarinaJitter() {
     std::array<f32, 2> want{};
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
     // FSR is a temporal upscaler: it needs the scene drawn at a slightly different sub-pixel
     // position every frame to resolve detail finer than a render pixel. Ocarina renders without
     // jitter, so FSR saw the same samples every frame (stair steps, shimmer, blocky low presets).
@@ -5224,7 +5236,7 @@ void RasterizerVulkan::UpdateOcarinaJitter() {
     const auto& regs = maxwell3d->regs;
     if (OcarinaJitterMode() != 0 && oot_motion.extent.width != 0 && oot_dlss_frame &&
         *oot_dlss_frame + 1 >= render_trace_frame && regs.depth_test_enable &&
-        !(Settings::values.nvidia_dlss.GetValue() && Streamline::IsDlssAvailable())) {
+        !(Settings::values.nvidia_dlss.GetValue() && NvidiaDlssAvailable())) {
         const auto& targets = texture_cache.GetRenderTargets();
         if (targets.depth_buffer_id) {
             const auto& depth = texture_cache.GetImageView(targets.depth_buffer_id);

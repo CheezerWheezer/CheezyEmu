@@ -86,7 +86,7 @@ public:
 
     [[nodiscard]] VideoCore::UpscalerStatus GetUpscalerStatus() const override {
         VideoCore::UpscalerStatus status;
-#if defined(_WIN32) && defined(EGLANTINE_STREAMLINE)
+#ifdef NX2_OCARINA_UPSCALE
         status.supported = true;
 #endif
         status.upscaled_frames = rasterizer.UpscaledFrames();

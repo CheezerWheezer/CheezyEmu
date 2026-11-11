@@ -274,6 +274,12 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   EDEN_NX2_FSR_VERSION=3            Uses FSR 3.1 even where FSR 4 is offered (for comparing)
   EDEN_NX2_FORCE_MESH_FALLBACK=1    Draws mesh shader geometry the safe way on any GPU (fixes
                                     AMD hangs; =0 never uses it, even where it is automatic)
+  EDEN_NX2_FSR_BUILTIN=1            Uses the FSR 3.1 built into CheezyEmu even where AMD's own
+                                    runtime is there (what Linux and macOS run; to compare)
+  EDEN_NX2_VK_ALLOCATOR=0           Windows: the graphics driver allocates its own memory again
+                                    (build 12 gives it heaps of its own, for faster shader builds)
+  EDEN_NX2_BUFFER_GC_TOTAL=1        Brings back the old buffer clean-up rule (more hitching in
+                                    Ocarina; only to compare)
   EDEN_NX2_MESH_EMULATION=0         On a GPU without mesh shaders: leaves grass and props out
                                     instead of drawing them through compute (if loading a
                                     save freezes there)

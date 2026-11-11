@@ -18,6 +18,7 @@ class DescriptorPool;
 class Device;
 class MemoryAllocator;
 class Scheduler;
+class StagingBufferPool;
 
 /// Where a skinned draw keeps its position, joint weights and joint indices in a vertex.
 struct OcarinaVertexLayout {
@@ -44,11 +45,12 @@ struct OcarinaActorMesh {
     std::array<f32, 320 * 12> previous_bones;
 };
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
 class OcarinaLiveDlss {
 public:
     OcarinaLiveDlss(const Device& device, Scheduler& scheduler, DescriptorPool& pool,
-                    ComputePassDescriptorQueue& queue, MemoryAllocator& allocator);
+                    ComputePassDescriptorQueue& queue, MemoryAllocator& allocator,
+                    StagingBufferPool& staging_pool);
     ~OcarinaLiveDlss();
 
     [[nodiscard]] bool EvaluationFailed() const;

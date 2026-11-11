@@ -13,9 +13,10 @@
 #include <string_view>
 #include <vector>
 
-#ifdef EGLANTINE_STREAMLINE
+#ifdef NX2_OCARINA_UPSCALE
 #include "common/logging.h"
 #include "video_core/host_shaders/ocarina_dlss_color_comp_spv.h"
+#include "video_core/host_shaders/ocarina_fsr3_depth_comp_spv.h"
 #include "video_core/host_shaders/ocarina_dlss_output_comp_spv.h"
 #include "video_core/host_shaders/ocarina_dlss_4k_composite_comp_spv.h"
 #include "video_core/host_shaders/ocarina_dlss_4k_reference_comp_spv.h"
@@ -27,9 +28,13 @@
 #include "video_core/renderer_vulkan/vk_master_semaphore.h"
 #include "common/settings.h"
 #include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
+#include "video_core/renderer_vulkan/vk_fsr3_upscaler.h"
 #include "video_core/renderer_vulkan/vk_fsr4_upscaler.h"
+#include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
+#ifdef EGLANTINE_STREAMLINE
 #include "video_core/renderer_vulkan/vk_streamline_dlss.h"
 #include "video_core/vulkan_common/streamline.h"
+#endif
 
 #include "video_core/host_shaders/ocarina_camera_motion_comp_spv.h"
 #include "video_core/host_shaders/ocarina_actor_motion_frag_spv.h"
@@ -414,8 +419,27 @@ VkImageMemoryBarrier ProbeBarrier(VkImage image, VkAccessFlags src, VkAccessFlag
     };
 }
 
-// The upscaler Ocarina's live replacement runs: NVIDIA DLSS (Streamline) or AMD FSR 4. Both take
-// the same inputs; FSR 4 also gets the frame time and the sharpness slider.
+// What every upscaler of Ocarina's live replacement takes (the fields of NVIDIA DLSS's inputs,
+// in a type every platform has).
+struct OcarinaUpscaleInputs {
+    Fsr4Upscaler::Image color;          ///< Jittered colour at the render size.
+    Fsr4Upscaler::Image depth;          ///< Device depth at the render size.
+    Fsr4Upscaler::Image motion_vectors; ///< Motion to the previous frame at the render size.
+    VkExtent2D render_size;
+    VkExtent2D upscale_size;
+    std::array<f32, 2> jitter;
+    std::array<f32, 2> motion_vector_scale;
+    bool reset;
+    bool depth_inverted = true;
+    bool hdr = true;
+    f32 camera_near = 0.1f;
+    f32 camera_far = 10000.0f;
+    f32 camera_fov = 1.0f;
+};
+
+// The upscaler Ocarina's live replacement runs: NVIDIA DLSS (Streamline), AMD FSR from AMD's
+// runtime (FSR 4 or 3.1, Windows), or the FSR 3.1 passes built into the emulator (anywhere).
+// All take the same inputs; the FSR ones also get the frame time and the sharpness slider.
 class OcarinaUpscaler {
 public:
     virtual ~OcarinaUpscaler() = default;
@@ -423,9 +447,10 @@ public:
     [[nodiscard]] virtual VkImage OutputImage() const = 0;
     [[nodiscard]] virtual VkImageView OutputView() const = 0;
     [[nodiscard]] virtual VkSampler PointSampler() const = 0;
-    virtual bool Upscale(const StreamlineDlssUpscaler::Inputs& inputs) = 0;
+    virtual bool Upscale(const OcarinaUpscaleInputs& inputs) = 0;
 };
 
+#ifdef EGLANTINE_STREAMLINE
 class OcarinaDlssUpscaler final : public OcarinaUpscaler {
 public:
     OcarinaDlssUpscaler(const Device& device, Scheduler& scheduler, MemoryAllocator& allocator)
@@ -444,13 +469,32 @@ public:
     VkSampler PointSampler() const override {
         return upscaler.PointSampler();
     }
-    bool Upscale(const StreamlineDlssUpscaler::Inputs& in) override {
-        return upscaler.Upscale(in);
+    bool Upscale(const OcarinaUpscaleInputs& in) override {
+        const auto image = [](const Fsr4Upscaler::Image& i) {
+            return StreamlineDlssUpscaler::Image{i.view, i.image, i.format, i.range,
+                                                 i.barrier_aspect};
+        };
+        StreamlineDlssUpscaler::Inputs inputs{};
+        inputs.color = image(in.color);
+        inputs.depth = image(in.depth);
+        inputs.motion_vectors = image(in.motion_vectors);
+        inputs.render_size = in.render_size;
+        inputs.upscale_size = in.upscale_size;
+        inputs.jitter = in.jitter;
+        inputs.motion_vector_scale = in.motion_vector_scale;
+        inputs.reset = in.reset;
+        inputs.depth_inverted = in.depth_inverted;
+        inputs.hdr = in.hdr;
+        inputs.camera_near = in.camera_near;
+        inputs.camera_far = in.camera_far;
+        inputs.camera_fov = in.camera_fov;
+        return upscaler.Upscale(inputs);
     }
 
 private:
     StreamlineDlssUpscaler upscaler;
 };
+#endif // EGLANTINE_STREAMLINE
 
 class OcarinaFsr4Upscaler final : public OcarinaUpscaler {
 public:
@@ -470,10 +514,8 @@ public:
     VkSampler PointSampler() const override {
         return upscaler.PointSampler();
     }
-    bool Upscale(const StreamlineDlssUpscaler::Inputs& in) override {
-        const auto image = [](const StreamlineDlssUpscaler::Image& i) {
-            return Fsr4Upscaler::Image{i.view, i.image, i.format, i.range, i.barrier_aspect};
-        };
+    bool Upscale(const OcarinaUpscaleInputs& in) override {
+        const auto image = [](const Fsr4Upscaler::Image& i) { return i; };
         const auto now = std::chrono::steady_clock::now();
         const f32 frame_time_ms =
             last ? std::chrono::duration<f32, std::milli>(now - *last).count() : 1000.0f / 30.0f;
@@ -505,12 +547,195 @@ private:
     std::optional<std::chrono::steady_clock::time_point> last;
 };
 
+/// Writes the depth the built-in FSR 3.1 passes expect (ocarina_fsr3_depth.comp).
+class OcarinaFsr3DepthPass final : public ComputePass {
+    static constexpr std::array<VkDescriptorSetLayoutBinding, 2> bindings{{
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+    }};
+    static constexpr std::array<VkDescriptorUpdateTemplateEntry, 2> templates{{
+        {0, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, sizeof(DescriptorUpdateEntry)},
+        {1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizeof(DescriptorUpdateEntry),
+         sizeof(DescriptorUpdateEntry)},
+    }};
+    static constexpr DescriptorBankInfo bank{.textures = 1, .images = 1, .score = 2};
+    static constexpr std::array push{
+        VkPushConstantRange{VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(f32)}};
+
+public:
+    OcarinaFsr3DepthPass(const Device& device_, Scheduler& scheduler, DescriptorPool& pool)
+        : ComputePass(device_, scheduler, pool, bindings, templates, bank, push,
+                      OCARINA_FSR3_DEPTH_COMP_SPV) {}
+
+    void Record(Scheduler& scheduler, const void* descriptors, VkImage image, VkExtent2D extent,
+                std::array<f32, 2> planes) {
+        scheduler.Record([this, descriptors, image, extent, planes](vk::CommandBuffer cmd) {
+            const auto output = ProbeBarrier(
+                image, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_GENERAL);
+            const VkMemoryBarrier inputs{
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            };
+            cmd.PipelineBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, inputs, {}, output);
+            const VkDescriptorSet set = descriptor_allocator.Commit();
+            device.GetLogical().UpdateDescriptorSet(set, *descriptor_template, descriptors);
+            cmd.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
+            cmd.BindDescriptorSets(VK_PIPELINE_BIND_POINT_COMPUTE, *layout, 0, set, {});
+            cmd.PushConstants(*layout, VK_SHADER_STAGE_COMPUTE_BIT, planes);
+            cmd.Dispatch((extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+            const VkMemoryBarrier written{
+                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            };
+            cmd.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, written);
+        });
+    }
+};
+
+vk::Image CreateOcarinaImage(MemoryAllocator& allocator, VkExtent2D extent, VkFormat format,
+                             VkImageUsageFlags usage);
+vk::ImageView CreateOcarinaView(const Device& device, VkImage image, VkFormat format);
+
+/// The FSR 3.1 passes built into the emulator (the FidelityFX SDK's, as host compute shaders):
+/// where AMD's runtime is not there, which is every system but Windows. No FSR 4 and no frame
+/// generation, but the same temporal upscale and anti-aliasing from the same inputs.
+class OcarinaBuiltinFsrUpscaler final : public OcarinaUpscaler {
+public:
+    OcarinaBuiltinFsrUpscaler(const Device& device_, Scheduler& scheduler_,
+                              MemoryAllocator& allocator_, StagingBufferPool& staging_pool,
+                              DescriptorPool& pool, ComputePassDescriptorQueue& queue_)
+        : device{device_}, scheduler{scheduler_}, allocator{allocator_}, queue{queue_},
+          upscaler{device_, scheduler_, allocator_, staging_pool, pool, queue_},
+          depth_pass{device_, scheduler_, pool} {
+        LOG_INFO(Render_Vulkan, "Ocarina of Time: the game's upscaler is replaced by the built-in "
+                                "AMD FSR 3.1 (no AMD runtime on this system)");
+    }
+    bool Failed() const override {
+        return failed;
+    }
+    VkImage OutputImage() const override {
+        return upscaler.OutputImage();
+    }
+    VkImageView OutputView() const override {
+        return upscaler.OutputView();
+    }
+    VkSampler PointSampler() const override {
+        return upscaler.PointSampler();
+    }
+    bool Upscale(const OcarinaUpscaleInputs& in) override {
+        if (failed) {
+            return false;
+        }
+        try {
+            const bool planes_known = in.camera_near > 0.0f && in.camera_far > in.camera_near;
+            const f32 near_plane = planes_known ? in.camera_near : 0.1f;
+            const f32 far_plane = planes_known ? in.camera_far : 25000.0f;
+            VkImageView depth = in.depth.view;
+            if (!in.depth_inverted) {
+                Depth& reversed = ReversedDepth(in.render_size);
+                queue.Acquire(scheduler, 2);
+                queue.AddSampledImage(in.depth.view, upscaler.PointSampler());
+                queue.AddImage(*reversed.view);
+                depth_pass.Record(scheduler, queue.UpdateData(), *reversed.image, in.render_size,
+                                  {near_plane, far_plane});
+                depth = *reversed.view;
+            }
+            const auto now = std::chrono::steady_clock::now();
+            const f32 frame_time_ms = last ? std::chrono::duration<f32, std::milli>(now - *last)
+                                                 .count()
+                                           : 1000.0f / 30.0f;
+            last = now;
+            // FSR's RCAS, set by the sharpness slider (stops x 100; 200 is off).
+            const int slider = Settings::values.fsr_sharpening_slider.GetValue();
+            upscaler.Upscale({
+                .color = in.color.view,
+                .depth = depth,
+                .motion_vectors = in.motion_vectors.view,
+                .render_size = in.render_size,
+                .upscale_size = in.upscale_size,
+                .jitter = in.jitter,
+                .motion_vector_scale = in.motion_vector_scale,
+                .frame_time_ms = frame_time_ms,
+                .reset = in.reset,
+                .sharpen = slider < 200,
+                .sharpness = 1.0f - static_cast<f32>(slider) / 200.0f,
+                .camera_near = near_plane,
+                .camera_fov = in.camera_fov,
+            });
+            return true;
+        } catch (const vk::Exception& exception) {
+            LOG_ERROR(Render_Vulkan, "Built-in AMD FSR 3.1 can't run ({}); the game uses its own "
+                                     "upscaler", exception.what());
+            failed = true;
+            return false;
+        }
+    }
+
+private:
+    struct Depth {
+        VkExtent2D extent{};
+        vk::Image image;
+        vk::ImageView view;
+    };
+    /// One image per scene size the game draws at (its dynamic resolution has a few), kept: a
+    /// frame still in the queue may read the one made for another size.
+    Depth& ReversedDepth(VkExtent2D extent) {
+        for (Depth& depth : depths) {
+            if (depth.extent.width == extent.width && depth.extent.height == extent.height) {
+                return depth;
+            }
+        }
+        Depth depth;
+        depth.extent = extent;
+        depth.image = CreateOcarinaImage(allocator, extent, VK_FORMAT_R32_SFLOAT,
+                                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+        depth.view = CreateOcarinaView(device, *depth.image, VK_FORMAT_R32_SFLOAT);
+        depths.push_back(std::move(depth));
+        return depths.back();
+    }
+
+    const Device& device;
+    Scheduler& scheduler;
+    MemoryAllocator& allocator;
+    ComputePassDescriptorQueue& queue;
+    Fsr3Upscaler upscaler;
+    OcarinaFsr3DepthPass depth_pass;
+    std::vector<Depth> depths;
+    std::optional<std::chrono::steady_clock::time_point> last;
+    bool failed{};
+};
+
+/// EDEN_NX2_FSR_BUILTIN=1: the built-in FSR 3.1 even where AMD's runtime is there (to compare
+/// them, and to test on Windows what Linux and macOS run).
+bool ForceBuiltinFsr() {
+    static const bool forced = [] {
+        const char* const value = std::getenv("EDEN_NX2_FSR_BUILTIN");
+        return value != nullptr && value[0] == '1';
+    }();
+    return forced;
+}
+
 std::unique_ptr<OcarinaUpscaler> MakeOcarinaUpscaler(const Device& device, Scheduler& scheduler,
-                                                     MemoryAllocator& allocator) {
+                                                     MemoryAllocator& allocator,
+                                                     StagingBufferPool& staging_pool,
+                                                     DescriptorPool& pool,
+                                                     ComputePassDescriptorQueue& queue) {
+#ifdef EGLANTINE_STREAMLINE
     if (Settings::values.nvidia_dlss.GetValue() && Streamline::IsDlssAvailable()) {
         return std::make_unique<OcarinaDlssUpscaler>(device, scheduler, allocator);
     }
-    return std::make_unique<OcarinaFsr4Upscaler>(device, scheduler, allocator);
+#endif
+    if (!ForceBuiltinFsr() && Fsr4Upscaler::IsAvailable(device)) {
+        return std::make_unique<OcarinaFsr4Upscaler>(device, scheduler, allocator);
+    }
+    return std::make_unique<OcarinaBuiltinFsrUpscaler>(device, scheduler, allocator, staging_pool,
+                                                       pool, queue);
 }
 
 class OcarinaColorPass final : public ComputePass {
@@ -902,9 +1127,11 @@ struct OcarinaFrameSlot {
 
 struct OcarinaLiveDlss::Impl {
     Impl(const Device& device_, Scheduler& scheduler_, DescriptorPool& pool,
-         ComputePassDescriptorQueue& queue_, MemoryAllocator& allocator_)
+         ComputePassDescriptorQueue& queue_, MemoryAllocator& allocator_,
+         StagingBufferPool& staging_pool)
         : device{device_}, scheduler{scheduler_}, queue{queue_}, allocator{allocator_}, pool{pool},
-          upscaler{MakeOcarinaUpscaler(device, scheduler, allocator)}, motion_pass{device, scheduler, pool},
+          upscaler{MakeOcarinaUpscaler(device, scheduler, allocator, staging_pool, pool, queue)},
+          motion_pass{device, scheduler, pool},
           color_pass{device, scheduler, pool},
           output_pass{device, scheduler, pool, OCARINA_DLSS_OUTPUT_COMP_SPV} {}
 
@@ -1004,8 +1231,9 @@ struct OcarinaLiveDlss::Impl {
 };
 
 OcarinaLiveDlss::OcarinaLiveDlss(const Device& device, Scheduler& scheduler, DescriptorPool& pool,
-                                 ComputePassDescriptorQueue& queue, MemoryAllocator& allocator)
-    : impl{std::make_unique<Impl>(device, scheduler, pool, queue, allocator)} {}
+                                 ComputePassDescriptorQueue& queue, MemoryAllocator& allocator,
+                                 StagingBufferPool& staging_pool)
+    : impl{std::make_unique<Impl>(device, scheduler, pool, queue, allocator, staging_pool)} {}
 
 OcarinaLiveDlss::~OcarinaLiveDlss() = default;
 

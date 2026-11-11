@@ -197,8 +197,30 @@ void BufferCache<P>::TickFrame() {
         // downloading the GPU-written ones, ~5% of the GPU thread) that were recreated later.
         // Collect when the buffers themselves are large. At 1 GiB it held geometry of scenes
         // long gone: title 1's title screen grew to ~0.9 GB of buffers in ten minutes.
-        if (buffer_bytes >= 512_MiB) {
-            RunGarbageCollector(buffer_bytes >= 1_GiB);
+        //
+        // What counts is how much of it is idle, though. Ocarina of Time keeps ~1.5 GB of buffers
+        // in use (one of them 1 GB), so "1 GiB of buffers" was true on every frame: the collector
+        // ran aggressively every frame, evicted up to 64 buffers not bound for a second (GPU-written
+        // ones downloaded first) and the game bound them again soon after. Walking in Hyrule Field
+        // that was ~120 buffers created and deleted and ~20 memory allocations from the driver
+        // every second, a tenth of the GPU thread's time, and it could never get under the
+        // threshold. EDEN_NX2_BUFFER_GC_TOTAL=1 brings the old rule back.
+        static const bool total_rule = [] {
+            const char* const value = std::getenv("EDEN_NX2_BUFFER_GC_TOTAL");
+            return value != nullptr && value[0] == '1';
+        }();
+        if (total_rule) {
+            if (buffer_bytes >= 512_MiB) {
+                RunGarbageCollector(buffer_bytes >= 1_GiB);
+            }
+        } else if (buffer_bytes >= 512_MiB && frame_tick > 120) {
+            u64 idle_bytes = 0;
+            lru_cache.ForEachItemBelow(frame_tick - 120, [&](BufferId buffer_id) {
+                idle_bytes += slot_buffers[buffer_id].SizeBytes();
+            });
+            if (idle_bytes >= 256_MiB) {
+                RunGarbageCollector(idle_bytes >= 768_MiB);
+            }
         }
     } else if (total_used_memory >= minimum_memory) {
         RunGarbageCollector(total_used_memory >= critical_memory);

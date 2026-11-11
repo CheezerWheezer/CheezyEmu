@@ -1,0 +1,28 @@
+// SPDX-FileCopyrightText: Copyright 2026 CheezyEmu contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#version 450
+
+// The built-in FSR 3.1 passes are compiled for reversed depth of a projection without a far
+// plane (near plane at 1, infinity at 0), which is what a game's own DLSS call hands over.
+// Ocarina of Time's scene depth grows with distance between a near and a far plane, so this
+// writes the depth those passes expect: near / distance.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D scene_depth;
+layout(binding = 1, r32f) uniform writeonly image2D reversed_depth;
+layout(push_constant) uniform Camera {
+    float near_plane;
+    float far_plane;
+} camera;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixel, imageSize(reversed_depth)))) {
+        return;
+    }
+    float depth = texelFetch(scene_depth, pixel, 0).r;
+    // distance = near * far / (far - depth * (far - near)), and near / distance is:
+    float reversed = 1.0 - depth * (1.0 - camera.near_plane / camera.far_plane);
+    imageStore(reversed_depth, pixel, vec4(clamp(reversed, 0.0, 1.0)));
+}
