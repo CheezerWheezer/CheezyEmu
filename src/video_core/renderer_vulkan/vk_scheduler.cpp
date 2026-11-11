@@ -498,6 +498,16 @@ void Scheduler::Finish(VkSemaphore signal_semaphore, VkSemaphore wait_semaphore,
     VideoCommon::GpuWaitStats::AddHostWait(VideoCommon::GpuWaitStats::Now() - wait_start);
     last_flush = std::chrono::steady_clock::now();
     flush_pending = false;
+    // EDEN_NX2_STUTTER_TRACE: who asked for a full wait that made a frame long.
+    if (VideoCommon::StutterTrace::g_enabled) [[unlikely]] {
+        const u64 waited_ns = VideoCommon::GpuWaitStats::Now() - wait_start;
+        static std::atomic<u32> logged{};
+        if (waited_ns >= 4'000'000 && logged.fetch_add(1, std::memory_order_relaxed) < 400) {
+            LOG_INFO(Render_Vulkan, "Full GPU wait {:.1f} ms from {}:{} ({})",
+                     static_cast<double>(waited_ns) / 1e6, location.file_name(), location.line(),
+                     location.function_name());
+        }
+    }
     if (profile) {
         g_profile_finishes.fetch_add(1, std::memory_order_relaxed);
         g_profile_finish_ns.fetch_add(VideoCommon::Nx2Profile::Now() - start,

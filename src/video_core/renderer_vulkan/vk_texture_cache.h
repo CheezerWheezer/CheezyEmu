@@ -86,7 +86,8 @@ public:
                                  DescriptorPool& descriptor_pool,
                                  ComputePassDescriptorQueue& compute_pass_descriptor_queue);
 
-    void Finish();
+    /// `location`: the caller, for the stutter trace's full-wait log.
+    void Finish(std::source_location location = std::source_location::current());
 
     StagingBufferRef UploadStagingBuffer(size_t size, bool deferred = false);
 

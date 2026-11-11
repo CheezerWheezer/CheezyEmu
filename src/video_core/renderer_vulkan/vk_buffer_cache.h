@@ -153,9 +153,10 @@ public:
     /// Waits for a submitted tick without flushing: safe on threads other than the GPU thread.
     void WaitSubmittedTick(u64 tick);
 
-    void Finish();
+    /// `location`: the caller, for the stutter trace's full-wait log.
+    void Finish(std::source_location location = std::source_location::current());
 
-    void FinishForHostRead();
+    void FinishForHostRead(std::source_location location = std::source_location::current());
 
     /// FinishForHostRead without the wait: submits, and returns the tick to wait for.
     u64 SubmitForHostRead();
