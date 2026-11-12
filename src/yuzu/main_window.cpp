@@ -1387,6 +1387,7 @@ void MainWindow::InitializeWidgets() {
     // updates them is unchanged, and one GRAPHICS button opens the same choices as a menu.
     {
         auto* const holder = new QWidget(this);
+        legacy_status_holder = holder;
         holder->setObjectName(QStringLiteral("LegacyStatusButtons"));
         holder->hide();
         for (QPushButton* const button : {
@@ -1429,6 +1430,25 @@ void MainWindow::InitializeWidgets() {
             menu.exec(graphics_menu_button->mapToGlobal(QPoint{0, -size.height()}));
         });
         statusBar()->insertPermanentWidget(1, graphics_menu_button);
+
+        // DETAILS: the six buttons back on the bar, as in build 11, and the FSR sizes.
+        status_details_button = new QPushButton(tr("DETAILS"));
+        status_details_button->setObjectName(QStringLiteral("TogglableStatusBarButton"));
+        status_details_button->setFocusPolicy(Qt::NoFocus);
+        status_details_button->setCheckable(true);
+        status_details_button->setToolTip(
+            tr("Show the renderer, GPU accuracy, docked or handheld, filter, anti-aliasing and "
+               "the FSR render and output sizes on this bar, as in build 11."));
+        connect(status_details_button, &QPushButton::toggled, this,
+                [this](bool shown) { SetStatusDetails(shown); });
+        statusBar()->insertPermanentWidget(2, status_details_button);
+        for (QPushButton* const button : {graphics_menu_button, status_details_button}) {
+            button->ensurePolished();
+            button->setMinimumWidth(button->sizeHint().width());
+        }
+        if (UISettings::values.show_status_details.GetValue()) {
+            status_details_button->setChecked(true);
+        }
     }
 
     statusBar()->setVisible(true);
@@ -5640,6 +5660,37 @@ void MainWindow::UpdateStatusBar() {
     firmware_label->setVisible(false);
 }
 
+void MainWindow::SetStatusDetails(bool shown) {
+    UISettings::values.show_status_details = shown;
+    if (legacy_status_holder == nullptr) {
+        return;
+    }
+    // After DETAILS, in the order build 11 had them.
+    int position = statusBar()->layout() != nullptr ? 3 : 0;
+    for (QPushButton* const button : {
+             renderer_status_button, gpu_accuracy_button, dock_status_button,
+             filter_status_button, aa_status_button,
+#ifdef HAS_RESHADE
+             post_shader_status_button,
+#endif
+         }) {
+        if (button == nullptr) {
+            continue;
+        }
+        if (shown) {
+            statusBar()->insertPermanentWidget(position++, button);
+            button->show();
+            // Whole words: squeezed, they were cut to "ULKAN" and "ACCURATI".
+            button->ensurePolished();
+            button->setMinimumWidth(button->sizeHint().width());
+        } else {
+            statusBar()->removeWidget(button);
+            button->setParent(legacy_status_holder);
+        }
+    }
+    UpdateStatusButtons();
+}
+
 void MainWindow::UpdateGPUAccuracyButton() {
     const auto gpu_accuracy = Settings::values.gpu_accuracy.GetValue();
     const auto gpu_accuracy_text =
@@ -5726,7 +5777,9 @@ void MainWindow::UpdateUpscaleButton() {
     }
     if (upscale_running) {
         upscale_status_button->setChecked(true);
-        upscale_status_button->setText(upscale_name);
+        upscale_status_button->setText(UISettings::values.show_status_details.GetValue()
+                                           ? upscale_name + QLatin1Char(' ') + upscale_sizes
+                                           : upscale_name);
         upscale_status_button->setToolTip(
             tr("%1 is upscaling the game: %2 (render size > output size, upscale ratio).")
                 .arg(upscale_name, upscale_sizes));

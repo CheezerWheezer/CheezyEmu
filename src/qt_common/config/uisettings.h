@@ -224,6 +224,8 @@ struct Values {
     Setting<u8> row_2_text_id{linkage, 2, "row_2_text_id", Category::UiGameList};
     Setting<Settings::GameListMode> game_list_mode{linkage, Settings::GameListMode::CarouselView, "game_list_mode", Category::UiGameList};
     Setting<bool> show_game_name{linkage, true, "show_game_name", Category::UiGameList};
+    /// The status bar shows build 11's graphics buttons and the FSR sizes (its DETAILS toggle).
+    Setting<bool> show_status_details{linkage, false, "show_status_details", Category::Ui};
     /// The home view's tile size, in percent of the size that suits the window (its slider).
     Setting<u32, true> home_tile_scale{linkage, 100, 60, 160, "home_tile_scale", Category::UiGameList};
 

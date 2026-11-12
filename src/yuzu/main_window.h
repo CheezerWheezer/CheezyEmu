@@ -500,6 +500,7 @@ private:
     void UpdateVolumeUI();
     void UpdateStatusBar();
     void UpdateGPUAccuracyButton();
+    void SetStatusDetails(bool shown);
     void UpdateStatusButtons();
     void UpdateUISettings();
     void UpdateInputDrivers();
@@ -574,6 +575,10 @@ private:
     QPushButton* renderer_status_button = nullptr;
     /// One button for the graphics choices the status bar used to show as six buttons.
     QPushButton* graphics_menu_button = nullptr;
+    /// DETAILS: build 11's graphics buttons back on the bar (kept in `legacy_status_holder`
+    /// while off) and the FSR button with its sizes.
+    QPushButton* status_details_button = nullptr;
+    QWidget* legacy_status_holder = nullptr;
     QPushButton* refresh_button = nullptr;
     QPushButton* dock_status_button = nullptr;
     QPushButton* filter_status_button = nullptr;
