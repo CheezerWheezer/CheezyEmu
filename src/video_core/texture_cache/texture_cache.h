@@ -164,8 +164,23 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
     size_t pending_bytes = 0;
     u64 pending_freed = 0;
     const auto used_memory = [&] {
-        return total_used_memory - (std::min)(total_used_memory, pending_freed);
+        return total_used_memory -
+               (std::min)(total_used_memory, pending_freed + gc_retiring_freed);
     };
+    const auto busy = [&](ImageId image_id) {
+        return std::ranges::any_of(pending,
+                                   [image_id](const PendingDownload& entry) {
+                                       return entry.image_id == image_id;
+                                   }) ||
+               std::ranges::any_of(gc_retiring, [image_id](const RetiringImage& entry) {
+                   return entry.image_id == image_id;
+               });
+    };
+    // EDEN_NX2_TC_ASYNC_EVICT=0: the collector waits for the GPU as before.
+    static const bool async_evict = [] {
+        const char* value = std::getenv("EDEN_NX2_TC_ASYNC_EVICT");
+        return value == nullptr || value[0] != '0';
+    }();
     const auto Evict = [this](ImageId image_id) {
         auto& image = slot_images[image_id];
         if (True(image.flags & ImageFlagBits::Tracked)) {
@@ -178,6 +193,26 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
     const auto FlushPending = [&] {
         if (pending.empty()) {
             return;
+        }
+        if constexpr (requires { runtime.IsFree(u64{}); }) {
+            if (async_evict && !out_of_memory) {
+                const u64 tick = runtime.CurrentTick();
+                for (PendingDownload& entry : pending) {
+                    const Image& image = slot_images[entry.image_id];
+                    const u64 freed = (image.HasScaled() ? GetScaledImageSizeBytes(image) : 0) +
+                                      ImageMemoryBytes(image);
+                    gc_retiring_bytes += image.unswizzled_size_bytes;
+                    gc_retiring_freed += freed;
+                    gc_retiring.push_back(RetiringImage{entry.image_id, tick,
+                                                        image.modification_tick, frame_tick,
+                                                        freed, entry.map,
+                                                        std::move(entry.copies)});
+                }
+                pending.clear();
+                pending_bytes = 0;
+                pending_freed = 0;
+                return;
+            }
         }
         runtime.Finish();
         ++gc_download_waits;
@@ -223,9 +258,7 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         if (num_iterations == 0) {
             return true;
         }
-        if (std::ranges::any_of(pending, [image_id](const PendingDownload& entry) {
-                return entry.image_id == image_id;
-            })) {
+        if (busy(image_id)) {
             return false;
         }
         --num_iterations;
@@ -233,7 +266,11 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         if (True(image.flags & ImageFlagBits::IsDecoding)) {
             return false;
         }
-        const bool must_download = IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap);
+        // A render target drawn over is dropped without copying it back (the idea of Hookshot
+        // #2198: the dead render targets go first).
+        const bool must_download = IsDownloadable(image) &&
+                                   False(image.flags & ImageFlagBits::BadOverlap) &&
+                                   !IsDrawnOver(image);
         if ((!aggressive_mode && !evict_old_costly && True(image.flags & ImageFlagBits::CostlyLoad)) ||
             // An image the GPU wrote waits for the GPU to copy it back first (a hitch each, while
             // turning the camera in Ocarina): only past the critical threshold.
@@ -246,6 +283,10 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
             // The batch is flushed after the passes only: deleting images while the LRU walk or
             // the candidate list still refer to them is not safe. A full batch waits a frame.
             if (!pending.empty() && pending_bytes + image.unswizzled_size_bytes > MaxBatchBytes) {
+                return false;
+            }
+            // Copies still in flight hold their staging memory: at most 256 MiB of them.
+            if (!out_of_memory && gc_retiring_bytes + pending_bytes > 256_MiB) {
                 return false;
             }
             // Deferred: OpenGL hands a non-deferred download buffer to the next request at once.
@@ -283,9 +324,7 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
             std::vector<ImageId> candidates;
             const size_t limit = num_iterations * 8;
             lru_cache.ForEachItemBelow(frame_tick - ticks_to_destroy, [&](ImageId image_id) {
-                if (std::ranges::any_of(pending, [image_id](const PendingDownload& entry) {
-                        return entry.image_id == image_id;
-                    })) {
+                if (busy(image_id)) {
                     return false;
                 }
                 candidates.push_back(image_id);
@@ -319,7 +358,8 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
                 // (Ocarina, turning the camera: 304 of 408 deleted in 40 waits, each a hitch).
                 // Those go after the ones that can simply be dropped.
                 const Image& image = slot_images[image_id];
-                if (IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap)) {
+                if (IsDownloadable(image) && False(image.flags & ImageFlagBits::BadOverlap) &&
+                    !IsDrawnOver(image)) {
                     fill += 2.0;
                 }
                 ordered.emplace_back(fill, image_id);
@@ -385,6 +425,81 @@ void TextureCache<P>::RunGarbageCollector(bool out_of_memory) {
         Collect();
     }
     FlushPending();
+}
+
+template <class P>
+void TextureCache<P>::RetireDownloads() {
+    if (gc_retiring.empty()) {
+        return;
+    }
+    if constexpr (requires { runtime.IsFree(u64{}); }) {
+        // Taken out first: deleting an image touches gc_retiring (DropRetiring).
+        std::vector<RetiringImage> done;
+        std::erase_if(gc_retiring, [&](RetiringImage& entry) {
+            if (!runtime.IsFree(entry.tick)) {
+                return false;
+            }
+            done.push_back(std::move(entry));
+            return true;
+        });
+        for (RetiringImage& entry : done) {
+            gc_retiring_bytes -= (std::min)(gc_retiring_bytes,
+                                            u64{slot_images[entry.image_id].unswizzled_size_bytes});
+            gc_retiring_freed -= (std::min)(gc_retiring_freed, entry.freed);
+            Image& image = slot_images[entry.image_id];
+            // Written by the GPU or the guest, or used again, since the copy: it stays.
+            const bool used_again = image.lru_index != SIZE_MAX &&
+                                    lru_cache.LastTick(image.lru_index) > entry.frame;
+            if (image.modification_tick != entry.modification_tick || used_again ||
+                True(image.flags & ImageFlagBits::CpuModified)) {
+                runtime.FreeDeferredStagingBuffer(entry.map);
+                ++gc_retire_cancelled;
+                continue;
+            }
+            SwizzleImage(*gpu_memory, image.gpu_addr, image.info, entry.copies,
+                         entry.map.mapped_span, swizzle_data_buffer);
+            runtime.FreeDeferredStagingBuffer(entry.map);
+            ++gc_download_deletes;
+            ++gc_retired;
+            // Guest memory holds the GPU's data now (DeleteImage must not mark it stale).
+            image.flags &= ~ImageFlagBits::GpuModified;
+            ClearStaleImage(image);
+            if (True(image.flags & ImageFlagBits::Tracked)) {
+                UntrackImage(image, entry.image_id);
+            }
+            ++(True(image.flags & ImageFlagBits::CostlyLoad) ? gc_costly_deletes : gc_deletes);
+            UnregisterImage(entry.image_id);
+            DeleteImage(entry.image_id, image.scale_tick > frame_tick + 5);
+        }
+    }
+}
+
+template <class P>
+bool TextureCache<P>::IsDrawnOver(const ImageBase& image) const {
+    if (False(image.flags & ImageFlagBits::GpuModified)) {
+        return false;
+    }
+    return std::ranges::any_of(image.overlapping_images, [&](ImageId overlap_id) {
+        const ImageBase& overlap = slot_images[overlap_id];
+        return True(overlap.flags & ImageFlagBits::GpuModified) &&
+               overlap.modification_tick > image.modification_tick &&
+               overlap.cpu_addr <= image.cpu_addr && overlap.cpu_addr_end >= image.cpu_addr_end;
+    });
+}
+
+template <class P>
+void TextureCache<P>::DropRetiring(ImageId image_id) {
+    std::erase_if(gc_retiring, [&](RetiringImage& entry) {
+        if (entry.image_id != image_id) {
+            return false;
+        }
+        gc_retiring_bytes -= (std::min)(gc_retiring_bytes,
+                                        u64{slot_images[image_id].unswizzled_size_bytes});
+        gc_retiring_freed -= (std::min)(gc_retiring_freed, entry.freed);
+        runtime.FreeDeferredStagingBuffer(entry.map);
+        ++gc_retire_cancelled;
+        return true;
+    });
 }
 
 template <class P>
@@ -574,6 +689,7 @@ void TextureCache<P>::ApplyThresholdOverrides(bool log) {
 
 template <class P>
 void TextureCache<P>::TickFrame() {
+    RetireDownloads();
     // Upload buffers grown for one huge image (title 1's 341 MiB terrain layer pools) are freed
     // rather than kept for the rest of the session.
     for (auto* const scratch : {&swizzle_data_buffer, &unswizzle_data_buffer}) {
@@ -829,9 +945,9 @@ void TextureCache<P>::TickFrame() {
         if constexpr (requires { runtime.LogMemoryStatistics(); }) {
             runtime.LogMemoryStatistics();
         }
-        LOG_INFO(HW_GPU, "Texture cache last 600 frames: created {} images, deleted {} (collector {}, {} costly, {} downloaded in {} GPU waits), {} async decodes, ASTC {} opaque / {} alpha",
+        LOG_INFO(HW_GPU, "Texture cache last 600 frames: created {} images, deleted {} (collector {}, {} costly, {} downloaded in {} GPU waits, {} without waiting, {} kept), {} async decodes, ASTC {} opaque / {} alpha",
                  images_created, images_deleted, gc_deletes + gc_costly_deletes, gc_costly_deletes,
-                 gc_download_deletes, gc_download_waits,
+                 gc_download_deletes, gc_download_waits, gc_retired, gc_retire_cancelled,
                  async_decodes_queued, astc_opaque_images, astc_alpha_images);
         LOG_INFO(HW_GPU, "Texture cache last 600 frames: {} uploads from guest memory, {} MiB (largest {} MiB, {} by layer)",
                  images_uploaded, uploaded_bytes >> 20, largest_upload >> 20, layer_uploads);
@@ -857,6 +973,7 @@ void TextureCache<P>::TickFrame() {
         // The per-image and per-shape tallies only feed debug lines: skip them while those are off.
         debug_stats = Common::Log::IsLevelEnabled(Common::Log::Class::HW_GPU, Common::Log::Level::Debug);
         gc_deletes = gc_costly_deletes = gc_download_deletes = gc_download_waits = 0;
+        gc_retired = gc_retire_cancelled = 0;
         async_decodes_queued = 0;
         images_created = images_deleted = 0;
     }
@@ -4393,6 +4510,9 @@ void TextureCache<P>::UntrackImage(ImageBase& image, ImageId image_id) {
 
 template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
+    if (!gc_retiring.empty()) {
+        DropRetiring(image_id);
+    }
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
     // Not marked stale here (upstream #818): the overlaps JoinImages has just copied into the

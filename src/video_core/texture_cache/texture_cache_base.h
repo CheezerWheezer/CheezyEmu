@@ -166,6 +166,8 @@ class TextureCache : public VideoCommon::ChannelSetupCaches<TextureCacheChannelI
     u64 gc_costly_deletes{};
     u64 gc_download_deletes{}; ///< Evictions that downloaded the image first
     u64 gc_download_waits{};   ///< GPU waits those downloads took
+    u64 gc_retired{};          ///< Downloaded evictions finished without a wait (RetireDownloads)
+    u64 gc_retire_cancelled{}; ///< ...kept instead, used or written again in the meantime
     u64 async_decodes_queued{};
     u64 images_created{};
     u64 images_uploaded{};   ///< Image contents uploaded from guest memory (last 600 frames)
@@ -638,6 +640,30 @@ private:
     void TickAsyncUnswizzle();
 
     Runtime& runtime;
+
+    /// Images the collector copies back to guest memory before deleting them. The copy is
+    /// recorded, and the image is deleted once the GPU has done it (RetireDownloads, every
+    /// frame), instead of the collector waiting for the GPU: a stall at the worst moment, when
+    /// video memory is tight. Each stays registered until then, so guest reads in the meantime
+    /// still find the GPU's data; it is kept if it is used or written again before that.
+    struct RetiringImage {
+        ImageId image_id;
+        u64 tick;              ///< Runtime tick the copy is done at
+        u64 modification_tick; ///< The image's when the copy was recorded
+        u64 frame;             ///< frame_tick when the copy was recorded
+        u64 freed;             ///< Memory its deletion frees
+        decltype(std::declval<Runtime&>().DownloadStagingBuffer(size_t{}, true)) map;
+        boost::container::small_vector<BufferImageCopy, 16> copies;
+    };
+    std::vector<RetiringImage> gc_retiring;
+    u64 gc_retiring_bytes{}; ///< Staging memory they hold
+    u64 gc_retiring_freed{}; ///< Memory their deletion will free
+    void RetireDownloads();
+    void DropRetiring(ImageId image_id);
+    /// Whether a newer image the GPU wrote covers all of `image`'s memory: what it holds is
+    /// dead (a frame's scratch target another target drew over), so the collector drops it
+    /// without copying it back.
+    [[nodiscard]] bool IsDrawnOver(const ImageBase& image) const;
 
     Tegra::MaxwellDeviceMemoryManager& device_memory;
     std::deque<TextureCacheGPUMap> gpu_page_table_storage;
