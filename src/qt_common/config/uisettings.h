@@ -169,6 +169,8 @@ struct Values {
     /// That music: random songs from the game's soundtrack (true), or its title theme.
     Setting<bool> menu_music_random{linkage, true, "menu_music_random", Category::Ui};
     Setting<u32, true> menu_sound_volume{linkage, 60, 0, 100, "menu_sound_volume", Category::Ui};
+    /// The home screen's speaker button: every menu sound silent (music, hum, clicks, chime).
+    Setting<bool> menu_muted{linkage, false, "menu_muted", Category::Ui};
 
     // logging
     Setting<bool> show_console{linkage, false, "showConsole", Category::Ui};

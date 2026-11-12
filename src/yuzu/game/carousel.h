@@ -60,7 +60,10 @@ private:
     class QSlider* m_sizeSlider = nullptr;
     class QVariantAnimation* m_liftAnimation = nullptr;
     class QPushButton* m_addButton = nullptr;
-    /// The home screen music (menu_ambient) on or off, left of the size slider.
+    /// Bottom right, left to right: the speaker (mutes every menu sound, menu_muted), the
+    /// volume slider (menu_sound_volume), then the card size icon and slider.
     class QPushButton* m_musicButton = nullptr;
+    class QSlider* m_volumeSlider = nullptr;
+    class QLabel* m_sizeIcon = nullptr;
     void UpdateMusicButton();
 };

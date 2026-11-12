@@ -3033,7 +3033,8 @@ QPushButton#HomeAddGamesButton:hover {
     color: #2A1C00;
 }
 
-QSlider#HomeTileSizeSlider {
+QSlider#HomeTileSizeSlider,
+QSlider#HomeVolumeSlider {
     background: transparent;
 }
 

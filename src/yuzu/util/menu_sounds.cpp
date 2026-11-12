@@ -607,12 +607,15 @@ void MenuSounds::Chime() {
 }
 
 void MenuSounds::Tick() {
-    volume_now.store(Gain(static_cast<int>(UISettings::values.menu_sound_volume.GetValue())));
+    // The home screen's speaker button mutes everything (the volume setting stays as it was).
+    const bool muted = UISettings::values.menu_muted.GetValue();
+    volume_now.store(muted ? 0.0f
+                           : Gain(static_cast<int>(UISettings::values.menu_sound_volume.GetValue())));
     const bool active = QGuiApplication::applicationState() == Qt::ApplicationActive;
     const bool home = ambient_wanted && ambient_wanted();
     // The game's music on the home screen while CheezyEmu is in front, and while the game
     // loads (its shaders building) even when it isn't.
-    const bool music = UISettings::values.menu_game_music.GetValue() && music_available &&
+    const bool music = !muted && UISettings::values.menu_game_music.GetValue() && music_available &&
                        music_wanted && music_wanted() && (active || !home);
     music_wanted_now.store(music ? 1.0f : 0.0f);
     // The playing song is near its end: load the next one.
@@ -624,7 +627,8 @@ void MenuSounds::Tick() {
     if (music) {
         Wake();
     }
-    const bool hum = UISettings::values.menu_ambient.GetValue() && active && home && !music;
+    const bool hum =
+        !muted && UISettings::values.menu_ambient.GetValue() && active && home && !music;
     hum_wanted.store(hum ? 1.0f : 0.0f);
     if (hum) {
         Wake();

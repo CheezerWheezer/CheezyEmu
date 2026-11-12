@@ -17,6 +17,7 @@
 #include <QPropertyAnimation>
 #include <QRandomGenerator>
 #include <QShowEvent>
+#include <QSignalBlocker>
 #include <QScrollBar>
 #include <QVariantAnimation>
 #include "qt_common/config/uisettings.h"
@@ -29,6 +30,22 @@
 #include "yuzu/game/carousel.h"
 
 namespace {
+
+/// Two overlapping cards: the size slider's icon.
+QPixmap CardsIcon() {
+    QPixmap pixmap(40, 40);
+    pixmap.fill(Qt::transparent);
+    QPainter painter{&pixmap};
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.scale(2.0, 2.0);
+    const QColor colour{0xFF, 0xD9, 0x66};
+    painter.setPen(QPen(colour, 1.4));
+    painter.setBrush(QColor(0xFF, 0xD9, 0x66, 60));
+    painter.drawRoundedRect(QRectF(2.5, 6.5, 9, 11), 2, 2);
+    painter.setBrush(colour);
+    painter.drawRoundedRect(QRectF(8.5, 2.5, 9, 11), 2, 2);
+    return pixmap;
+}
 
 /// A speaker, with sound waves when the music plays and a cross when it is muted.
 QIcon SpeakerIcon(bool playing) {
@@ -185,20 +202,49 @@ GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
     m_sizeSlider->setFixedWidth(150);
     m_sizeSlider->setCursor(Qt::PointingHandCursor);
     m_sizeSlider->setToolTip(tr("Game card size"));
+    m_sizeIcon = new QLabel(viewport());
+    m_sizeIcon->setPixmap(CardsIcon());
+    m_sizeIcon->setScaledContents(true);
+    m_sizeIcon->setFixedSize(20, 20);
+    m_sizeIcon->setToolTip(tr("Game card size"));
+    m_sizeIcon->setAttribute(Qt::WA_TranslucentBackground);
     connect(m_sizeSlider, &QSlider::valueChanged, this, [this](int value) {
         UISettings::values.home_tile_scale = static_cast<u32>(value);
         UpdateIconSize();
         viewport()->update();
     });
-    // The home screen music (the ambient hum, util/menu_sounds.cpp): one click mutes it. The
-    // same setting as Configure > General > UI > Sounds > Ambient hum.
+    // The menu sounds (util/menu_sounds.cpp: the game's music, the hum, clicks and the chime):
+    // the speaker mutes them all, the slider next to it is their volume (the same setting as
+    // Configure > General > UI > Sounds > Volume).
     m_musicButton = new QPushButton(viewport());
     m_musicButton->setObjectName(QStringLiteral("HomeMusicButton"));
     m_musicButton->setCursor(Qt::PointingHandCursor);
     m_musicButton->setFixedSize(32, 32);
     m_musicButton->setIconSize(QSize(20, 20));
     connect(m_musicButton, &QPushButton::clicked, this, [this] {
-        UISettings::values.menu_ambient = !UISettings::values.menu_ambient.GetValue();
+        const bool silent = UISettings::values.menu_muted.GetValue() ||
+                            UISettings::values.menu_sound_volume.GetValue() == 0;
+        if (silent && UISettings::values.menu_sound_volume.GetValue() == 0) {
+            // Unmuting at volume 0 would still be silent: back to the default level.
+            UISettings::values.menu_sound_volume = 60;
+            m_volumeSlider->setValue(60);
+        }
+        UISettings::values.menu_muted = !silent;
+        UpdateMusicButton();
+    });
+    m_volumeSlider = new QSlider(Qt::Horizontal, viewport());
+    m_volumeSlider->setObjectName(QStringLiteral("HomeVolumeSlider"));
+    m_volumeSlider->setRange(0, 100);
+    m_volumeSlider->setValue(static_cast<int>(UISettings::values.menu_sound_volume.GetValue()));
+    m_volumeSlider->setFixedWidth(110);
+    m_volumeSlider->setCursor(Qt::PointingHandCursor);
+    m_volumeSlider->setToolTip(tr("Music and sound volume"));
+    connect(m_volumeSlider, &QSlider::valueChanged, this, [this](int value) {
+        UISettings::values.menu_sound_volume = static_cast<u32>(value);
+        // Moving the slider up unmutes.
+        if (value > 0) {
+            UISettings::values.menu_muted = false;
+        }
         UpdateMusicButton();
     });
     UpdateMusicButton();
@@ -255,16 +301,31 @@ void GameCarousel::PlaceAddButton() {
         if (m_sizeSlider->pos() != slider_place) {
             m_sizeSlider->move(slider_place);
         }
-        if (m_musicButton != nullptr) {
-            const QPoint music_place{slider_place.x() - 14 - m_musicButton->width(),
-                                     slider_place.y() + m_sizeSlider->height() / 2 -
-                                         m_musicButton->height() / 2};
+        const int middle = slider_place.y() + m_sizeSlider->height() / 2;
+        const QPoint icon_place{slider_place.x() - 8 - m_sizeIcon->width(),
+                                middle - m_sizeIcon->height() / 2};
+        if (m_sizeIcon->pos() != icon_place) {
+            m_sizeIcon->move(icon_place);
+        }
+        if (m_musicButton != nullptr && m_volumeSlider != nullptr) {
+            const QPoint volume_place{icon_place.x() - 28 - m_volumeSlider->width(),
+                                      middle - m_volumeSlider->height() / 2};
+            if (m_volumeSlider->pos() != volume_place) {
+                m_volumeSlider->move(volume_place);
+            }
+            const QPoint music_place{volume_place.x() - 8 - m_musicButton->width(),
+                                     middle - m_musicButton->height() / 2};
             if (m_musicButton->pos() != music_place) {
                 m_musicButton->move(music_place);
             }
-            // Configure may have changed it.
-            if (m_musicButton->property("playing").toBool() !=
-                UISettings::values.menu_ambient.GetValue()) {
+            // Configure may have changed them.
+            const int volume = static_cast<int>(UISettings::values.menu_sound_volume.GetValue());
+            if (m_volumeSlider->value() != volume && !m_volumeSlider->isSliderDown()) {
+                const QSignalBlocker blocker{m_volumeSlider};
+                m_volumeSlider->setValue(volume);
+            }
+            const bool playing = !UISettings::values.menu_muted.GetValue() && volume > 0;
+            if (m_musicButton->property("playing").toBool() != playing) {
                 UpdateMusicButton();
             }
         }
@@ -272,11 +333,12 @@ void GameCarousel::PlaceAddButton() {
 }
 
 void GameCarousel::UpdateMusicButton() {
-    const bool playing = UISettings::values.menu_ambient.GetValue();
+    const bool playing = !UISettings::values.menu_muted.GetValue() &&
+                         UISettings::values.menu_sound_volume.GetValue() > 0;
     m_musicButton->setProperty("playing", playing);
     m_musicButton->setIcon(SpeakerIcon(playing));
-    m_musicButton->setToolTip(playing ? tr("Mute the home screen music")
-                                      : tr("Play the home screen music"));
+    m_musicButton->setToolTip(playing ? tr("Mute the music and sounds")
+                                      : tr("Turn the music and sounds back on"));
 }
 
 void GameCarousel::paintEvent(QPaintEvent* event) {
