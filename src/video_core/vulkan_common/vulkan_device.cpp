@@ -683,7 +683,7 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR 
             // AMD frame generation starts AMD's FSR 3.1 even with FSR 4 off (Ocarina's motion data).
             fsr4_float16 = Settings::values.amd_fsr4.GetValue() ||
                            (Settings::values.frame_gen.GetValue() &&
-                            Settings::values.frame_gen_type.GetValue() ==
+                            Settings::FrameGenTypeInUse() ==
                                 Settings::FrameGenType::AmdFsr);
         }
     }
@@ -2006,7 +2006,7 @@ void Device::SetupFamilies(VkSurfaceKHR surface) {
     // AMD's frame generation swapchain presents from its own threads, so it gets a queue of its
     // own: a compute family that can present (AMD), else a second graphics queue (NVIDIA, Intel).
     if (surface && Settings::values.frame_gen.GetValue() &&
-        Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
+        Settings::FrameGenTypeInUse() == Settings::FrameGenType::AmdFsr) {
         const u32 families = static_cast<u32>(queue_family_properties.size());
         for (u32 index = 0; index < families && !frame_gen_present; ++index) {
             const auto& family = queue_family_properties[index];

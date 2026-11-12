@@ -4393,7 +4393,7 @@ void MainWindow::AddQuickGraphicsMenu(QMenu& menu) {
                 UpdateFrameGenButton();
             });
             action->setCheckable(true);
-            action->setChecked(on && Settings::values.frame_gen_type.GetValue() == choice);
+            action->setChecked(on && Settings::FrameGenTypeInUse() == choice);
             group->addAction(action);
         }
     }
@@ -5573,7 +5573,7 @@ void MainWindow::UpdateStatusBar() {
     // AMD frame generation adds one frame per game frame after the emulator presents, where the
     // game's frame rate can't see it: show what reaches the screen while it generates.
     const bool amd_frame_gen = frame_gen_generating && Settings::values.frame_gen.GetValue() &&
-                               Settings::values.frame_gen_type.GetValue() ==
+                               Settings::FrameGenTypeInUse() ==
                                    Settings::FrameGenType::AmdFsr;
     // The built-in generators (Optical Flow, LSFG) present their frames themselves: the bar
     // showed the game's rate alone, which read as "frame generation is not counted" (a SteamOS
@@ -5742,11 +5742,11 @@ void MainWindow::UpdateFrameGenButton() {
     }
 
     const QString type = ConfigurationShared::frame_gen_type_texts_map
-                             .find(Settings::values.frame_gen_type.GetValue())
+                             .find(Settings::FrameGenTypeInUse())
                              ->second.toUpper();
     const u32 target_rate = Settings::values.frame_gen_target_rate.GetValue();
     // AMD's frame generation always adds one frame per game frame.
-    const bool amd = Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr;
+    const bool amd = Settings::FrameGenTypeInUse() == Settings::FrameGenType::AmdFsr;
     const QString mode = amd ? tr("FG %1 2X").arg(type)
                          : target_rate == 0
                              ? tr("FG %1 %2X").arg(type).arg(Settings::FrameGenMultiplier())

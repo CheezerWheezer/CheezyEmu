@@ -29,7 +29,10 @@
 #include <QRadialGradient>
 #include <QRandomGenerator>
 #include <QStyle>
+#include <QToolButton>
 #include <QWidget>
+
+#include "qt_common/config/uisettings.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -354,7 +357,8 @@ protected:
         case QEvent::Polish: {
             const bool popup = IsPopup(widget);
             const bool wants_glass =
-                GlassSupported() && (IsGlassDialog(widget) || IsGlassPopup(widget));
+                GlassSupported() && UISettings::values.theme == "cheezy" &&
+                (IsGlassDialog(widget) || IsGlassPopup(widget));
             if (popup) {
                 widget->setAttribute(Qt::WA_TranslucentBackground, true);
                 widget->setWindowFlag(Qt::FramelessWindowHint, true);
@@ -388,6 +392,9 @@ protected:
             }
             break;
         case QEvent::Paint:
+            if (PaintTabScroller(widget)) {
+                return true;
+            }
             // Painted before the window's own painting, so everything else draws on the glass.
             if (widget->isWindow() && glass.contains(widget)) {
                 Paint(widget, static_cast<QPaintEvent*>(event));
@@ -427,6 +434,47 @@ private:
     static bool IsGlassDialog(const QWidget* widget) {
         const char* const name = widget->metaObject()->className();
         return qstrcmp(name, "ConfigureDialog") == 0 || qstrcmp(name, "ConfigurePerGame") == 0;
+    }
+
+    /// A tab bar's scroll button (the arrows when the tabs do not fit): drawn here, a capsule
+    /// (liquid glass in a glass window) with a chevron. The theme's arrow pictures came from a
+    /// theme that is not bundled, so the arrows were invisible.
+    bool PaintTabScroller(QWidget* widget) {
+        auto* const button = qobject_cast<QToolButton*>(widget);
+        if (button == nullptr || qobject_cast<QTabBar*>(widget->parentWidget()) == nullptr ||
+            (button->arrowType() != Qt::LeftArrow && button->arrowType() != Qt::RightArrow)) {
+            return false;
+        }
+        const QRect area = button->rect().adjusted(1, 2, -1, -2);
+        const bool hover = button->underMouse() && button->isEnabled();
+        QWidget* const window = widget->window();
+        if (glass.contains(window) && !glass[window].composed_image.isNull()) {
+            Draw(widget, 0, area, area.height() / 2,
+                 button->isDown() ? Look::Pressed : hover ? Look::Hover : Look::Clear);
+        } else {
+            QPainter painter{widget};
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(QPen(QColor(0xFF, 0xE2, 0x96, 110), 1.0));
+            painter.setBrush(QColor(0xFF, 0xD6, 0x78, hover ? 80 : 40));
+            const QRectF shape = QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5);
+            const qreal radius = std::min(shape.width(), shape.height()) / 2;
+            painter.drawRoundedRect(shape, radius, radius);
+        }
+        QPainter painter{widget};
+        painter.setRenderHint(QPainter::Antialiasing);
+        QPen pen{button->isEnabled() ? QColor(0xFF, 0xF1, 0xC8) : QColor(0xFF, 0xF1, 0xC8, 80),
+                 2.0};
+        pen.setCapStyle(Qt::RoundCap);
+        pen.setJoinStyle(Qt::RoundJoin);
+        painter.setPen(pen);
+        const QPointF centre = QRectF(area).center();
+        const qreal size = std::max(3.0, std::min(area.width(), area.height()) * 0.2);
+        const qreal tip = button->arrowType() == Qt::LeftArrow ? -size * 0.55 : size * 0.55;
+        const QPointF chevron[3] = {QPointF(centre.x() - tip, centre.y() - size),
+                                    QPointF(centre.x() + tip, centre.y()),
+                                    QPointF(centre.x() - tip, centre.y() + size)};
+        painter.drawPolyline(chevron, 3);
+        return true;
     }
 
     /// A glass control in a glass window, drawn as a liquid glass capsule before it paints its

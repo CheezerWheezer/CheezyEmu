@@ -55,4 +55,7 @@ private:
     class QSlider* m_sizeSlider = nullptr;
     class QVariantAnimation* m_liftAnimation = nullptr;
     class QPushButton* m_addButton = nullptr;
+    /// The home screen music (menu_ambient) on or off, left of the size slider.
+    class QPushButton* m_musicButton = nullptr;
+    void UpdateMusicButton();
 };

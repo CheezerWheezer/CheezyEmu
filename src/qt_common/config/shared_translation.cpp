@@ -616,7 +616,9 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QObject* parent) {
                           {
                               PAIR(FrameGenType, Lsfg, tr("Lossless Scaling (LSFG)")),
                               PAIR(FrameGenType, Fsr3, tr("Optical Flow Interpolation (built-in)")),
+#ifdef _WIN32 // AMD ships its frame generation runtime for Windows only
                               PAIR(FrameGenType, AmdFsr, tr("AMD FSR Frame Generation (Ocarina, restart)")),
+#endif
                           }});
     translations->insert({Settings::EnumMetadata<Settings::AmdFrameGenVersion>::Index(),
                           {

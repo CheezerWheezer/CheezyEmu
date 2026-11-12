@@ -205,7 +205,7 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
     }
 
     if (unavailable || !Settings::values.frame_gen.GetValue() ||
-        Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
+        Settings::FrameGenTypeInUse() == Settings::FrameGenType::AmdFsr) {
         if (chain || fsr3_chain) {
             scheduler.Finish();
             chain.reset();
@@ -215,7 +215,7 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
         return;
     }
 
-    if (!shaders->IsValid() && Settings::values.frame_gen_type.GetValue() != Settings::FrameGenType::Fsr3) {
+    if (!shaders->IsValid() && Settings::FrameGenTypeInUse() != Settings::FrameGenType::Fsr3) {
         unavailable = true;
         state.store(shaders->IsDeviceSupported() ? VideoCore::FrameGenState::MissingLosslessDll
                                                  : VideoCore::FrameGenState::UnsupportedGpu,
@@ -249,7 +249,7 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
     generated = warm && warm_streak >= LSFG_RECURRENCE_FRAMES && plan.generations > 0;
     generated_frames.fetch_add(GeneratedFrameCount(), std::memory_order_relaxed);
 
-    const bool use_fsr3 = Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::Fsr3;
+    const bool use_fsr3 = Settings::FrameGenTypeInUse() == Settings::FrameGenType::Fsr3;
 
     // Every 10 s: game frames and generated frames per second. Without it a log can't tell
     // whether the built-in frame generation ran or only said so in the status bar.
@@ -316,7 +316,7 @@ size_t FrameGen::GeneratedFrameCount() const {
 }
 
 void FrameGen::GenerateInto(const Device& device, Frame* destination, size_t generation) {
-    const bool use_fsr3 = Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::Fsr3;
+    const bool use_fsr3 = Settings::FrameGenTypeInUse() == Settings::FrameGenType::Fsr3;
 
     if (use_fsr3 && fsr3_chain) {
         const f32 blend = static_cast<f32>(generation + 1) / static_cast<f32>(last_generations + 1);
@@ -348,7 +348,7 @@ void FrameGen::Rebuild(const Device& device, VkExtent2D extent, VkFormat format,
 
     built_flow_scale = flow_scale;
 
-    if (Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::Fsr3) {
+    if (Settings::FrameGenTypeInUse() == Settings::FrameGenType::Fsr3) {
         fsr3_chain.emplace(device, memory_allocator, extent, format);
     } else {
         chain.emplace(device, memory_allocator, *shaders, extent, format, built_flow_scale);

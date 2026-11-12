@@ -1092,6 +1092,11 @@ constexpr u32 MAX_FRAME_GEN_MULTIPLIER = 4;
 
 [[nodiscard]] u32 FrameGenMultiplier();
 
+/// The frame generation type in use: frame_gen_type, except that AMD FSR (whose runtime AMD ships
+/// for Windows only) runs as the built-in Optical Flow generator on Linux and macOS, instead of
+/// generating nothing.
+[[nodiscard]] FrameGenType FrameGenTypeInUse();
+
 [[nodiscard]] size_t FrameGenGenerations();
 
 [[nodiscard]] size_t FrameGenMaxGenerations();

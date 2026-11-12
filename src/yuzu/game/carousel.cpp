@@ -23,6 +23,43 @@
 #include "yuzu/game/game_card.h"
 #include "yuzu/game/carousel.h"
 
+namespace {
+
+/// A speaker, with sound waves when the music plays and a cross when it is muted.
+QIcon SpeakerIcon(bool playing) {
+    QPixmap pixmap(48, 48);
+    pixmap.fill(Qt::transparent);
+    QPainter painter{&pixmap};
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.scale(48.0 / 20.0, 48.0 / 20.0);
+    const QColor colour{0xFF, 0xD9, 0x66};
+    QPainterPath speaker;
+    speaker.moveTo(2.5, 7.5);
+    speaker.lineTo(6, 7.5);
+    speaker.lineTo(10, 3.5);
+    speaker.lineTo(10, 16.5);
+    speaker.lineTo(6, 12.5);
+    speaker.lineTo(2.5, 12.5);
+    speaker.closeSubpath();
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(colour);
+    painter.drawPath(speaker);
+    QPen pen{colour, 1.6};
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    if (playing) {
+        painter.drawArc(QRectF(8.5, 6.5, 5, 7), -60 * 16, 120 * 16);
+        painter.drawArc(QRectF(8.5, 3.5, 9, 13), -60 * 16, 120 * 16);
+    } else {
+        painter.drawLine(QPointF(12.5, 7.5), QPointF(17, 12.5));
+        painter.drawLine(QPointF(17, 7.5), QPointF(12.5, 12.5));
+    }
+    return QIcon{pixmap};
+}
+
+} // Anonymous namespace
+
 GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
     m_gameCard = new GameCard(this);
     setItemDelegate(m_gameCard);
@@ -69,6 +106,18 @@ GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
         UpdateIconSize();
         viewport()->update();
     });
+    // The home screen music (the ambient hum, util/menu_sounds.cpp): one click mutes it. The
+    // same setting as Configure > General > UI > Sounds > Ambient hum.
+    m_musicButton = new QPushButton(viewport());
+    m_musicButton->setObjectName(QStringLiteral("HomeMusicButton"));
+    m_musicButton->setCursor(Qt::PointingHandCursor);
+    m_musicButton->setFixedSize(32, 32);
+    m_musicButton->setIconSize(QSize(20, 20));
+    connect(m_musicButton, &QPushButton::clicked, this, [this] {
+        UISettings::values.menu_ambient = !UISettings::values.menu_ambient.GetValue();
+        UpdateMusicButton();
+    });
+    UpdateMusicButton();
 
     // The backdrop moves at 30 frames a second while the view is shown and CheezyEmu is the
     // active window (it drifts slowly; a frame cost ~1/4 of a CPU core at 60).
@@ -122,7 +171,28 @@ void GameCarousel::PlaceAddButton() {
         if (m_sizeSlider->pos() != slider_place) {
             m_sizeSlider->move(slider_place);
         }
+        if (m_musicButton != nullptr) {
+            const QPoint music_place{slider_place.x() - 14 - m_musicButton->width(),
+                                     slider_place.y() + m_sizeSlider->height() / 2 -
+                                         m_musicButton->height() / 2};
+            if (m_musicButton->pos() != music_place) {
+                m_musicButton->move(music_place);
+            }
+            // Configure may have changed it.
+            if (m_musicButton->property("playing").toBool() !=
+                UISettings::values.menu_ambient.GetValue()) {
+                UpdateMusicButton();
+            }
+        }
     }
+}
+
+void GameCarousel::UpdateMusicButton() {
+    const bool playing = UISettings::values.menu_ambient.GetValue();
+    m_musicButton->setProperty("playing", playing);
+    m_musicButton->setIcon(SpeakerIcon(playing));
+    m_musicButton->setToolTip(playing ? tr("Mute the home screen music")
+                                      : tr("Play the home screen music"));
 }
 
 void GameCarousel::paintEvent(QPaintEvent* event) {

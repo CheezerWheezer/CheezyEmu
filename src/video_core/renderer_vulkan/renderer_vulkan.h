@@ -64,7 +64,7 @@ public:
 
     [[nodiscard]] VideoCore::FrameGenStatus GetFrameGenStatus() const override {
         if (Settings::values.frame_gen.GetValue() &&
-            Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr) {
+            Settings::FrameGenTypeInUse() == Settings::FrameGenType::AmdFsr) {
             const u64 generated = AmdFrameGen::GeneratedFrames();
             const auto [tag, reason] = rasterizer.AmdFrameGenIdleReason();
             return {.state = generated != 0 ? VideoCore::FrameGenState::Running

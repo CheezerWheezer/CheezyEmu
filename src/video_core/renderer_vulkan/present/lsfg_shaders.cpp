@@ -12,7 +12,7 @@ namespace Vulkan {
 
 LsfgShaders::LsfgShaders(const Device& device) {
     const bool wanted = Settings::values.frame_gen.GetValue() &&
-                        Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::Lsfg;
+                        Settings::FrameGenTypeInUse() == Settings::FrameGenType::Lsfg;
     if (!device.IsVulkanMemoryModelSupported() || !device.HasNullDescriptor() ||
         !device.IsHostFloat16Supported()) {
         if (wanted) {

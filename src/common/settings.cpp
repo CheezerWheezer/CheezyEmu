@@ -399,20 +399,30 @@ void UpdateRescalingInfo() {
     TranslateResolutionInfo(setup, info);
 }
 
+FrameGenType FrameGenTypeInUse() {
+    const FrameGenType type = values.frame_gen_type.GetValue();
+#ifndef _WIN32
+    if (type == FrameGenType::AmdFsr) {
+        return FrameGenType::Fsr3;
+    }
+#endif
+    return type;
+}
+
 u32 FrameGenMultiplier() {
     return std::clamp(values.frame_gen_multiplier.GetValue(), MIN_FRAME_GEN_MULTIPLIER,
                       MAX_FRAME_GEN_MULTIPLIER);
 }
 
 size_t FrameGenGenerations() {
-    if (!values.frame_gen.GetValue() || values.frame_gen_type.GetValue() == FrameGenType::AmdFsr) {
+    if (!values.frame_gen.GetValue() || FrameGenTypeInUse() == FrameGenType::AmdFsr) {
         return 0;
     }
     return FrameGenMultiplier() - 1;
 }
 
 size_t FrameGenMaxGenerations() {
-    if (!values.frame_gen.GetValue() || values.frame_gen_type.GetValue() == FrameGenType::AmdFsr) {
+    if (!values.frame_gen.GetValue() || FrameGenTypeInUse() == FrameGenType::AmdFsr) {
         return 0;
     }
     if (values.frame_gen_target_rate.GetValue() != 0) {

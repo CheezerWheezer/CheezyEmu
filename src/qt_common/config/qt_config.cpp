@@ -283,6 +283,13 @@ void QtConfig::ReadUIValues() {
         UISettings::values.theme == "colorful_dark") {
         UISettings::values.theme = "cheezy";
     }
+    // Once more for build 12: Linux and macOS players kept the old Default theme (the first move
+    // covered Windows' Dark Colorful only), so the new look did not apply there.
+    if (!ReadBooleanSetting(std::string("cheezy_theme_applied_12"), std::make_optional(false)) &&
+        (UISettings::values.theme == "default" || UISettings::values.theme == "default_dark" ||
+         UISettings::values.theme == "colorful" || UISettings::values.theme == "colorful_dark")) {
+        UISettings::values.theme = "cheezy";
+    }
 
     ReadUIGamelistValues();
     ReadUILayoutValues();
@@ -511,6 +518,7 @@ void QtConfig::SaveUIValues() {
         std::make_optional(std::string(
             UISettings::themes[static_cast<size_t>(UISettings::default_theme)].second)));
     WriteBooleanSetting(std::string("cheezy_theme_applied"), true, std::make_optional(false));
+    WriteBooleanSetting(std::string("cheezy_theme_applied_12"), true, std::make_optional(false));
 
     SaveUIGamelistValues();
     SaveUILayoutValues();
