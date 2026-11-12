@@ -1020,10 +1020,9 @@ TEST_CASE("Native uniform banks upload directly without overwriting GPU-owned by
     Access::Uniform(*f.cache, channel, id, 0x20000, 0x10000);
     REQUIRE(f.runtime.uploads == uploads);
     REQUIRE(Access::CpuMarks(*f.cache) == 16);
-    // A write the tracker missed is found on the next bind after a submission, acquire or
-    // inline upload, and only its page is marked.
+    // A write the tracker missed is found on the next bind, and only its page is marked (this
+    // tree compares the bank on every bind: upstream's guest sync epoch isn't in it).
     std::memset(f.bytes + 0x13000, 0x77, 0x1000);
-    Tegra::Nx2BumpGuestSyncEpoch();
     Access::Uniform(*f.cache, channel, id, 0x20000, 0x10000);
     REQUIRE(Access::CpuMarks(*f.cache) == 17);
     REQUIRE(f.runtime.upload_bytes == 0x11000);

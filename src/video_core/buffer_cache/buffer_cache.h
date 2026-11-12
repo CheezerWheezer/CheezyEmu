@@ -5310,7 +5310,31 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
             // (a dimension, stride or texture handle), not an NVN buffer size. Taking it as one
             // bound Fortune's Weave's DLSS input features to 266 bytes and dropped the rest.
             if (native_pointer) {
-                const u32 bare = (std::min)(memory_layout_size, static_cast<u32>(8_MiB));
+                // Read-only graphics bindings of a bare pointer reach 16 MiB: Ocarina of Time's
+                // light/decal cluster list, which its water and haze read, is mapped 9.5 MiB past
+                // its pointer, and capped at 8 MiB the far entries read zero on AMD (no bounds on
+                // the console): the water and haze lost whole screen tiles around Link.
+                // EDEN_NX2_BARE_SSBO_MIB=<n> sets the reach (8 = the old cap); its object pools
+                // (~83 MiB mapped) stay cut at it. The first 16 cut bindings are logged.
+                static const u32 graphics_cap = [] {
+                    const char* const value = std::getenv("EDEN_NX2_BARE_SSBO_MIB");
+                    const unsigned long mib = value != nullptr ? std::strtoul(value, nullptr, 10) : 16;
+                    return static_cast<u32>(std::clamp<unsigned long>(mib, 8, 1024)) << 20;
+                }();
+                if (!compute && memory_layout_size > (is_written ? u32{8_MiB} : graphics_cap)) {
+                    static std::atomic<u32> cut_logged{};
+                    if (cut_logged.fetch_add(1, std::memory_order_relaxed) < 16) {
+                        LOG_INFO(HW_GPU,
+                                 "Bare graphics storage binding at {:#x}: mapping {:#x} bytes, "
+                                 "bound {:#x} ({}), size word {:#x}",
+                                 gpu_addr, memory_layout_size,
+                                 (std::min)(memory_layout_size, is_written ? u32{8_MiB} : graphics_cap),
+                                 is_written ? "written" : "read-only", next_qword);
+                    }
+                }
+                const u32 bare = (std::min)(memory_layout_size, (!compute && !is_written)
+                                                                    ? graphics_cap
+                                                                    : static_cast<u32>(8_MiB));
                 // Mario Kart World's lighting passes read past 8 MiB from theirs, inside the size
                 // word after the pointer (Eglantine #609 reads it): capped at 8 MiB those reads
                 // came back zero and lit land and characters too dark. A read-only compute binding

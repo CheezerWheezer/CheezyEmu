@@ -6,7 +6,9 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "video_core/nx2_debug_control.h"
 
