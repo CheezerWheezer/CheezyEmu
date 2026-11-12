@@ -273,7 +273,11 @@ bool Swapchain::AcquireNextImage(bool may_flush) {
     // steady 60, with frame generation too). The images presented here include the built-in
     // generators' frames, so each counts; AMD's runtime adds one frame after each of ours, so
     // with its swapchain ours are paced at half the target.
-    const double per_frame = frame_gen_swapchain != VK_NULL_HANDLE ? 0.5 : 1.0;
+    // With AMD's swapchain generating one frame per game frame, the cap counts both, so the game
+    // runs at half of it. Menus and loading screens generate nothing: they get the whole cap
+    // (60 fps menus with a 60 cap, not 30).
+    const double per_frame =
+        frame_gen_swapchain != VK_NULL_HANDLE && AmdFrameGen::GeneratingNow() ? 0.5 : 1.0;
     const auto wait_with_frame_pacing = [this, may_flush, per_frame] {
     switch (Settings::values.frame_pacing_mode.GetValue()) {
     case Settings::FramePacingMode::Target_Auto:

@@ -273,11 +273,17 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
 
     const u64 count = frame_count++;
     last_count = count;
-    last_generations = ffx_frame ? (std::min<size_t>)(plan.generations, 1) : plan.generations;
+    // Built-in AMD FSR with no game frame to work from (menus, loading screens): generate nothing,
+    // as AMD's own runtime does on Windows. The frame cap counts every image shown, so the game
+    // then gets the whole cap (60 fps menus with a 60 cap) instead of 30 plus optical flow frames.
+    const bool amd_idle = !ffx_frame && ffx_chain.has_value();
+    last_generations = ffx_frame  ? (std::min<size_t>)(plan.generations, 1)
+                       : amd_idle ? 0
+                                  : plan.generations;
 
     const bool warm = plan.warm && count + 1 >= LSFG_REQUIRED_FRAMES;
     warm_streak = warm ? warm_streak + 1 : 0;
-    generated = warm && warm_streak >= LSFG_RECURRENCE_FRAMES && plan.generations > 0;
+    generated = warm && warm_streak >= LSFG_RECURRENCE_FRAMES && last_generations > 0;
     generated_frames.fetch_add(GeneratedFrameCount(), std::memory_order_relaxed);
 
     const bool use_fsr3 = Settings::FrameGenTypeInUse() == Settings::FrameGenType::Fsr3;

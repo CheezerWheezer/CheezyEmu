@@ -52,10 +52,18 @@ namespace Vulkan::AmdFrameGen {
 
 namespace {
 std::atomic<u64> generated_frames{0};
+/// Presents in a row with no generated frame (menus and loading screens have no game motion).
+std::atomic<u32> idle_presents{~0U};
+/// Presents without generation before the frame cap stops counting generated frames.
+constexpr u32 IdlePresentsToFullRate = 10;
 } // Anonymous namespace
 
 u64 GeneratedFrames() {
     return generated_frames.load(std::memory_order_relaxed);
+}
+
+bool GeneratingNow() {
+    return idle_presents.load(std::memory_order_relaxed) < IdlePresentsToFullRate;
 }
 
 bool Requested() {
@@ -890,6 +898,10 @@ VkResult Present(VkQueue queue, const VkPresentInfoKHR& info, const PresentTarge
             state.configured_frame_id = config.frameID;
             if (generate) {
                 generated_frames.fetch_add(1, std::memory_order_relaxed);
+                idle_presents.store(0, std::memory_order_relaxed);
+            } else if (const u32 idle = idle_presents.load(std::memory_order_relaxed);
+                       idle < IdlePresentsToFullRate) {
+                idle_presents.store(idle + 1, std::memory_order_relaxed);
             }
             if (generate != state.generating) {
                 state.generating = generate;

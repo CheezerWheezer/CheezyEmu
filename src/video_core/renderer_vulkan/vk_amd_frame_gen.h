@@ -37,6 +37,10 @@ namespace AmdFrameGen {
 /// generating), for the frame rate shown with the game's.
 [[nodiscard]] u64 GeneratedFrames();
 
+/// Whether AMD's swapchain generated frames in the last few presents. Menus and loading screens
+/// carry no game motion, so nothing is generated there and every shown frame is a game frame.
+[[nodiscard]] bool GeneratingNow();
+
 /// Whether AMD's frame generation swapchain is in use (it is set up when CheezyEmu starts).
 [[nodiscard]] bool SwapchainActive();
 
