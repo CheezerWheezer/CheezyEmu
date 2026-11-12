@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <algorithm>
+#include <cstdlib>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -33,7 +34,40 @@ struct TextureInst {
     ConstBufferAddr cbuf;
     IR::Inst* inst;
     IR::Block* block;
+    /// The handle was taken from a word an address is built from (the search through loads in
+    /// MakeInst), not from a handle: the texture and sampler it names are arbitrary.
+    bool handle_from_address{false};
 };
+
+/// A bindless depth-compare lookup whose handle MakeInst could only take from a memory load's
+/// address (a per-light shadow map handle read from the light's record in a loop, which no
+/// per-draw handle can give): compare against whatever that address word names and the result
+/// is arbitrary. Ocarina of Time's water and mist lights got 0 (shadowed) across each light's
+/// screen tiles: hard-edged dark boxes around Link that came and went with buffer addresses.
+/// Unshadowed (1) is the neutral answer. EDEN_NX2_ADDRESS_HANDLE_SHADOW=0 keeps the old lookup.
+bool LightUnresolvedShadow(IR::Inst& inst, IR::Block& block) {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_ADDRESS_HANDLE_SHADOW");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled || inst.HasAssociatedPseudoOperation()) {
+        return false;
+    }
+    switch (inst.GetOpcode()) {
+    case IR::Opcode::BindlessImageSampleDrefImplicitLod:
+    case IR::Opcode::BindlessImageSampleDrefExplicitLod:
+        inst.ReplaceUsesWith(IR::Value{1.0f});
+        return true;
+    case IR::Opcode::BindlessImageGatherDref: {
+        IR::IREmitter ir{block, IR::Block::InstructionList::s_iterator_to(inst)};
+        const IR::F32 one{ir.Imm32(1.0f)};
+        inst.ReplaceUsesWith(ir.CompositeConstruct(one, one, one, one));
+        return true;
+    }
+    default:
+        return false;
+    }
+}
 
 using TextureInstVector = boost::container::small_vector<TextureInst, 24>;
 
@@ -946,7 +980,8 @@ TextureInst MakeInst(Environment& env, IR::Block* block, IR::Inst& inst, const H
                     throw NotImplementedException("Failed to track bindless texture constant buffer (stopped at {}, budget {})",
                                                   g_handle_failure, budget);
                 }
-                return TextureInst{.cbuf = *legacy, .inst = &inst, .block = block};
+                return TextureInst{
+                    .cbuf = *legacy, .inst = &inst, .block = block, .handle_from_address = true};
             }
             auto& programs{*g_handle_programs};
             auto it{std::ranges::find(programs, code)};
@@ -1178,6 +1213,13 @@ void TexturePass(Environment& env, IR::Program& program, const HostTranslateInfo
             to_replace.push_back(MakeInst(env, block, inst, host_info));
         }
     }
+    to_replace.erase(std::remove_if(to_replace.begin(), to_replace.end(),
+                                    [](const TextureInst& texture_inst) {
+                                        return texture_inst.handle_from_address &&
+                                               LightUnresolvedShadow(*texture_inst.inst,
+                                                                     *texture_inst.block);
+                                    }),
+                     to_replace.end());
     // Sort instructions to visit textures by constant buffer index, then by offset
     std::ranges::sort(to_replace, [](const auto& a, const auto& b) {
         if (a.cbuf.index != b.cbuf.index) return a.cbuf.index < b.cbuf.index;
