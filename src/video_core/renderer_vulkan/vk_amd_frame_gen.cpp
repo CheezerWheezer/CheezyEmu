@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <mutex>
@@ -18,6 +19,7 @@
 
 #include "common/logging.h"
 #include "common/settings.h"
+#include "video_core/nx2_debug_control.h"
 #include "video_core/renderer_vulkan/vk_amd_frame_gen.h"
 #include "video_core/renderer_vulkan/camera_from_matrix.h"
 #include "video_core/renderer_vulkan/present/ffx_frame_interpolation.h"
@@ -152,13 +154,24 @@ std::vector<Shot> shots;
 u32 session{};
 int stage{}; ///< 0 idle, 1 wants a frame's inputs, 2 that frame, 3 the next and the generated one
 bool knob_was_on{};
+/// Where the files go: EDEN_NX2_AMD_FG_CAPTURE, or the last Capture Glitch folder. Under `mutex`.
+std::filesystem::path directory;
+std::atomic<bool> enabled{};
 
-const std::string& Directory() {
-    static const std::string directory = [] {
+/// Whether captures are on (the variable) or one was asked for (Tools > Capture Glitch).
+bool Enabled() {
+    static const bool from_environment = [] {
         const char* const value = std::getenv("EDEN_NX2_AMD_FG_CAPTURE");
-        return std::string{value ? value : ""};
+        if (value != nullptr && value[0] != '\0') {
+            std::scoped_lock lock{mutex};
+            directory = value;
+            enabled.store(true, std::memory_order_relaxed);
+        }
+        return true;
     }();
-    return directory;
+    (void)from_environment;
+    return enabled.load(std::memory_order_relaxed) ||
+           VideoCore::Nx2Debug::FrameGenCaptureWaiting();
 }
 
 VkImageLayout LayoutOf(u32 ffx_state) {
@@ -271,6 +284,17 @@ void Record(const Device& device, VkCommandBuffer cmdbuf, VkImage image, VkImage
 
 /// Arms a capture when the knob goes on; returns the stage to capture now. Caller holds `mutex`.
 int Poll() {
+    if (stage == 0) {
+        if (auto requested = VideoCore::Nx2Debug::TakeFrameGenCapture()) {
+            directory = std::move(*requested);
+            enabled.store(true, std::memory_order_relaxed);
+            stage = 1;
+            ++session;
+            LOG_INFO(Render_Vulkan, "AMD frame generation capture {} into {}", session,
+                     directory.string());
+            return stage;
+        }
+    }
     const bool on = Settings::GetDebugKnobAt(1);
     if (on && !knob_was_on && stage == 0) {
         stage = 1;
@@ -282,7 +306,7 @@ int Poll() {
 
 /// Writes out the copies recorded half a second ago and frees them.
 void Flush(const Device& device) {
-    if (Directory().empty()) {
+    if (!Enabled()) {
         return;
     }
     std::scoped_lock lock{mutex};
@@ -295,7 +319,9 @@ void Flush(const Device& device) {
         }
         void* data = nullptr;
         if (dld.vkMapMemory(logical, shot.memory, 0, shot.size, 0, &data) == VK_SUCCESS) {
-            std::ofstream file{Directory() + "/" + shot.name, std::ios::binary};
+            std::error_code ec;
+            std::filesystem::create_directories(directory, ec);
+            std::ofstream file{directory / shot.name, std::ios::binary};
             file.write(static_cast<const char*>(data), static_cast<std::streamsize>(shot.size));
             dld.vkUnmapMemory(logical, shot.memory);
             LOG_INFO(Render_Vulkan, "AMD frame generation capture: wrote {}", shot.name);
@@ -311,7 +337,7 @@ ffxReturnCode_t DispatchFrameGeneration(ffxDispatchDescFrameGeneration* params, 
     State& state = *static_cast<State*>(user);
     const ffxReturnCode_t result =
         state.api->dispatch(&state.frame_gen_context, &params->header);
-    if (!FgCapture::Directory().empty() && state.owner != nullptr) {
+    if (FgCapture::Enabled() && state.owner != nullptr) {
         std::scoped_lock lock{FgCapture::mutex};
         const int stage = FgCapture::stage;
         if (stage == 2 || stage == 3) {
@@ -950,7 +976,7 @@ void Prepare(Scheduler& scheduler, const PrepareInputs& in) {
         std::copy(camera.forward.begin(), camera.forward.end(), prepare.cameraForward);
         const ffxReturnCode_t result =
             state.api->dispatch(&state.frame_gen_context, &prepare.header);
-        if (!FgCapture::Directory().empty() && state.owner != nullptr) {
+        if (FgCapture::Enabled() && state.owner != nullptr) {
             std::scoped_lock capture_lock{FgCapture::mutex};
             if (FgCapture::Poll() == 1) {
                 const auto name = [&](const char* what, VkFormat format) {

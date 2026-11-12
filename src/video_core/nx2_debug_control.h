@@ -68,6 +68,15 @@ void CancelCapture(u64 id);
 /// Frame dump writer thread, once the manifest summary is written (or the capture failed).
 void FinishCapture(u64 id, CaptureResult result);
 
+/// Tools > Capture Glitch (UI thread): AMD frame generation saves the inputs of its next game
+/// frame, that frame, the next one and the frame it generates between them, as raw files in
+/// `directory` (vk_amd_frame_gen.cpp, FgCapture).
+void RequestFrameGenCapture(std::filesystem::path directory);
+/// Whether one waits (one relaxed load).
+[[nodiscard]] bool FrameGenCaptureWaiting() noexcept;
+/// Frame generation: the waiting request, once.
+[[nodiscard]] std::optional<std::filesystem::path> TakeFrameGenCapture();
+
 /// Server thread: queues a read of GPU virtual memory; the rasterizer takes it at the next frame
 /// end, where the GPU's own reads of its address spaces run.
 void RequestGpuRead(GpuReadRequest request);

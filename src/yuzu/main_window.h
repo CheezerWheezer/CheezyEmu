@@ -468,6 +468,9 @@ private slots:
     void OnCreateHomeMenuDesktopShortcut();
     void OnCreateHomeMenuApplicationMenuShortcut();
     void OnCaptureScreenshot();
+    /// Tools > Capture Glitch (Ctrl+G): saves what is on screen, a full dump of the frame and,
+    /// with AMD frame generation, its inputs and the frame it made, to log/glitch/<time>/.
+    void OnCaptureGlitch();
     /// Checks for decryption keys; `prompt` asks to install them when they are missing.
     void OnCheckFirmwareDecryption(bool prompt = true);
 #ifdef __unix__
@@ -573,6 +576,8 @@ private:
     QLabel* res_scale_label = nullptr;
     QLabel* emu_speed_label = nullptr;
     QLabel* game_fps_label = nullptr;
+    /// Tools > Capture Glitch (made in InitializeHotkeys, added to Tools in ConnectMenuEvents).
+    QAction* action_capture_glitch = nullptr;
     QLabel* emu_frametime_label = nullptr;
     QLabel* tas_label = nullptr;
     QLabel* firmware_label = nullptr;

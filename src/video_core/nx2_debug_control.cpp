@@ -38,6 +38,28 @@ void UpdatePending() {
 
 } // Anonymous namespace
 
+namespace {
+std::mutex frame_gen_capture_mutex;
+std::optional<std::filesystem::path> frame_gen_capture;
+std::atomic<bool> frame_gen_capture_waiting{};
+} // Anonymous namespace
+
+void RequestFrameGenCapture(std::filesystem::path directory) {
+    std::scoped_lock lock{frame_gen_capture_mutex};
+    frame_gen_capture = std::move(directory);
+    frame_gen_capture_waiting.store(true, std::memory_order_relaxed);
+}
+
+bool FrameGenCaptureWaiting() noexcept {
+    return frame_gen_capture_waiting.load(std::memory_order_relaxed);
+}
+
+std::optional<std::filesystem::path> TakeFrameGenCapture() {
+    std::scoped_lock lock{frame_gen_capture_mutex};
+    frame_gen_capture_waiting.store(false, std::memory_order_relaxed);
+    return std::exchange(frame_gen_capture, std::nullopt);
+}
+
 void BeginSession() {
     std::scoped_lock lock{state.mutex};
     state.captures.clear();

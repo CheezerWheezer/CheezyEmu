@@ -161,6 +161,9 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 #include "common/logging.h"
 #include "common/memory_detect.h"
 #include "common/scm_rev.h"
+
+#include <filesystem>
+#include <fstream>
 #include "common/scope_exit.h"
 #include "common/string_util.h"
 
@@ -203,6 +206,7 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 namespace Vulkan::PipelineBinaryCache {
 [[nodiscard]] int PipelinesCompiling();
 } // namespace Vulkan::PipelineBinaryCache
+#include "video_core/nx2_debug_control.h"
 #include "video_core/renderer_base.h"
 #include "video_core/shader_notify.h"
 
@@ -1580,6 +1584,13 @@ void MainWindow::InitializeHotkeys() {
                        QStringLiteral("Toggle Performance Overlay"));
     LinkActionShortcut(ui->action_Fullscreen, QStringLiteral("Fullscreen"));
     LinkActionShortcut(ui->action_Capture_Screenshot, QStringLiteral("Capture Screenshot"));
+    if (action_capture_glitch == nullptr) {
+        action_capture_glitch = new QAction(tr("Capture Glitch"), this);
+        action_capture_glitch->setToolTip(
+            tr("Saves what is on screen right now, for finding graphics glitches"));
+        connect(action_capture_glitch, &QAction::triggered, this, &MainWindow::OnCaptureGlitch);
+    }
+    LinkActionShortcut(action_capture_glitch, QStringLiteral("Capture Glitch"));
     LinkActionShortcut(ui->action_TAS_Start, QStringLiteral("TAS Start/Stop"), true);
     LinkActionShortcut(ui->action_TAS_Record, QStringLiteral("TAS Record"), true);
     LinkActionShortcut(ui->action_TAS_Reset, QStringLiteral("TAS Reset"), true);
@@ -2093,8 +2104,11 @@ void MainWindow::ConnectMenuEvents() {
     connect_menu(ui->action_TAS_Reset, &MainWindow::OnTasReset);
     connect_menu(ui->action_Configure_Tas, &MainWindow::OnConfigureTas);
 
-    // The nx2_switches.txt switches players turn on and off, as checkboxes.
     ui->menu_Tools->addSeparator();
+    if (action_capture_glitch != nullptr) {
+        ui->menu_Tools->addAction(action_capture_glitch);
+    }
+    // The nx2_switches.txt switches players turn on and off, as checkboxes.
     ui->menu_Tools->addAction(tr("Switch 2 Switches..."), this, [this] {
         Nx2SwitchesDialog dialog(this);
         dialog.exec();
@@ -2799,6 +2813,11 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
     // when the game was started some other way than from the list).
     MenuSounds::Chime();
     MenuSounds::StartGame(filename.toStdString(), title_id);
+    // CHEEZYEMU_GLITCH_TEST=<seconds> (test): Capture Glitch that long after the game starts.
+    if (const char* const glitch_test = std::getenv("CHEEZYEMU_GLITCH_TEST"); glitch_test != nullptr) {
+        QTimer::singleShot(std::max(1, std::atoi(glitch_test)) * 1000, this,
+                           &MainWindow::OnCaptureGlitch);
+    }
 
     emulation_running = true;
     if (ui->action_Fullscreen->isChecked()) {
@@ -5616,6 +5635,55 @@ void MainWindow::OnCreateHomeMenuDesktopShortcut() {
 
 void MainWindow::OnCreateHomeMenuApplicationMenuShortcut() {
     QtCommon::Game::CreateHomeMenuShortcut(QtCommon::Game::ShortcutTarget::Applications);
+}
+
+void MainWindow::OnCaptureGlitch() {
+    if (QtCommon::emu_thread == nullptr || !QtCommon::emu_thread->IsRunning()) {
+        statusBar()->showMessage(tr("Capture Glitch works while a game is running."), 6000);
+        return;
+    }
+    const QString when =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_hh-mm-ss"));
+    const std::filesystem::path folder = Common::FS::GetEdenPath(Common::FS::EdenPath::LogDir) /
+                                         "glitch" / when.toStdString();
+    std::error_code ec;
+    std::filesystem::create_directories(folder, ec);
+    if (ec) {
+        statusBar()->showMessage(tr("Could not make the glitch folder."), 6000);
+        return;
+    }
+    // A full dump of the next frame (every draw's targets), and with AMD frame generation what
+    // it was given and what it made. Ids far above the debug server's own.
+    static u64 next_id = u64{1} << 40;
+    VideoCore::Nx2Debug::RequestCapture(
+        {.id = next_id++, .directory = folder / "frame", .sampled = false, .buffers = false});
+    VideoCore::Nx2Debug::RequestFrameGenCapture(folder / "framegen");
+    render_window->CaptureScreenshot(
+        QString::fromStdString(Common::FS::PathToUTF8String(folder / "screen.png")));
+    // What was set and shown at the time.
+    {
+        std::ofstream info{folder / "info.txt"};
+        info << "CheezyEmu " << Common::g_build_fullname << '\n'
+             << "Title " << fmt::format("{:016X}", QtCommon::system->GetApplicationProcessProgramID())
+             << '\n'
+             << game_fps_label->text().toStdString() << " | "
+             << emu_frametime_label->text().toStdString() << '\n'
+             << "Upscaling: " << upscale_status_button->text().toStdString() << '\n'
+             << "Frame generation: " << frame_gen_status_button->text().toStdString() << '\n'
+             << "frame_gen=" << Settings::values.frame_gen.GetValue()
+             << " frame_gen_type=" << static_cast<int>(Settings::values.frame_gen_type.GetValue())
+             << " frame_pacing_mode="
+             << static_cast<int>(Settings::values.frame_pacing_mode.GetValue())
+             << " use_vsync=" << static_cast<int>(Settings::values.vsync_mode.GetValue())
+             << " resolution_setup="
+             << static_cast<int>(Settings::values.resolution_setup.GetValue())
+             << " docked=" << Settings::IsDockedMode() << '\n';
+    }
+    LOG_INFO(Frontend, "Capture Glitch: {}", Common::FS::PathToUTF8String(folder));
+    statusBar()->showMessage(
+        tr("Glitch captured (takes a few seconds to finish writing): %1")
+            .arg(QString::fromStdString(Common::FS::PathToUTF8String(folder))),
+        12000);
 }
 
 void MainWindow::OnCaptureScreenshot() {
