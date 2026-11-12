@@ -305,8 +305,9 @@ endforeach()
 
 # AMD FidelityFX frame generation (FSR 3.1.4's optical flow and frame interpolation, from the same
 # SDK, unmodified): the Linux and macOS replacement for AMD's Windows-only runtime
-# (renderer_vulkan/vk_fsr3_frame_interpolation.cpp). Frame interpolation reads render-size game
-# motion vectors and reversed depth, like the upscaler; optical flow reads the presented (SDR)
+# (renderer_vulkan/present/ffx_frame_interpolation.cpp). Frame interpolation reads render-size game
+# motion vectors and depth growing with distance (what AmdFrameGen::Prepare is given); optical
+# flow reads the presented (SDR)
 # image. The pyramid passes (SPD) also come without wave operations.
 set(FFXFG_FI_DIR ${CMAKE_SOURCE_DIR}/externals/FidelityFX-SDK/shaders/frameinterpolation)
 set(FFXFG_OF_DIR ${CMAKE_SOURCE_DIR}/externals/FidelityFX-SDK/shaders/opticalflow)
@@ -322,7 +323,7 @@ set(FFXFG_FI_FLAGS
     -DFFX_FRAMEINTERPOLATION_OPTION_UPSAMPLE_USE_LANCZOS_TYPE=2
     -DFFX_FRAMEINTERPOLATION_OPTION_LOW_RES_MOTION_VECTORS=1
     -DFFX_FRAMEINTERPOLATION_OPTION_JITTER_MOTION_VECTORS=0
-    -DFFX_FRAMEINTERPOLATION_OPTION_INVERTED_DEPTH=1
+    -DFFX_FRAMEINTERPOLATION_OPTION_INVERTED_DEPTH=0
 )
 set(FFXFG_OF_FLAGS
     -DFFX_GPU=1

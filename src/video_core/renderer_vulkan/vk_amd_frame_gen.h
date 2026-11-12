@@ -28,6 +28,11 @@ namespace AmdFrameGen {
 /// The user picked AMD FSR frame generation (Windows; the device and swapchain set up at startup).
 [[nodiscard]] bool Requested();
 
+/// The game's depth and motion are wanted for frame generation: AMD's runtime (Requested), or,
+/// where AMD ships none (Linux, macOS), the FSR 3 frame generation built from the FidelityFX SDK
+/// (present/ffx_frame_interpolation.cpp) when the user picked AMD FSR.
+[[nodiscard]] bool MotionWanted();
+
 /// Frames AMD's swapchain was asked to generate so far (one per game frame presented while
 /// generating), for the frame rate shown with the game's.
 [[nodiscard]] u64 GeneratedFrames();

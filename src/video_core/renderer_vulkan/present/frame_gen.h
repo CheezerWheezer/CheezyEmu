@@ -11,6 +11,7 @@
 #include "video_core/renderer_vulkan/present/frame_gen_pacer.h"
 #include "video_core/renderer_vulkan/present/lsfg_chain.h"
 #include "video_core/renderer_vulkan/present/lsfg_shaders.h"
+#include "video_core/renderer_vulkan/present/ffx_frame_interpolation.h"
 #include "video_core/renderer_vulkan/present/fsr3_frame_gen.h"
 #include "video_core/vulkan_common/vulkan_memory_allocator.h"
 
@@ -48,6 +49,13 @@ private:
     std::optional<LsfgShaders> shaders;
     std::optional<LsfgChain> chain;
     std::optional<Fsr3FrameGen> fsr3_chain;
+    /// AMD FSR 3 frame generation built from the FidelityFX SDK (Linux, macOS), and whether it
+    /// generates for the frame Process took last (the game handed over its depth and motion).
+    std::optional<FfxFrameInterpolation> ffx_chain;
+    VkExtent2D ffx_extent{};
+    VkFormat ffx_format{VK_FORMAT_UNDEFINED};
+    bool ffx_frame{};
+    bool ffx_unsupported{};
     FrameGenPacer pacer;
     FrameGenPlan plan{};
     VkExtent2D peak_guest_extent{};

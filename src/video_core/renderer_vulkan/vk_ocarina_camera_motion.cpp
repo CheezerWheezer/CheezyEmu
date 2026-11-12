@@ -1563,7 +1563,7 @@ bool OcarinaLiveDlss::Record(VkImageView color, VkImageView depth, VkImageView t
     // AMD frame generation reads the same depth and motion for the frame it generates, without
     // motion where the HUD sits (FSR 4 above needed the scene's motion there).
     bool hud_depth = false;
-    if (AmdFrameGen::Requested()) {
+    if (AmdFrameGen::MotionWanted()) {
         if (state.hud_before && state.hud_after) {
             MakeHudMask(state.hud_before, state.hud_after, extent);
         }

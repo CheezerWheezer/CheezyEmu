@@ -240,9 +240,40 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
         Rebuild(device, extent, format, flow_scale);
     }
 
+    // AMD FSR picked where AMD ships no frame generation runtime (Linux, macOS): AMD's FSR 3
+    // frame generation built from the FidelityFX SDK, for frames whose depth and motion the game
+    // handed over (Ocarina of Time); the built-in Optical Flow runs for the others.
+    ffx_frame = false;
+    if (Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr &&
+        Settings::BuiltInAmdFrameGen() && !ffx_unsupported) {
+        if (!ffx_chain || ffx_extent.width != extent.width ||
+            ffx_extent.height != extent.height || ffx_format != format) {
+            if (!FfxFrameInterpolation::IsSupported(device)) {
+                ffx_unsupported = true;
+                LOG_WARNING(Render_Vulkan, "FSR 3 frame generation: this GPU lacks push "
+                                           "descriptors or a storage format; Optical Flow runs");
+            } else {
+                if (ffx_chain) {
+                    scheduler.Finish();
+                }
+                ffx_chain.reset();
+                ffx_chain.emplace(device, memory_allocator, scheduler, extent, format);
+                ffx_extent = extent;
+                ffx_format = format;
+            }
+        }
+        if (ffx_chain) {
+            ffx_chain->Process(*frame->image);
+            ffx_frame = ffx_chain->HasGameFrame();
+        }
+    } else if (ffx_chain) {
+        scheduler.Finish();
+        ffx_chain.reset();
+    }
+
     const u64 count = frame_count++;
     last_count = count;
-    last_generations = plan.generations;
+    last_generations = ffx_frame ? (std::min<size_t>)(plan.generations, 1) : plan.generations;
 
     const bool warm = plan.warm && count + 1 >= LSFG_REQUIRED_FRAMES;
     warm_streak = warm ? warm_streak + 1 : 0;
@@ -266,7 +297,8 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
             LOG_INFO(Render_Vulkan,
                      "Frame generation ({}): {:.0f} game frames + {:.0f} generated per second at "
                      "{}x{} (target {}){}",
-                     use_fsr3 ? "Optical Flow" : "LSFG", window_frames / seconds,
+                     ffx_frame ? "AMD FSR 3, built in" : use_fsr3 ? "Optical Flow" : "LSFG",
+                     window_frames / seconds,
                      window_generated / seconds, extent.width, extent.height,
                      target == 0 ? std::string{"none"} : std::to_string(target) + " FPS",
                      window_generated == 0 && target != 0 &&
@@ -279,7 +311,9 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
         }
     }
 
-    if (use_fsr3 && fsr3_chain) {
+    if (ffx_frame) {
+        // Optical flow already ran (ffx_chain->Process).
+    } else if (use_fsr3 && fsr3_chain) {
         scheduler.RequestOutsideRenderPassOperationContext();
         fsr3_chain->Process(device, scheduler, *frame->image, *frame->storage_view, count);
     } else if (chain) {
@@ -308,6 +342,10 @@ size_t FrameGen::WantedGenerations(size_t capacity) {
         return 0;
     }
     plan = pacer.Plan(capacity);
+    if (ffx_frame) {
+        // AMD's frame generation makes one frame per game frame.
+        plan.generations = (std::min<size_t>)(plan.generations, 1);
+    }
     return plan.generations;
 }
 
@@ -316,6 +354,13 @@ size_t FrameGen::GeneratedFrameCount() const {
 }
 
 void FrameGen::GenerateInto(const Device& device, Frame* destination, size_t generation) {
+    if (ffx_frame && ffx_chain) {
+        if (generation == 0) {
+            ffx_chain->Generate(*destination->image, *destination->storage_view,
+                                *destination->image_view);
+        }
+        return;
+    }
     const bool use_fsr3 = Settings::FrameGenTypeInUse() == Settings::FrameGenType::Fsr3;
 
     if (use_fsr3 && fsr3_chain) {

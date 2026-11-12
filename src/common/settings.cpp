@@ -399,13 +399,25 @@ void UpdateRescalingInfo() {
     TranslateResolutionInfo(setup, info);
 }
 
+bool BuiltInAmdFrameGen() {
+#ifdef _WIN32
+    static const bool forced = [] {
+        const char* const value = std::getenv("EDEN_NX2_FFX_FG");
+        return value != nullptr && value[0] == '1';
+    }();
+    return forced;
+#else
+    return true;
+#endif
+}
+
 FrameGenType FrameGenTypeInUse() {
     const FrameGenType type = values.frame_gen_type.GetValue();
-#ifndef _WIN32
-    if (type == FrameGenType::AmdFsr) {
+    // The built-in path runs through the present-time generators (frame_gen.cpp, as Optical
+    // Flow; it switches to AMD's FSR 3 passes for frames with the game's depth and motion).
+    if (type == FrameGenType::AmdFsr && BuiltInAmdFrameGen()) {
         return FrameGenType::Fsr3;
     }
-#endif
     return type;
 }
 

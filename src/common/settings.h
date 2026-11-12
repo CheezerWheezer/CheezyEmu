@@ -1097,6 +1097,10 @@ constexpr u32 MAX_FRAME_GEN_MULTIPLIER = 4;
 /// generating nothing.
 [[nodiscard]] FrameGenType FrameGenTypeInUse();
 
+/// Whether AMD FSR frame generation is the one built from the FidelityFX SDK (no AMD runtime):
+/// always on Linux and macOS; on Windows only for a test (EDEN_NX2_FFX_FG=1).
+[[nodiscard]] bool BuiltInAmdFrameGen();
+
 [[nodiscard]] size_t FrameGenGenerations();
 
 [[nodiscard]] size_t FrameGenMaxGenerations();
