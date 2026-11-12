@@ -278,7 +278,11 @@ public:
                      VK_PIPELINE_CREATE_2_CAPTURE_DATA_BIT_KHR,
         };
         capture_ci.pNext = &flags2;
-        VkResult res = create(capture_ci, cache, out_pipeline);
+        VkResult res;
+        {
+            const CompileScope compiling_now;
+            res = create(capture_ci, cache, out_pipeline);
+        }
         if (res != VK_SUCCESS) {
             if (res < 0) {
                 // Let the caller build it without capture and report its own errors.
@@ -578,6 +582,31 @@ bool CreateComputePipeline(VkDevice device, const vk::DeviceDispatch& dld,
                               return dld.vkCreateComputePipelines(device, c, 1, &info, nullptr,
                                                                   p);
                           });
+}
+
+namespace {
+std::atomic<int> compiling{0};
+thread_local bool background_builder = false;
+} // Anonymous namespace
+
+int PipelinesCompiling() {
+    return compiling.load(std::memory_order_relaxed);
+}
+
+void SetBackgroundBuilderThread() {
+    background_builder = true;
+}
+
+CompileScope::CompileScope() : counted{!background_builder} {
+    if (counted) {
+        compiling.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+CompileScope::~CompileScope() {
+    if (counted) {
+        compiling.fetch_sub(1, std::memory_order_relaxed);
+    }
 }
 
 } // namespace Vulkan::PipelineBinaryCache

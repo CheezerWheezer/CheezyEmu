@@ -38,6 +38,27 @@ bool CreateComputePipeline(VkDevice device, const vk::DeviceDispatch& dld,
                            const VkComputePipelineCreateInfo& ci, VkPipelineCache cache,
                            VkPipeline* out, VkResult* result);
 
+/// Pipelines the driver is compiling right now for the game: not ones loaded from saved binaries
+/// (about half a millisecond each) and not the shader precache's. The status bar shows this as
+/// "Building"; counting the loads too read as "the shader prebuild did not work".
+[[nodiscard]] int PipelinesCompiling();
+
+/// Marks the calling thread as a background builder (the shader precache): its compiles are
+/// not counted in PipelinesCompiling.
+void SetBackgroundBuilderThread();
+
+/// Counts one driver compile while it lives (vk::Device and the binary cache).
+class CompileScope {
+public:
+    CompileScope();
+    ~CompileScope();
+    CompileScope(const CompileScope&) = delete;
+    CompileScope& operator=(const CompileScope&) = delete;
+
+private:
+    bool counted;
+};
+
 } // namespace PipelineBinaryCache
 
 } // namespace Vulkan

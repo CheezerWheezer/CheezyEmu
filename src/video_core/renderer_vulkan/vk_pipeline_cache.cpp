@@ -57,6 +57,7 @@
 #include "video_core/renderer_vulkan/vk_cooperative_hmma_test.h"
 #include "video_core/renderer_vulkan/vk_descriptor_pool.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "video_core/vulkan_common/vulkan_pipeline_binary_cache.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache_records.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
@@ -2114,6 +2115,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
         for (size_t thread = 0; thread < num_threads; ++thread) {
             state->threads.emplace_back([s = state.get(), thread] {
                 Common::SetCurrentThreadName("VkShaderPrecache");
+                PipelineBinaryCache::SetBackgroundBuilderThread();
                 Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
                 while (!s->cancel.load(std::memory_order_relaxed)) {
                     if (thread >= s->allowed_threads.load(std::memory_order_relaxed)) {
@@ -2283,6 +2285,7 @@ void PipelineCache::PrecacheShaders(u64 title_id, std::vector<PrecacheJob> jobs,
         precache_after_skip = std::jthread([this, state, game_threads,
                                             finish = std::move(finish)](std::stop_token stop) mutable {
             Common::SetCurrentThreadName("VkPrecacheAfterSkip");
+            PipelineBinaryCache::SetBackgroundBuilderThread();
             Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
             auto last_log = std::chrono::steady_clock::now();
             size_t logged_done = state->done.load();

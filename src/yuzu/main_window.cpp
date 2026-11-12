@@ -193,6 +193,7 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 
 // Video Core //
 #include "video_core/gpu.h"
+#include "video_core/vulkan_common/vulkan_pipeline_binary_cache.h"
 #include "video_core/renderer_base.h"
 #include "video_core/shader_notify.h"
 
@@ -5535,7 +5536,13 @@ void MainWindow::UpdateStatusBar() {
 
     auto results = QtCommon::system->GetAndResetPerfStats();
     auto& shader_notify = QtCommon::system->GPU().ShaderNotify();
-    const int shaders_building = shader_notify.ShadersBuilding();
+    // On Vulkan: only what the driver is really compiling for the game. Pipelines loaded from
+    // the saved binaries (about half a millisecond each) counted as "building" too, which read
+    // as "the shader prebuild did not work".
+    const int shaders_building =
+        Settings::values.renderer_backend.GetValue() == Settings::RendererBackend::Vulkan
+            ? Vulkan::PipelineBinaryCache::PipelinesCompiling()
+            : shader_notify.ShadersBuilding();
 
     if (shaders_building > 0) {
         shader_building_label->setText(tr("Building: %n shader(s)", "", shaders_building));

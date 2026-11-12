@@ -1052,6 +1052,7 @@ Pipeline Device::CreateGraphicsPipeline(const VkGraphicsPipelineCreateInfo& ci, 
     VkPipeline object = VK_NULL_HANDLE;
     VkResult result;
     if (!PipelineBinaryCache::CreateGraphicsPipeline(handle, *dld, ci, cache, &object, &result)) {
+        const PipelineBinaryCache::CompileScope compiling_now;
         result = dld->vkCreateGraphicsPipelines(handle, cache, 1, &ci, nullptr, &object);
     }
     // Adreno 5xx drivers do not properly return when a graphics pipeline fails to be created
@@ -1068,6 +1069,7 @@ Pipeline Device::CreateComputePipeline(const VkComputePipelineCreateInfo& ci,
     VkPipeline object = VK_NULL_HANDLE;
     VkResult result;
     if (!PipelineBinaryCache::CreateComputePipeline(handle, *dld, ci, cache, &object, &result)) {
+        const PipelineBinaryCache::CompileScope compiling_now;
         result = dld->vkCreateComputePipelines(handle, cache, 1, &ci, nullptr, &object);
     }
     Check(result);
