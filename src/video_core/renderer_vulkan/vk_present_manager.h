@@ -30,6 +30,10 @@ struct Frame {
     u32 width;
     u32 height;
     u32 index;
+    // Requested presentation view format and underlying image format may differ for SDR.
+    VkFormat format{VK_FORMAT_UNDEFINED};
+    VkFormat image_format{VK_FORMAT_UNDEFINED};
+    VkColorSpaceKHR color_space{VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     vk::Image image;
     vk::ImageView image_view;
     vk::ImageView storage_view;
@@ -67,6 +71,9 @@ public:
 
     [[nodiscard]] bool NeedsStorage(const Frame* frame, bool required) const;
 
+    /// Selects the backing image format, preserving the cached SDR format or explicit HDR format.
+    [[nodiscard]] VkFormat GetFrameImageFormat(VkFormat image_view_format) const;
+
     /// Waits for the present thread to finish presenting all queued frames.
     void WaitPresent();
 
@@ -77,6 +84,8 @@ public:
     [[nodiscard]] VkFormat SwapchainImageFormat() const { return swapchain_image_format; }
 
 private:
+    enum class TransferMode { Unsupported, Copy, Blit };
+
     void PresentThread(std::stop_token token);
 
     void CopyToSwapchain(Frame* frame);
@@ -86,9 +95,16 @@ private:
     /// generation, and returns that image (null without a twin).
     VkImage CopyHudless(const vk::CommandBuffer& cmdbuf, Frame* frame, VkExtent2D extent);
 
-    void RecreateSwapchain(Frame* frame);
+    // Returns false after discarding the frame if creation or transfer cannot proceed.
+    bool RecreateSwapchain(Frame* frame);
+
+    /// Caches a copy, blit, or unsupported transfer decision for this frame and active swapchain.
+    void ConfigureTransfer(const Frame* frame);
 
     void DiscardFrame(Frame* frame);
+
+    /// Sends the HDR10 metadata of the monitor's current state to an HDR10 swapchain.
+    void UpdateHdrMetadata();
 
     void SetImageCount();
 
@@ -110,13 +126,15 @@ private:
     std::mutex queue_mutex;
     std::mutex free_mutex;
     std::jthread present_thread;
-    bool blit_supported;
     /// AMD frame generation reads the hudless image on its own queue after the present returns,
     /// so a few take turns.
     std::array<vk::Image, 4> hudless_images;
     VkExtent2D hudless_extent{};
     VkFormat hudless_format{};
     size_t hudless_next{};
+    VkFormat transfer_source_format{VK_FORMAT_UNDEFINED};
+    TransferMode transfer_mode{TransferMode::Unsupported};
+    u64 hdr_metadata_generation{}; ///< DisplayHdrMonitor generation of the metadata sent
     bool storage_supported;
     bool use_present_thread;
     std::atomic<std::size_t> image_count{};
