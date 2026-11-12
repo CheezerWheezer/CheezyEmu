@@ -57,6 +57,7 @@ private:
     /// Sounds (menu_sounds.cpp): made in code, under the game list box.
     QCheckBox* menu_sounds_box = nullptr;
     QCheckBox* menu_ambient_box = nullptr;
+    QCheckBox* menu_game_music_box = nullptr;
     QSlider* menu_volume_slider = nullptr;
 
     Settings::AspectRatio ratio;

@@ -118,6 +118,9 @@ ConfigureUi::ConfigureUi(Core::System& system_, QWidget* parent)
         menu_sounds_box =
             new QCheckBox(tr("Click when picking a game, chime when starting one"), sounds);
         menu_ambient_box = new QCheckBox(tr("Ambient hum on the home screen"), sounds);
+        menu_game_music_box = new QCheckBox(
+            tr("The picked game's own music (from your copy of the game), also while it loads"),
+            sounds);
         auto* const volume_row = new QHBoxLayout;
         menu_volume_slider = new QSlider(Qt::Horizontal, sounds);
         menu_volume_slider->setRange(0, 100);
@@ -135,6 +138,7 @@ ConfigureUi::ConfigureUi(Core::System& system_, QWidget* parent)
         volume_row->addWidget(volume_value);
         sounds_layout->addWidget(menu_sounds_box);
         sounds_layout->addWidget(menu_ambient_box);
+        sounds_layout->addWidget(menu_game_music_box);
         sounds_layout->addLayout(volume_row);
         ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->GameListGroupBox) + 1,
                                          sounds);
@@ -196,6 +200,7 @@ void ConfigureUi::ApplyConfiguration() {
 
     UISettings::values.menu_sounds = menu_sounds_box->isChecked();
     UISettings::values.menu_ambient = menu_ambient_box->isChecked();
+    UISettings::values.menu_game_music = menu_game_music_box->isChecked();
     UISettings::values.menu_sound_volume = static_cast<u32>(menu_volume_slider->value());
 
     UISettings::values.enable_screenshot_save_as = ui->enable_screenshot_save_as->isChecked();
@@ -227,6 +232,7 @@ void ConfigureUi::SetConfiguration() {
 
     menu_sounds_box->setChecked(UISettings::values.menu_sounds.GetValue());
     menu_ambient_box->setChecked(UISettings::values.menu_ambient.GetValue());
+    menu_game_music_box->setChecked(UISettings::values.menu_game_music.GetValue());
     menu_volume_slider->setValue(static_cast<int>(UISettings::values.menu_sound_volume.GetValue()));
 
     ui->enable_screenshot_save_as->setChecked(

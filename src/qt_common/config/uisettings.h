@@ -163,6 +163,9 @@ struct Values {
     // and their volume.
     Setting<bool> menu_sounds{linkage, true, "menu_sounds", Category::Ui};
     Setting<bool> menu_ambient{linkage, true, "menu_ambient", Category::Ui};
+    /// The picked game's own title music (from the player's copy) on the home screen and
+    /// while it loads.
+    Setting<bool> menu_game_music{linkage, true, "menu_game_music", Category::Ui};
     Setting<u32, true> menu_sound_volume{linkage, 60, 0, 100, "menu_sound_volume", Category::Ui};
 
     // logging

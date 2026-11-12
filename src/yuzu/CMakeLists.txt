@@ -222,6 +222,8 @@ add_executable(yuzu
     util/rounded_popups.h
     util/menu_sounds.cpp
     util/menu_sounds.h
+    util/game_music.cpp
+    util/game_music.h
     util/limitable_input_dialog.cpp
     util/limitable_input_dialog.h
     util/overlay_dialog.cpp
@@ -534,6 +536,8 @@ endif()
 
 # Remember that the linker is incredibly stupid.
 target_link_libraries(yuzu PRIVATE OpenSSL::SSL OpenSSL::Crypto SDL3::SDL3)
+# The picked game's menu music (util/game_music.cpp) decodes Opus BWAV streams.
+target_link_libraries(yuzu PRIVATE Opus::opus)
 
 # NX archive conversion and editing (nx_tools.cpp) runs nxformat in the process.
 if (TARGET nxformat::nxformat)

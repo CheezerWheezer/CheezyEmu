@@ -10,6 +10,8 @@
 #include <vector>
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QMouseEvent>
+#include <QPersistentModelIndex>
 #include <QBuffer>
 #include <QDir>
 #include <QFileDialog>
@@ -74,6 +76,54 @@ GameList::GameList(FileSys::VirtualFilesystem vfs_, FileSys::ManualContentProvid
 
     SetupViews();
 
+    // Hovering a game: the click, and its music a moment later. The mouse doesn't change the
+    // picked game until a click, so hovering is what pointer users hear (the click below only
+    // follows keyboard and controller moves). Per row: moving across a row's columns is one game.
+    class HoverSounds final : public QObject {
+    public:
+        HoverSounds(QAbstractItemView* view_, QObject* parent) : QObject{parent}, view{view_} {}
+
+    protected:
+        bool eventFilter(QObject*, QEvent* event) override {
+            if (event->type() == QEvent::MouseMove) {
+                const QModelIndex index =
+                    view->indexAt(static_cast<QMouseEvent*>(event)->position().toPoint())
+                        .siblingAtColumn(0);
+                const u64 program_id = index.data(GameListItemPath::ProgramIdRole).toULongLong();
+                if (!index.isValid() || program_id == 0) {
+                    last = QPersistentModelIndex{};
+                } else if (index != QModelIndex(last)) {
+                    last = index;
+                    MenuSounds::Click();
+                    MenuSounds::SelectGame(
+                        index.data(GameListItemPath::FullPathRole).toString().toStdString(),
+                        program_id);
+                }
+            } else if (event->type() == QEvent::Leave) {
+                last = QPersistentModelIndex{};
+                // Back to the picked game's music.
+                const QModelIndex current = view->currentIndex().siblingAtColumn(0);
+                const u64 program_id = current.data(GameListItemPath::ProgramIdRole).toULongLong();
+                if (program_id != 0) {
+                    MenuSounds::SelectGame(
+                        current.data(GameListItemPath::FullPathRole).toString().toStdString(),
+                        program_id);
+                }
+            }
+            return false;
+        }
+
+    private:
+        QAbstractItemView* view;
+        QPersistentModelIndex last;
+    };
+    for (QAbstractItemView* const view :
+         {static_cast<QAbstractItemView*>(tree_view), static_cast<QAbstractItemView*>(grid_view),
+          static_cast<QAbstractItemView*>(carousel_view)}) {
+        view->viewport()->setMouseTracking(true);
+        view->viewport()->installEventFilter(new HoverSounds(view, view));
+    }
+
     // A soft click when the picked game changes (not while typing in the search field, nor
     // when a list is first filled).
     for (QAbstractItemView* const view :
@@ -81,6 +131,16 @@ GameList::GameList(FileSys::VirtualFilesystem vfs_, FileSys::ManualContentProvid
           static_cast<QAbstractItemView*>(carousel_view)}) {
         connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this,
                 [this, view](const QModelIndex& current, const QModelIndex& previous) {
+                    // The picked game's own music (from its files) fades in.
+                    if (current.isValid() && view->isVisible()) {
+                        const u64 program_id =
+                            current.data(GameListItemPath::ProgramIdRole).toULongLong();
+                        const QString path =
+                            current.data(GameListItemPath::FullPathRole).toString();
+                        if (program_id != 0 && !path.isEmpty()) {
+                            MenuSounds::SelectGame(path.toStdString(), program_id);
+                        }
+                    }
                     if (!current.isValid() || !previous.isValid() || !view->isVisible()) {
                         return;
                     }

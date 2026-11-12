@@ -4,9 +4,15 @@
 #pragma once
 
 #include <functional>
+#include <memory>
+#include <string>
+#include <thread>
 
 #include <QObject>
 #include <QTimer>
+
+#include "common/common_types.h"
+#include "common/polyfill_thread.h"
 
 struct SDL_AudioStream;
 
@@ -23,20 +29,34 @@ class MenuSounds : public QObject {
 public:
     /// `ambient_wanted` says whether the home screen is showing (no game running); the hum
     /// plays while it is, the window is in front and the setting is on.
-    explicit MenuSounds(std::function<bool()> ambient_wanted, QObject* parent);
+    /// `music_wanted`: the picked game's music may play (the home screen, or the game loading).
+    explicit MenuSounds(std::function<bool()> ambient_wanted, std::function<bool()> music_wanted,
+                        QObject* parent);
     ~MenuSounds() override;
 
     /// The click for a newly picked game. `volume` (0 to 100) overrides the setting (preview).
     static void Click(int volume = -1);
     /// The chime for starting a game.
     static void Chime();
+    /// The game now picked in the game list: its own title music fades in a moment later (read
+    /// from its files on another thread the first time), crossfading from the last game's.
+    static void SelectGame(const std::string& path, u64 program_id);
 
 private:
     void Tick();
     void Wake();
 
+    void LoadSelectedMusic();
+
     std::function<bool()> ambient_wanted;
+    std::function<bool()> music_wanted;
     QTimer timer;
+    QTimer music_timer; ///< A short wait after a pick, so scrolling past games loads nothing
+    std::string selected_path;
+    u64 selected_program_id = 0;
+    u64 playing_program_id = 0;
+    bool music_available = false; ///< The playing game has a track
+    std::jthread music_loader;
     SDL_AudioStream* stream = nullptr;
     bool paused = false;
     int silent_ticks = 0;

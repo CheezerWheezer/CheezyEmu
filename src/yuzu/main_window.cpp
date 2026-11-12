@@ -407,7 +407,55 @@ MainWindow::MainWindow(bool has_broken_vulkan)
             return !emulation_running && game_list != nullptr && game_list->isVisible() &&
                    !isMinimized() && (loading_screen == nullptr || !loading_screen->isVisible());
         },
+        // The picked game's music: on the home screen, and while a game loads (shaders).
+        [this] {
+            const bool loading = loading_screen != nullptr && loading_screen->isVisible();
+            const bool home = !emulation_running && game_list != nullptr &&
+                              game_list->isVisible() && !isMinimized();
+            return loading || home;
+        },
         this);
+    // CHEEZYEMU_LIST_ROMFS=<game file> (test): writes the game's RomFS files and sizes to
+    // CHEEZYEMU_LIST_ROMFS_OUT, then closes (to find a game's music).
+    if (const QByteArray list = qgetenv("CHEEZYEMU_LIST_ROMFS"); !list.isEmpty()) {
+        QTimer::singleShot(1500, this, [this, game = QString::fromUtf8(list)] {
+            const auto loader = Loader::GetLoader(
+                *QtCommon::system,
+                QtCommon::vfs->OpenFile(game.toStdString(), FileSys::OpenMode::Read));
+            FileSys::VirtualFile image;
+            if (loader) {
+                loader->ReadRomFS(image);
+            }
+            const auto root = image ? FileSys::ExtractRomFS(image) : nullptr;
+            std::string listing;
+            std::function<void(const FileSys::VirtualDir&, const std::string&)> walk =
+                [&](const FileSys::VirtualDir& dir, const std::string& prefix) {
+                    for (const auto& file : dir->GetFiles()) {
+                        listing += fmt::format("{}\t{}{}\n", file->GetSize(), prefix,
+                                               file->GetName());
+                    }
+                    for (const auto& sub : dir->GetSubdirectories()) {
+                        walk(sub, prefix + sub->GetName() + "/");
+                    }
+                };
+            // CHEEZYEMU_ROMFS_FILE=<path in the RomFS>: that file's bytes instead.
+            if (const QByteArray one = qgetenv("CHEEZYEMU_ROMFS_FILE"); root && !one.isEmpty()) {
+                if (const auto file = root->GetFileRelative(one.toStdString())) {
+                    const auto bytes = file->ReadAllBytes();
+                    listing.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+                }
+            } else if (root) {
+                walk(root, "");
+            }
+            QFile out(QString::fromUtf8(qgetenv("CHEEZYEMU_LIST_ROMFS_OUT")));
+            if (out.open(QIODevice::WriteOnly)) {
+                out.write(listing.data(), static_cast<qint64>(listing.size()));
+            }
+            LOG_INFO(Frontend, "RomFS list: loader {}, image {}, {} bytes of listing",
+                     loader != nullptr, image != nullptr, listing.size());
+            close();
+        });
+    }
     // CHEEZYEMU_DIALOG_SHOT=<png> (test): opens Configure, saves a picture of it, closes it.
     // CHEEZYEMU_DIALOG_SHOT_OPEN=recommended opens the "Find Best Settings" question instead,
     // =properties:<game file> that game's Properties. CHEEZYEMU_DIALOG_SHOT_PAGE=<text> first
