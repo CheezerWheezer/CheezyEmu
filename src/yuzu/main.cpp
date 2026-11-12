@@ -186,6 +186,11 @@ int main(int argc, char* argv[]) {
 
 #ifdef _WIN32
     QApplication::setStyle(QStringLiteral("windowsvista"));
+#else
+    // macOS' own style draws its native controls under the CheezyEmu theme (blue arrows, a blue
+    // default button, shortened tab names), and Linux desktops pick theirs (Breeze, Adwaita):
+    // Qt's cross-platform Fusion style is the one the theme draws over completely.
+    QApplication::setStyle(QStringLiteral("Fusion"));
 #endif
 
     QApplication app(argc, argv);
