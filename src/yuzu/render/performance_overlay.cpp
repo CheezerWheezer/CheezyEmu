@@ -489,13 +489,13 @@ void PerformanceOverlay::contextMenuEvent(QContextMenuEvent* event) {
         {BottomCentre, tr("Bottom centre")},
         {BottomRight, tr("Bottom right")},
     };
-    for (const auto& [anchor, name] : anchors) {
-        QAction* const action = position->addAction(name, [this, anchor = anchor] {
+    for (const auto& [choice, name] : anchors) {
+        QAction* const action = position->addAction(name, [this, anchor = choice] {
             UISettings::values.perf_overlay_anchor.SetValue(static_cast<int>(anchor));
             Place();
         });
         action->setCheckable(true);
-        action->setChecked(ui.perf_overlay_anchor.GetValue() == static_cast<int>(anchor));
+        action->setChecked(ui.perf_overlay_anchor.GetValue() == static_cast<int>(choice));
         places->addAction(action);
     }
     if (ui.perf_overlay_anchor.GetValue() == static_cast<int>(Custom)) {

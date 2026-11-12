@@ -1413,13 +1413,13 @@ void MainWindow::InitializeWidgets() {
             QMenu menu;
             QMenu* const accuracy = menu.addMenu(tr("GPU Accuracy"));
             auto* const levels = new QActionGroup(accuracy);
-            for (const auto& [level, text] : ConfigurationShared::gpu_accuracy_texts_map) {
-                QAction* const action = accuracy->addAction(text, [this, level = level] {
+            for (const auto& [choice, text] : ConfigurationShared::gpu_accuracy_texts_map) {
+                QAction* const action = accuracy->addAction(text, [this, level = choice] {
                     Settings::values.gpu_accuracy.SetValue(level);
                     UpdateGPUAccuracyButton();
                 });
                 action->setCheckable(true);
-                action->setChecked(Settings::values.gpu_accuracy.GetValue() == level);
+                action->setChecked(Settings::values.gpu_accuracy.GetValue() == choice);
                 levels->addAction(action);
             }
             AddQuickGraphicsMenu(menu);
@@ -4357,10 +4357,10 @@ void MainWindow::AddQuickGraphicsMenu(QMenu& menu) {
                                  auto pick) {
         QMenu* const sub = menu.addMenu(title);
         auto* const group = new QActionGroup(sub);
-        for (const auto& [value, text] : texts) {
-            QAction* const action = sub->addAction(text, [pick, value = value] { pick(value); });
+        for (const auto& [choice, text] : texts) {
+            QAction* const action = sub->addAction(text, [pick, value = choice] { pick(value); });
             action->setCheckable(true);
-            action->setChecked(value == current);
+            action->setChecked(choice == current);
             group->addAction(action);
         }
         return sub;
@@ -4386,14 +4386,14 @@ void MainWindow::AddQuickGraphicsMenu(QMenu& menu) {
         off->setCheckable(true);
         off->setChecked(!on);
         group->addAction(off);
-        for (const auto& [type, text] : ConfigurationShared::frame_gen_type_texts_map) {
-            QAction* const action = sub->addAction(text, [this, type = type] {
+        for (const auto& [choice, text] : ConfigurationShared::frame_gen_type_texts_map) {
+            QAction* const action = sub->addAction(text, [this, type = choice] {
                 Settings::values.frame_gen_type.SetValue(type);
                 Settings::values.frame_gen.SetValue(true);
                 UpdateFrameGenButton();
             });
             action->setCheckable(true);
-            action->setChecked(on && Settings::values.frame_gen_type.GetValue() == type);
+            action->setChecked(on && Settings::values.frame_gen_type.GetValue() == choice);
             group->addAction(action);
         }
     }
