@@ -179,7 +179,7 @@ void Swapchain::Create(
     resource_ticks.resize(image_count);
 }
 
-bool Swapchain::AcquireNextImage(bool may_flush) {
+bool Swapchain::AcquireNextImage(bool may_flush, u32 images_per_game_frame) {
     const VkResult result =
         frame_gen_swapchain
             ? AmdFrameGen::AcquireNextImage(device, frame_gen_swapchain,
@@ -208,22 +208,25 @@ bool Swapchain::AcquireNextImage(bool may_flush) {
         return true;
     }
 
-    const auto wait_with_frame_pacing = [this, may_flush] {
+    // Before: every image counted, so with frame generation a 60 FPS target allowed 30 game
+    // frames + 30 generated ones (the game ran at half speed).
+    const double per_frame = static_cast<double>((std::max)(images_per_game_frame, 1U));
+    const auto wait_with_frame_pacing = [this, may_flush, per_frame] {
     switch (Settings::values.frame_pacing_mode.GetValue()) {
     case Settings::FramePacingMode::Target_Auto:
         scheduler.Wait(resource_ticks[image_index], 0.0, may_flush);
         break;
     case Settings::FramePacingMode::Target_30:
-        scheduler.Wait(resource_ticks[image_index], 30.0, may_flush);
+        scheduler.Wait(resource_ticks[image_index], 30.0 * per_frame, may_flush);
         break;
     case Settings::FramePacingMode::Target_60:
-        scheduler.Wait(resource_ticks[image_index], 60.0, may_flush);
+        scheduler.Wait(resource_ticks[image_index], 60.0 * per_frame, may_flush);
         break;
     case Settings::FramePacingMode::Target_90:
-        scheduler.Wait(resource_ticks[image_index], 90.0, may_flush);
+        scheduler.Wait(resource_ticks[image_index], 90.0 * per_frame, may_flush);
         break;
     case Settings::FramePacingMode::Target_120:
-        scheduler.Wait(resource_ticks[image_index], 120.0, may_flush);
+        scheduler.Wait(resource_ticks[image_index], 120.0 * per_frame, may_flush);
         break;
     }
     };

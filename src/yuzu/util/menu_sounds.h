@@ -46,6 +46,9 @@ public:
     /// crossfading from the last game's. While it stays picked, each song that ends crossfades
     /// into another random one.
     static void SelectGame(const std::string& path, u64 program_id);
+    /// A game is starting (from the list, the command line, a shortcut...): its music plays
+    /// through the loading screen. Already playing (picked in the list): it just goes on.
+    static void StartGame(const std::string& path, u64 program_id);
 
 private:
     void Tick();

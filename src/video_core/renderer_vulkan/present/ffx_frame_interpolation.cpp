@@ -308,11 +308,11 @@ public:
     }
 
     /// Records one dispatch: `entries` in the order of the pass's bindings.
-    void Run(Scheduler& scheduler, std::vector<Entry> entries, u32 x, u32 y, u32 z = 1) const {
+    void Run(Scheduler& recorder, std::vector<Entry> entries, u32 x, u32 y, u32 z = 1) const {
         ASSERT(entries.size() == bindings.size());
-        scheduler.Record([this, entries = std::move(entries), x, y, z](vk::CommandBuffer cmdbuf) {
+        recorder.Record([this, data = std::move(entries), x, y, z](vk::CommandBuffer cmdbuf) {
             cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE, *pipeline);
-            cmdbuf.PushDescriptorSetWithTemplateKHR(*update_template, *layout, 0, entries.data());
+            cmdbuf.PushDescriptorSetWithTemplateKHR(*update_template, *layout, 0, data.data());
             cmdbuf.Dispatch((std::max)(x, 1U), (std::max)(y, 1U), (std::max)(z, 1U));
             // The next pass reads what this one wrote (everything stays in GENERAL).
             cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -512,6 +512,7 @@ FfxFrameInterpolation::FfxFrameInterpolation(const Device& device_,
     for (Image& source : sources) {
         make(source, format, display.width, display.height, 1, false);
     }
+    make(with_hud, format, display.width, display.height, 1, false);
     const u32 pyramid_width = (std::max)(display.width / 2, 1U);
     const u32 pyramid_height = (std::max)(display.height / 2, 1U);
     const u32 pyramid_levels = static_cast<u32>(std::floor(std::log2(
@@ -620,8 +621,8 @@ FfxFrameInterpolation::Image FfxFrameInterpolation::CreateImage(VkFormat image_f
 void FfxFrameInterpolation::InitializeImages(std::vector<VkImage> images) {
     // New images: GENERAL, cleared to zero (what the SDK's "uninitialized" reads as).
     scheduler.RequestOutsideRenderPassOperationContext();
-    scheduler.Record([images = std::move(images)](vk::CommandBuffer cmdbuf) {
-        for (const VkImage image : images) {
+    scheduler.Record([fresh = std::move(images)](vk::CommandBuffer cmdbuf) {
+        for (const VkImage image : fresh) {
             const VkImageMemoryBarrier barrier{
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                 .pNext = nullptr,
@@ -804,13 +805,13 @@ void FfxFrameInterpolation::RunOpticalFlow(VkImageView current, bool reset) {
                 cleared.push_back(*level.image);
             }
         }
-        scheduler.Record([cleared = std::move(cleared)](vk::CommandBuffer cmdbuf) {
+        scheduler.Record([to_clear = std::move(cleared)](vk::CommandBuffer cmdbuf) {
             cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                    VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
                                    MemoryBarrier(VK_ACCESS_SHADER_READ_BIT |
                                                      VK_ACCESS_SHADER_WRITE_BIT,
                                                  VK_ACCESS_TRANSFER_WRITE_BIT));
-            for (const VkImage image : cleared) {
+            for (const VkImage image : to_clear) {
                 cmdbuf.ClearColorImage(image, VK_IMAGE_LAYOUT_GENERAL, VkClearColorValue{},
                                        ALL_LEVELS);
             }
@@ -895,29 +896,40 @@ void FfxFrameInterpolation::RunOpticalFlow(VkImageView current, bool reset) {
     ++of_parity;
 }
 
-void FfxFrameInterpolation::Process(VkImage frame) {
+void FfxFrameInterpolation::Process(VkImage frame, VkImage hudless) {
     game_frame_for_present = game_frame_prepared;
     game_frame_prepared = false;
     current_source ^= 1;
-    const bool reset = !have_previous;
+    // A switch between frames with and without a HUD-less copy starts over (the previous source
+    // would be the other kind).
+    const bool apart = hudless != VK_NULL_HANDLE;
+    const bool reset = !have_previous || apart != hud_apart;
+    hud_apart = apart;
     scheduler.RequestOutsideRenderPassOperationContext();
     BeginUniforms();
-    scheduler.Record([frame, destination = *sources[current_source].image,
-                      extent = display](vk::CommandBuffer cmdbuf) {
+    scheduler.Record([frame, hudless, destination = *sources[current_source].image,
+                      hud_copy = *with_hud.image, extent = display](vk::CommandBuffer cmdbuf) {
         cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                                0,
                                MemoryBarrier(VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT,
                                              VK_ACCESS_TRANSFER_READ_BIT |
                                                  VK_ACCESS_TRANSFER_WRITE_BIT));
-        const VkImageCopy region{
+        const VkImageCopy whole{
             .srcSubresource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
             .srcOffset{0, 0, 0},
             .dstSubresource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
             .dstOffset{0, 0, 0},
             .extent{extent.width, extent.height, 1},
         };
-        cmdbuf.CopyImage(frame, VK_IMAGE_LAYOUT_GENERAL, destination, VK_IMAGE_LAYOUT_GENERAL,
-                         region);
+        if (hudless != VK_NULL_HANDLE) {
+            cmdbuf.CopyImage(hudless, VK_IMAGE_LAYOUT_GENERAL, destination,
+                             VK_IMAGE_LAYOUT_GENERAL, whole);
+            cmdbuf.CopyImage(frame, VK_IMAGE_LAYOUT_GENERAL, hud_copy, VK_IMAGE_LAYOUT_GENERAL,
+                             whole);
+        } else {
+            cmdbuf.CopyImage(frame, VK_IMAGE_LAYOUT_GENERAL, destination,
+                             VK_IMAGE_LAYOUT_GENERAL, whole);
+        }
         cmdbuf.PipelineBarrier(VK_PIPELINE_STAGE_TRANSFER_BIT,
                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
                                MemoryBarrier(VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -949,7 +961,7 @@ void FfxFrameInterpolation::Generate(VkImage destination, VkImageView storage_vi
     constants.mode = 0;
     constants.reset = reset ? 1 : 0;
     constants.delta_time = frame_time_ms;
-    constants.hudless_attached = 0;
+    constants.hudless_attached = hud_apart ? 1 : 0;
     constants.distortion_field_size = {1, 1};
     constants.optical_flow_scale = {1.0f / display.width, 1.0f / display.height};
     constants.optical_flow_block_size = 8;
@@ -1069,10 +1081,13 @@ void FfxFrameInterpolation::Generate(VkImage destination, VkImageView storage_vi
         passes[FiInpaintingPyramid]->Run(scheduler, std::move(entries), spd.groups_x,
                                          spd.groups_y);
     }
+    // The interpolation source, then the frame as presented: where they differ (the HUD) the
+    // presented frame's pixels are kept.
     passes[FiInpainting]->Run(scheduler,
                               {Tex(*scd_output.view), Tex(*inpainting_pyramid.view),
-                               Tex(*current.view), Tex(*current.view), Img(storage_view),
-                               Buf(cb)},
+                               Tex(*current.view),
+                               Tex(hud_apart ? *with_hud.view : *current.view),
+                               Img(storage_view), Buf(cb)},
                               display_x, display_y);
     (void)destination;
 }

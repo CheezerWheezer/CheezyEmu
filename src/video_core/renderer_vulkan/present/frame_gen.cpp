@@ -263,7 +263,7 @@ void FrameGen::Process(const Device& device, Frame* frame, VkFormat format,
             }
         }
         if (ffx_chain) {
-            ffx_chain->Process(*frame->image);
+            ffx_chain->Process(*frame->image, frame->frame_gen_hudless);
             ffx_frame = ffx_chain->HasGameFrame();
         }
     } else if (ffx_chain) {
@@ -340,6 +340,14 @@ size_t FrameGen::WantedGenerations(size_t capacity) {
     if (unavailable) {
         plan = {};
         return 0;
+    }
+    if (Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr &&
+        Settings::BuiltInAmdFrameGen()) {
+        // AMD FSR picked: like AMD's own runtime, one generated frame for every game frame (the
+        // FPS target is for the other types; the frame pacing setting still limits the game).
+        pacer.Reset();
+        plan = {.generations = (std::min<size_t>)(capacity, 1), .warm = capacity > 0};
+        return plan.generations;
     }
     plan = pacer.Plan(capacity);
     if (ffx_frame) {

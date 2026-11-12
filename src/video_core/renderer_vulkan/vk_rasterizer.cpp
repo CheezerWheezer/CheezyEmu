@@ -1251,7 +1251,7 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func, bool is_in
     const auto hashes = pipeline->ShaderHashes();
     const bool final_pass = hashes[5] == final_fragment &&
                             std::ranges::find(hashes, final_vertex) != hashes.end();
-    if (final_pass && AmdFrameGen::Requested() && OcarinaDlssEnabled()) {
+    if (final_pass && AmdFrameGen::MotionWanted() && OcarinaDlssEnabled()) {
         // The HUD is now drawn into FSR 4's output, which the final pass reads.
         // On unless EDEN_NX2_AMD_FG_HUD_MASK=0.
         static const bool hud_mask = [] {
@@ -4641,7 +4641,7 @@ bool RasterizerVulkan::TryOcarinaDlss(const ComputePipeline& pipeline, bool repl
         oot_scene_frame = render_trace_frame;
         oot_hud_frame.reset();
         oot_hud_view = VK_NULL_HANDLE;
-        if (AmdFrameGen::Requested() && !four_k && hud_mask) {
+        if (AmdFrameGen::MotionWanted() && !four_k && hud_mask) {
             SaveOcarinaPreHud(
                 target.ImageHandle(),
                 MaxwellToVK::SurfaceFormat(device, FormatType::Optimal, true, target.format).format,
@@ -5259,7 +5259,7 @@ std::optional<FramebufferTextureInfo> RasterizerVulkan::AccelerateDisplay(
         !oot_live_dlss->EvaluationFailed() && !frame_dump.Capturing()) {
         try {
             oot_live_dlss->Composite4k(info.image_view, render_trace_frame);
-            if (AmdFrameGen::Requested()) {
+            if (AmdFrameGen::MotionWanted()) {
                 // The HUD mask for AMD frame generation in the 4K mode: the next frame's motion is
                 // cleared where the HUD sits, so the HUD doesn't move in generated frames.
                 oot_live_dlss->MakeHudMask4k(info.image_view);

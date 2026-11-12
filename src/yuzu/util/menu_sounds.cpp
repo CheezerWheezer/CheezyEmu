@@ -624,6 +624,16 @@ void MenuSounds::SelectGame(const std::string& path, u64 program_id) {
     instance->music_timer.start(450);
 }
 
+void MenuSounds::StartGame(const std::string& path, u64 program_id) {
+    if (instance == nullptr || program_id == 0) {
+        return;
+    }
+    instance->music_timer.stop();
+    instance->selected_path = path;
+    instance->selected_program_id = program_id;
+    instance->LoadSelectedMusic();
+}
+
 void MenuSounds::LoadSelectedMusic() {
     if (selected_program_id == playing_program_id || selected_path.empty()) {
         return;

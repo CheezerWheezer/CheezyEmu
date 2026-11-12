@@ -40,7 +40,9 @@ public:
     /// Acquires the next image in the swapchain, waits as needed. Returns true when no image was
     /// acquired (out of date) and the swapchain has to be recreated first.
     /// `may_flush`: false on the async present thread (see Scheduler::Wait).
-    bool AcquireNextImage(bool may_flush = true);
+    /// `images_per_game_frame`: images presented per game frame (frame generation); the frame
+    /// pacing target is for game frames, so the images are paced that many times faster.
+    bool AcquireNextImage(bool may_flush = true, u32 images_per_game_frame = 1);
 
     /// Presents the rendered image to the swapchain. `frame_gen` says which prepared game frame
     /// the image shows, for AMD's frame generation swapchain.

@@ -47,8 +47,10 @@ public:
     }
 
     /// The presented frame (GENERAL layout, the size and format given at construction) becomes
-    /// the current interpolation source; optical flow runs against the previous one.
-    void Process(VkImage frame);
+    /// the current interpolation source; optical flow runs against the previous one. With
+    /// `hudless` (the same frame drawn without the game's HUD, or null) the HUD-less frames are
+    /// interpolated and the HUD is taken from `frame` as it is, so it doesn't move or smear.
+    void Process(VkImage frame, VkImage hudless = VK_NULL_HANDLE);
 
     /// Writes the frame halfway between the previous and the current presented frame into
     /// `destination` (GENERAL layout): written through `storage_view`, read back through
@@ -104,6 +106,8 @@ private:
     // Frame interpolation.
     std::array<Image, 2> sources; ///< Previous and current presented frame, by `current_source`
     u32 current_source = 0;
+    Image with_hud;          ///< The current frame with its HUD, when `sources` are HUD-less
+    bool hud_apart = false;  ///< The last Process had a HUD-less frame
     bool have_previous = false;
     Image inpainting_pyramid;
     Image distortion_field;

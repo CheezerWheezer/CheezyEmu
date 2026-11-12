@@ -2774,7 +2774,9 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
 
     loading_screen->Prepare(QtCommon::system->GetAppLoader());
     loading_screen->show();
-    MenuSounds::Chime();
+    // No start chime (the user's call): the game's music plays on through the loading screen,
+    // also when the game was started some other way than from the list.
+    MenuSounds::StartGame(filename.toStdString(), title_id);
 
     emulation_running = true;
     if (ui->action_Fullscreen->isChecked()) {
@@ -6004,12 +6006,15 @@ void MainWindow::UpdateFrameGenButton() {
         return;
     }
 
+    // AMD FSR picked shows as AMD FSR, also where it runs as the built-in FSR 3 passes
+    // (FrameGenTypeInUse says Optical Flow there, the path they share).
+    const bool amd = Settings::values.frame_gen_type.GetValue() == Settings::FrameGenType::AmdFsr;
     const QString type = ConfigurationShared::frame_gen_type_texts_map
-                             .find(Settings::FrameGenTypeInUse())
+                             .find(amd ? Settings::FrameGenType::AmdFsr
+                                       : Settings::FrameGenTypeInUse())
                              ->second.toUpper();
     const u32 target_rate = Settings::values.frame_gen_target_rate.GetValue();
     // AMD's frame generation always adds one frame per game frame.
-    const bool amd = Settings::FrameGenTypeInUse() == Settings::FrameGenType::AmdFsr;
     const QString mode = amd ? tr("FG %1 2X").arg(type)
                          : target_rate == 0
                              ? tr("FG %1 %2X").arg(type).arg(Settings::FrameGenMultiplier())
