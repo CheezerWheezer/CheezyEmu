@@ -980,6 +980,11 @@ TextureInst MakeInst(Environment& env, IR::Block* block, IR::Inst& inst, const H
                     throw NotImplementedException("Failed to track bindless texture constant buffer (stopped at {}, budget {})",
                                                   g_handle_failure, budget);
                 }
+                LOG_INFO(Shader,
+                         "Bindless {} in stage {} shader at {:#x}: handle taken from an address "
+                         "(cbuf {} offset {:#x}), stopped at {}",
+                         inst.GetOpcode(), static_cast<int>(env.ShaderStage()), env.StartAddress(),
+                         legacy->index, legacy->offset, g_handle_failure);
                 return TextureInst{
                     .cbuf = *legacy, .inst = &inst, .block = block, .handle_from_address = true};
             }
