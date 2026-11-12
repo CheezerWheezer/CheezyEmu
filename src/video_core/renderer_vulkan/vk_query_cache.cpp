@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <cstddef>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <memory>
@@ -246,8 +247,21 @@ public:
         // submission and render pass, and the query keeps every bank it touches alive. Ocarina of
         // Time's title screen and file select reached 16,384 slots over 64 banks, while gameplay
         // windows in Hyrule Field, Kakariko Village, and the Shooting Gallery reach up to 346
-        // slots across two banks. Past 4 banks (1,024 slots), drop the count as a reset would.
-        static constexpr size_t MaxRunningQuerySlots = 4 * SamplesQueryBank::BANK_SIZE;
+        // slots across two banks. Past 32 banks (8,192 slots), drop the count as a reset would.
+        // The bound was 4 banks (1,024 slots), but Ocarina gameplay windows run just past that
+        // (1,025-1,040 slots at the river, several times a minute): every drop made occlusion
+        // tested objects blink (trees, the fountain, scenery popping; zortos293/Lichii#1428).
+        // EDEN_NX2_QUERY_MAX_BANKS=<n> sets the bound in banks.
+        static const size_t MaxRunningQuerySlots = [] {
+            size_t banks = 32;
+            if (const char* const value = std::getenv("EDEN_NX2_QUERY_MAX_BANKS")) {
+                const long parsed = std::strtol(value, nullptr, 10);
+                if (parsed > 0 && parsed <= 1024) {
+                    banks = static_cast<size_t>(parsed);
+                }
+            }
+            return banks * SamplesQueryBank::BANK_SIZE;
+        }();
         if (current_query && current_query->size_slots > MaxRunningQuerySlots) {
             // It drops a real count. Logged on the 1st, 2nd, 4th, 8th... drop, so a window this
             // long during gameplay doesn't go unnoticed and a title screen doesn't flood the log.
