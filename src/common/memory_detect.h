@@ -31,8 +31,9 @@ struct ProcessMemoryUsage {
 
 [[nodiscard]] ProcessMemoryUsage GetProcessMemoryUsage();
 
-/// Commit the system can still hand out, in bytes: its commit limit (RAM plus the page files)
-/// minus what is committed. No value where the host reports no such limit (anything but Windows).
+/// Memory the system can still hand out, in bytes. Windows: its commit limit (RAM plus the page
+/// files) minus what is committed. macOS: free, inactive and purgeable memory. Linux:
+/// MemAvailable. No value where it can't be read.
 [[nodiscard]] std::optional<u64> GetSystemCommitRoom();
 
 } // namespace Common

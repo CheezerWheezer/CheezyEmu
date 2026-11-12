@@ -28,6 +28,10 @@
 
 #include "common/memory_detect.h"
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#endif
+
 namespace Common {
 
 // Detects the RAM and Swapfile sizes
@@ -121,6 +125,29 @@ std::optional<u64> GetSystemCommitRoom() {
         const u64 limit = performance.CommitLimit;
         const u64 committed = performance.CommitTotal;
         return (committed < limit ? limit - committed : 0) * performance.PageSize;
+    }
+#elif defined(__APPLE__)
+    // macOS: memory it can hand out without swapping (free, inactive and purgeable pages). A
+    // tester's M1 Pro (16 GB) was killed during the shader precache with no guard at all.
+    const mach_port_t host = mach_host_self();
+    vm_statistics64_data_t vm{};
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+    vm_size_t page_size = 0;
+    if (host_statistics64(host, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm), &count) ==
+            KERN_SUCCESS &&
+        host_page_size(host, &page_size) == KERN_SUCCESS) {
+        return (u64{vm.free_count} + vm.inactive_count + vm.purgeable_count) * page_size;
+    }
+#elif defined(__linux__)
+    // Linux: MemAvailable, what the kernel can hand out without swapping.
+    std::ifstream meminfo{"/proc/meminfo"};
+    std::string key;
+    u64 kib = 0;
+    while (meminfo >> key >> kib) {
+        meminfo.ignore(64, '\n');
+        if (key == "MemAvailable:") {
+            return kib * 1024;
+        }
     }
 #endif
     return std::nullopt;
