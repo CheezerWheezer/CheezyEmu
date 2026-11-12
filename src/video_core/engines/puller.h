@@ -79,6 +79,8 @@ public:
         u32 operation;
         std::chrono::steady_clock::time_point since;
         std::chrono::steady_clock::time_point last_fences; ///< When it last released fences
+        /// When it last read the word to see whether the value went by (PassedBy).
+        std::chrono::steady_clock::time_point last_passed_check{};
         bool reported;
         /// GpuSplit::LastWriterPosition when the acquire was sent: compute and copy work before
         /// it may release the word without the front's knowing (QMD releases).
@@ -99,6 +101,8 @@ public:
         [[nodiscard]] bool Matches(u32 current) const;
         /// Whether it waits for the word to reach `value` (greater or equal).
         [[nodiscard]] bool WaitsToReach() const;
+        /// Whether it waits for the word to equal `value` exactly.
+        [[nodiscard]] bool WaitsForEqual() const;
     };
 
     [[nodiscard]] bool HasPendingAcquire() const {

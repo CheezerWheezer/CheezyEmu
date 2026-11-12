@@ -333,6 +333,40 @@ void MaybeReleaseFences(DmaPusher& dma_pusher, Puller::PendingAcquire& acquire) 
     OnBack([rasterizer = dma_pusher.rasterizer] { rasterizer->ReleaseFences(); }, FenceWrites);
 }
 
+// An equal-acquire whose value the semaphore has already gone past: the release it waits for
+// happened, and later ones moved the word on, before this channel looked (the waiter latch only
+// catches releases made while it waits). Nothing will ever write that value again, so the
+// channel hung for good (a tester: playing the warp song in Ocarina, 0x19f1c waited for while
+// the word was 0x19f72). After 250 ms of waiting with the word a little past the value (at most
+// 1 << 20 further on, so a small ring of values that comes round again is left alone), the
+// channel goes on: a short hitch instead of a hang. EDEN_NX2_PASSED_ACQUIRE=0 turns it off.
+bool PassedBy(DmaPusher& dma_pusher, const Puller::PendingAcquire& acquire, u32 current) {
+    static const bool enabled = [] {
+        const char* const value = std::getenv("EDEN_NX2_PASSED_ACQUIRE");
+        return value == nullptr || value[0] != '0';
+    }();
+    if (!enabled || !acquire.WaitsForEqual() ||
+        std::chrono::steady_clock::now() - acquire.since < std::chrono::milliseconds{250}) {
+        return false;
+    }
+    const u32 ahead = current - acquire.value;
+    if (ahead == 0 || ahead > (1U << 20)) {
+        return false;
+    }
+    static std::atomic<u32> logged{};
+    if (logged.fetch_add(1) < 64) {
+        LOG_WARNING(HW_GPU,
+                    "Channel {} waited {} ms for semaphore {:#x} to equal {:#x}, already passed "
+                    "({:#x}): going on",
+                    dma_pusher.channel_state.bind_id,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - acquire.since)
+                        .count(),
+                    acquire.address, acquire.value, current);
+    }
+    return true;
+}
+
 // Logs once an acquire that waits for more than 2 s. `current`: the word as read after a drain,
 // or nothing to read it from memory.
 void ReportLongWait(DmaPusher& dma_pusher, Puller::PendingAcquire& acquire,
@@ -371,6 +405,10 @@ bool Puller::PendingAcquire::Matches(u32 current) const {
     }
 }
 
+bool Puller::PendingAcquire::WaitsForEqual() const {
+    return static_cast<GpuSemaphoreOperation>(operation) == GpuSemaphoreOperation::AcquireEqual;
+}
+
 bool Puller::PendingAcquire::WaitsToReach() const {
     return static_cast<GpuSemaphoreOperation>(operation) == GpuSemaphoreOperation::AcquireGequal;
 }
@@ -405,7 +443,7 @@ bool Puller::CanResumeAcquire(DmaPusher& dma_pusher) {
         }
         return true;
     }
-    if (pending_acquire->Matches(current)) {
+    if (pending_acquire->Matches(current) || PassedBy(dma_pusher, *pending_acquire, current)) {
         return true;
     }
     // With delayed fence operations (Balanced or Accurate fences, accurate GPU), a release
@@ -485,6 +523,16 @@ bool Puller::PollWithoutDrain(DmaPusher& dma_pusher, u64 device) {
         }
     }
     MaybeReleaseFences(dma_pusher, acquire);
+    // Past 250 ms, now and then: the word as the back has it, in case the value went by.
+    if (const auto now = std::chrono::steady_clock::now();
+        now - acquire.since >= std::chrono::milliseconds{250} &&
+        now - acquire.last_passed_check >= std::chrono::milliseconds{50}) {
+        acquire.last_passed_check = now;
+        DrainBack();
+        if (PassedBy(dma_pusher, acquire, ReadSemaphoreWord(dma_pusher, acquire.address))) {
+            return true;
+        }
+    }
     ReportLongWait(dma_pusher, acquire, std::nullopt);
     return false;
 }
