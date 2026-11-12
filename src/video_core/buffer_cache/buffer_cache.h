@@ -5314,7 +5314,8 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
                 // cluster list is mapped 9.5 MiB past its pointer: a compute program writes it and
                 // the water and the haze over it read it. Capped at 8 MiB, the writes past it were
                 // dropped and the reads past it got zero or old entries (the console has no bounds
-                // there), and the water and haze lost whole screen tiles around Link. Written
+                // there). (The dark boxes around Link in water were not this: see the bindless
+                // shadow handle in shader_recompiler/ir_opt/texture_pass.cpp.) Written
                 // bindings keep 16 MiB (a write marks the whole binding GPU-modified);
                 // EDEN_NX2_BARE_SSBO_MIB=<n> sets the read-only reach (8 = the old cap; the object
                 // pools mapped ~83 MiB past their pointers are cut at it). The first 24 cut
