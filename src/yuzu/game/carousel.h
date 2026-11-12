@@ -36,6 +36,7 @@ signals:
 protected:
     /// The warm background, a greeting and a clock, then the tiles.
     void paintEvent(QPaintEvent* event) override;
+    void showEvent(QShowEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:
@@ -49,6 +50,10 @@ private:
     QPixmap m_ambient;
     QPixmap m_ambientPrevious;
     qreal m_ambientFade = 1.0;
+    /// The quote under the greeting (Quotes() in carousel.cpp): a new one each time the home
+    /// screen appears, and every ten minutes while it shows.
+    int m_quote = 0;
+    void PickQuote();
     class QVariantAnimation* m_ambientAnimation = nullptr;
     std::unique_ptr<CheezyBackdrop::Scene> m_scene;
     class QElapsedTimer* m_frameClock = nullptr;

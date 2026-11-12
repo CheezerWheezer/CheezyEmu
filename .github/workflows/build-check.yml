@@ -248,15 +248,15 @@ jobs:
           cmake --build build --parallel
           ccache --show-stats -v
 
-      # nxformat is linked statically: lichii.exe must not need an nxformat.dll, which Windows
+      # nxformat is linked statically: cheezyemu.exe must not need an nxformat.dll, which Windows
       # may refuse to load (Smart App Control, code integrity policies) or that may be missing.
-      - name: Check lichii.exe does not import nxformat.dll
+      - name: Check cheezyemu.exe does not import nxformat.dll
         run: |
-          imports=$("$LLVM_ROOT/bin/llvm-readobj" --coff-imports build/bin/lichii.exe |
+          imports=$("$LLVM_ROOT/bin/llvm-readobj" --coff-imports build/bin/cheezyemu.exe |
             awk '/^(Import|DelayImport) {/ { kind = $1 } /^  Name:/ { print kind, $2 }')
           echo "$imports"
           if grep -qi ' nxformat.dll$' <<< "$imports"; then
-            echo "::error::lichii.exe imports nxformat.dll; nxformat must be linked statically"
+            echo "::error::cheezyemu.exe imports nxformat.dll; nxformat must be linked statically"
             exit 1
           fi
 

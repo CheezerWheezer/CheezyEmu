@@ -116,7 +116,7 @@ ConfigureUi::ConfigureUi(Core::System& system_, QWidget* parent)
         auto* const sounds = new QGroupBox(tr("Sounds"), this);
         auto* const sounds_layout = new QVBoxLayout(sounds);
         menu_sounds_box =
-            new QCheckBox(tr("Click when picking a game"), sounds);
+            new QCheckBox(tr("Click when picking a game, chime when starting one"), sounds);
         menu_ambient_box = new QCheckBox(tr("Ambient hum on the home screen"), sounds);
         menu_game_music_box = new QCheckBox(
             tr("The picked game's own music (from your copy of the game), also while it loads"),

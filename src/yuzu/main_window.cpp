@@ -2791,8 +2791,9 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
 
     loading_screen->Prepare(QtCommon::system->GetAppLoader());
     loading_screen->show();
-    // No start chime (the user's call): the game's music plays on through the loading screen,
-    // also when the game was started some other way than from the list.
+    // The start chime, over the game's music, which plays on through the loading screen (also
+    // when the game was started some other way than from the list).
+    MenuSounds::Chime();
     MenuSounds::StartGame(filename.toStdString(), title_id);
 
     emulation_running = true;

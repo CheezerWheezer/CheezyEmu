@@ -82,11 +82,12 @@ const std::vector<float>& ChimeWave() {
         struct Note {
             double freq, start, pan, gain;
         };
+        // A quick D major strum, low to high.
         constexpr std::array<Note, 4> notes{{
-            {293.66, 0.000, -0.28, 1.00},
-            {440.00, 0.045, -0.09, 0.82},
-            {587.33, 0.090, 0.09, 0.68},
-            {739.99, 0.135, 0.28, 0.52},
+            {293.66, 0.000, -0.30, 1.00},
+            {369.99, 0.035, -0.10, 0.80},
+            {440.00, 0.070, 0.10, 0.70},
+            {587.33, 0.105, 0.30, 0.62},
         }};
         // A warm mallet: the note, a detuned twin (slow beating = body), its octave and a
         // little of the brighter partials, which fade first.
@@ -105,6 +106,32 @@ const std::vector<float>& ChimeWave() {
                          std::exp(-t / decay[k]);
                 }
                 s *= std::min(1.0, t / 0.003);
+                left[i] += static_cast<float>(s * gl);
+                right[i] += static_cast<float>(s * gr);
+            }
+        }
+        // The sparkle: three little bells running up over the strum (A, D, F#, two octaves
+        // up), panned across, with the inharmonic partials that make a bell ring.
+        constexpr std::array<Note, 3> bells{{
+            {880.00, 0.150, -0.45, 0.30},
+            {1174.66, 0.185, 0.05, 0.26},
+            {1479.98, 0.220, 0.45, 0.22},
+        }};
+        constexpr std::array<double, 4> bell_ratio{1.0, 2.76, 5.40, 8.93};
+        constexpr std::array<double, 4> bell_level{1.0, 0.42, 0.18, 0.07};
+        constexpr std::array<double, 4> bell_decay{0.34, 0.16, 0.08, 0.04};
+        for (const Note& bell : bells) {
+            const double angle = (bell.pan + 1.0) * std::numbers::pi / 4.0;
+            const double gl = std::cos(angle) * bell.gain;
+            const double gr = std::sin(angle) * bell.gain;
+            for (int i = int(bell.start * Rate); i < n; ++i) {
+                const double t = double(i) / Rate - bell.start;
+                double s = 0.0;
+                for (size_t k = 0; k < bell_ratio.size(); ++k) {
+                    s += std::sin(TwoPi * bell.freq * bell_ratio[k] * t) * bell_level[k] *
+                         std::exp(-t / bell_decay[k]);
+                }
+                s *= std::min(1.0, t / 0.002);
                 left[i] += static_cast<float>(s * gl);
                 right[i] += static_cast<float>(s * gr);
             }

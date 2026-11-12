@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <array>
+
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QGuiApplication>
@@ -13,6 +15,8 @@
 #include <QRadialGradient>
 #include <QTimer>
 #include <QPropertyAnimation>
+#include <QRandomGenerator>
+#include <QShowEvent>
 #include <QScrollBar>
 #include <QVariantAnimation>
 #include "qt_common/config/uisettings.h"
@@ -61,7 +65,86 @@ QIcon SpeakerIcon(bool playing) {
 
 } // Anonymous namespace
 
+namespace {
+
+struct Quote {
+    const char* text;
+    const char* author;
+};
+
+/// Short lines from philosophers and old proverbs (public domain), for under the greeting.
+constexpr std::array<Quote, 24> Quotes{{
+    {QT_TRANSLATE_NOOP("GameCarousel", "A journey of a thousand miles begins with a single step."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Lao Tzu")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Nature does not hurry, yet everything is accomplished."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Lao Tzu")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "We suffer more often in imagination than in reality."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Seneca")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "While we wait for life, life passes."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Seneca")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Waste no more time arguing what a good man should be. Be one."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Marcus Aurelius")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "What stands in the way becomes the way."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Marcus Aurelius")},
+    {QT_TRANSLATE_NOOP("GameCarousel",
+                       "Dwell on the beauty of life. Watch the stars, and see yourself running with them."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Marcus Aurelius")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "No man ever steps in the same river twice."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Heraclitus")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "The unexamined life is not worth living."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Socrates")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Know thyself."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Inscribed at Delphi")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "First say to yourself what you would be; then do what you have to do."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Epictetus")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Wealth consists not in having great possessions, but in having few wants."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Epictetus")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Happiness depends upon ourselves."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Aristotle")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Well begun is half done."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Aristotle")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Hope is a waking dream."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Aristotle")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Real knowledge is to know the extent of one's ignorance."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Confucius")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "He who has a why to live can bear almost any how."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Friedrich Nietzsche")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Adopt the pace of nature: her secret is patience."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Ralph Waldo Emerson")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Rather than love, than money, than fame, give me truth."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Henry David Thoreau")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Nothing is so strong as gentleness, nothing so gentle as real strength."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Francis de Sales")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Patience and time do more than strength or passion."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Jean de La Fontaine")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "The best way out is always through."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Robert Frost")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Fall seven times, stand up eight."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Japanese proverb")},
+    {QT_TRANSLATE_NOOP("GameCarousel", "Little by little, one travels far."),
+     QT_TRANSLATE_NOOP("GameCarousel", "Spanish proverb")},
+}};
+
+} // Anonymous namespace
+
+void GameCarousel::PickQuote() {
+    // Never the same one twice in a row.
+    const int count = static_cast<int>(Quotes.size());
+    const int next = QRandomGenerator::global()->bounded(count - 1);
+    m_quote = next >= m_quote ? next + 1 : next;
+    viewport()->update();
+}
+
+void GameCarousel::showEvent(QShowEvent* event) {
+    QListView::showEvent(event);
+    PickQuote();
+}
+
 GameCarousel::GameCarousel(QWidget* parent) : QListView{parent} {
+    m_quote = QRandomGenerator::global()->bounded(static_cast<int>(Quotes.size()));
+    auto* const quote_timer = new QTimer(this);
+    connect(quote_timer, &QTimer::timeout, this, &GameCarousel::PickQuote);
+    quote_timer->start(10 * 60 * 1000);
     m_gameCard = new GameCard(this);
     setItemDelegate(m_gameCard);
 
@@ -228,10 +311,31 @@ void GameCarousel::paintEvent(QPaintEvent* event) {
         painter.drawText(QPoint(left, top + big_metrics.ascent()), greeting);
         painter.setFont(small);
         painter.setPen(CheezyTheme::Recolor(QColor(0xE8, 0xD9, 0xB5, 190)));
-        painter.drawText(QPoint(left + 2, top + big_metrics.height() + QFontMetrics{small}.ascent()),
+        const QFontMetrics small_metrics{small};
+        painter.drawText(QPoint(left + 2, top + big_metrics.height() + small_metrics.ascent()),
                          model() != nullptr && model()->rowCount() > 0
                              ? tr("Pick a game and let's play.")
                              : tr("Add a game folder to get started."));
+        // A quote under it, smaller, in italics and fainter, cut short with "..." if the window
+        // is narrow (it stays clear of the clock).
+        QFont tiny = font();
+        tiny.setItalic(true);
+        tiny.setPixelSize(std::clamp(area.height() / 44, 11, 13));
+        const QFontMetrics tiny_metrics{tiny};
+        const Quote& quote = Quotes[static_cast<size_t>(m_quote) % Quotes.size()];
+        const QString line = QStringLiteral("\u201C%1\u201D  \u2014 %2")
+                                 .arg(tr(quote.text), tr(quote.author));
+        const int room = area.width() - 2 * left -
+                         big_metrics.horizontalAdvance(QStringLiteral("00:00")) - 24;
+        const QString shown = tiny_metrics.elidedText(line, Qt::ElideRight, (std::max)(room, 80));
+        const QPoint at{left + 2, top + big_metrics.height() + small_metrics.height() + 4 +
+                                      tiny_metrics.ascent()};
+        painter.setFont(tiny);
+        // A soft shadow keeps it readable where a sunbeam crosses it.
+        painter.setPen(QColor(0, 0, 0, 110));
+        painter.drawText(at + QPoint(1, 1), shown);
+        painter.setPen(CheezyTheme::Recolor(QColor(0xF0, 0xE2, 0xC0, 175)));
+        painter.drawText(at, shown);
         painter.setFont(big);
         painter.setPen(CheezyTheme::Recolor(QColor(0xFF, 0xC8, 0x3D)));
         const QString time = QTime::currentTime().toString(QStringLiteral("h:mm"));
