@@ -198,7 +198,11 @@ static FileSys::VirtualFile VfsDirectoryCreateFileWrapper(const FileSys::Virtual
 
 // Video Core //
 #include "video_core/gpu.h"
-#include "video_core/vulkan_common/vulkan_pipeline_binary_cache.h"
+// The status bar's shader count (vulkan_pipeline_binary_cache.h). Declared here: that header
+// brings in Vulkan's X11 headers on Linux, whose macros (KeyPress, None, Bool...) break Qt's.
+namespace Vulkan::PipelineBinaryCache {
+[[nodiscard]] int PipelinesCompiling();
+} // namespace Vulkan::PipelineBinaryCache
 #include "video_core/renderer_base.h"
 #include "video_core/shader_notify.h"
 

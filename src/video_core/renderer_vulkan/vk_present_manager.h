@@ -42,9 +42,6 @@ struct Frame {
     VkRect2D frame_gen_rect{}; ///< Where the game picture sits in the frame.
     /// AMD frame generation: this frame drawn from the game's image before its HUD, or null.
     VkImage frame_gen_hudless{};
-    /// Images presented for the game frame this one belongs to (1 + generated frames): the
-    /// frame pacing setting limits game frames, so it lets this many images through per frame.
-    u32 images_per_game_frame = 1;
 };
 
 class PresentManager {

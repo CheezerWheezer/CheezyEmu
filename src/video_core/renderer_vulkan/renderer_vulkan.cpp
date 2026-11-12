@@ -271,7 +271,6 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
     // from the game's image before its HUD, through the same scaling and filters, so the HUD
     // stays put in generated frames instead of smearing with the scene.
     frame->frame_gen_hudless = VK_NULL_HANDLE;
-    frame->images_per_game_frame = 1;
     // (Both AMD paths: AMD's runtime on Windows, and the FSR 3 passes built in elsewhere.)
     if (AmdFrameGen::MotionWanted() && rasterizer.OcarinaHudlessReady()) {
         if (hudless_frames.size() <= frame->index) {
@@ -295,11 +294,9 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
                       GuestExtent(framebuffers));
 
     const size_t generated_frames = frame_gen.GeneratedFrameCount();
-    frame->images_per_game_frame = static_cast<u32>(generated_frames + 1);
     for (size_t generation = 0; generation < generated_frames; ++generation) {
         Frame* generated = present_manager.GetRenderFrame();
         generated->frame_gen_hudless = VK_NULL_HANDLE;
-        generated->images_per_game_frame = static_cast<u32>(generated_frames + 1);
         blit_swapchain.PrepareFrame(device, generated, render_window.GetFramebufferLayout());
         frame_gen.GenerateInto(device, generated, generation);
         scheduler.Flush(*generated->render_ready);

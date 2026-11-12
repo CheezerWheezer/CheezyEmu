@@ -529,7 +529,7 @@ void PresentManager::CopyToSwapchainImpl(Frame* frame) {
         return;
     }
 
-    while (swapchain.AcquireNextImage(!use_present_thread, frame->images_per_game_frame)) {
+    while (swapchain.AcquireNextImage(!use_present_thread)) {
         RecreateSwapchain(frame);
     }
 
