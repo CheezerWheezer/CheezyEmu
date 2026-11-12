@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -162,6 +163,9 @@ const std::vector<float>& ChimeWave() {
     return wave;
 }
 
+/// Set on the audio thread when the playing song is near its end: the next one is wanted.
+std::atomic<bool> want_next_music{false};
+
 /// The mixer: clicks, the chime and the hum, made a block at a time on SDL's audio thread.
 struct Synth {
     // Set before each block.
@@ -174,14 +178,18 @@ struct Synth {
         size_t position = 0;
         float gain = 0.0f;
         float target = 0.0f;
+        u32 played = 0;          ///< Times through so far
+        bool asked_next = false; ///< want_next_music was set for it
     };
     std::array<MusicSlot, 2> music;
     float music_on = 0.0f; ///< 1 while music may play (fades out at 0)
+    /// The song after the playing one: crossfades in over its last second.
+    std::shared_ptr<const GameMusic::Track> queued;
 
     void StartMusic(std::shared_ptr<const GameMusic::Track> track) {
         music[1] = std::move(music[0]);
         music[1].target = 0.0f;
-        music[0] = MusicSlot{std::move(track), 0, 0.0f, 1.0f};
+        music[0] = MusicSlot{std::move(track), 0, 0.0f, 1.0f, 0, false};
     }
 
     std::array<int, 3> click_pos{-1, -1, -1}; ///< Three clicks can ring at once
@@ -260,7 +268,9 @@ struct Synth {
                     chime_pos = -1;
                 }
             }
-            for (MusicSlot& slot : music) {
+            bool next_song = false;
+            for (size_t m = 0; m < music.size(); ++m) {
+                MusicSlot& slot = music[m];
                 if (!slot.track || slot.track->samples.empty()) {
                     continue;
                 }
@@ -280,9 +290,26 @@ struct Synth {
                 l += samples[slot.position] * gain;
                 r += samples[slot.position + 1] * gain;
                 slot.position += 2;
-                if (slot.position + 1 >= samples.size()) {
-                    slot.position = 0; // the title tracks loop
+                // A song with a set number of plays: 25 s before its last play ends the next one
+                // is asked for, and it crossfades in over the last second. Until it's here the
+                // song plays on (loops); the title theme loops until another pick.
+                const u32 plays = slot.track->plays;
+                if (m == 0 && plays != 0 && slot.played + 1 >= plays) {
+                    const size_t left = (samples.size() - slot.position) / 2;
+                    if (!slot.asked_next && left < size_t{Rate} * 25) {
+                        slot.asked_next = true;
+                        want_next_music.store(true, std::memory_order_relaxed);
+                    }
+                    next_song = queued != nullptr && left <= size_t{Rate};
                 }
+                if (slot.position + 1 >= samples.size()) {
+                    slot.position = 0;
+                    ++slot.played;
+                }
+            }
+            if (next_song) {
+                StartMusic(std::move(queued));
+                queued = nullptr;
             }
             if (hum_level > 0.0f || hum_target > 0.0f) {
                 const auto [hl, hr] = Hum();
@@ -346,6 +373,7 @@ std::atomic<float> music_wanted_now{0.0f};
 std::mutex next_music_mutex;
 std::shared_ptr<const GameMusic::Track> next_music;
 bool next_music_ready = false;
+bool next_music_queued = false; ///< next_music follows the playing song (else it starts now)
 
 MenuSounds* instance = nullptr;
 
@@ -365,7 +393,13 @@ void SDLCALL Feed(void* user, SDL_AudioStream* stream, int additional, int /*tot
     if (std::unique_lock lock{next_music_mutex, std::try_to_lock};
         lock.owns_lock() && next_music_ready) {
         next_music_ready = false;
-        synth.StartMusic(std::move(next_music));
+        if (next_music_queued) {
+            synth.queued = std::move(next_music);
+        } else {
+            synth.queued = nullptr;
+            synth.StartMusic(std::move(next_music));
+        }
+        next_music = nullptr;
     }
     if (const uint32_t c = click_requests.load(); c != p->clicks_seen) {
         p->clicks_seen = c;
@@ -446,15 +480,29 @@ void Dump(const QString& folder) {
     if (const char* const test = std::getenv("CHEEZYEMU_MUSIC_TEST"); test != nullptr) {
         const QString spec = QString::fromLocal8Bit(test);
         const qsizetype bar = spec.lastIndexOf(QLatin1Char('|'));
+        // CHEEZYEMU_MUSIC_TEST_PICKS=<n>: n random songs instead, as music_1.wav and on.
+        const char* const picks_text = std::getenv("CHEEZYEMU_MUSIC_TEST_PICKS");
+        const int picks = picks_text != nullptr ? std::atoi(picks_text) : 0;
         if (bar > 0) {
-            const auto track = GameMusic::Load(spec.left(bar).toStdString(),
-                                               spec.mid(bar + 1).toULongLong(nullptr, 16));
-            if (track) {
+            for (int pick = 0; pick < std::max(picks, 1); ++pick) {
+                const auto started = std::chrono::steady_clock::now();
+                const auto track = GameMusic::Load(
+                    spec.left(bar).toStdString(), spec.mid(bar + 1).toULongLong(nullptr, 16),
+                    picks > 0 ? GameMusic::Choice::Random : GameMusic::Choice::Title);
+                const auto took = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started);
+                if (!track) {
+                    continue;
+                }
+                LOG_INFO(Frontend, "Music test: {} in {} ms, {} plays", track->name, took.count(),
+                         track->plays);
                 std::vector<float> stereo(track->samples.size());
                 for (size_t i = 0; i < stereo.size(); ++i) {
                     stereo[i] = track->samples[i] / 32768.0f;
                 }
-                WriteWav(folder + QStringLiteral("/music.wav"), stereo);
+                WriteWav(folder + (picks > 0 ? QStringLiteral("/music_%1.wav").arg(pick + 1)
+                                             : QStringLiteral("/music.wav")),
+                         stereo);
             }
         }
     }
@@ -469,6 +517,7 @@ MenuSounds::MenuSounds(std::function<bool()> ambient_wanted_,
       music_wanted{std::move(music_wanted_)} {
     music_timer.setSingleShot(true);
     connect(&music_timer, &QTimer::timeout, this, &MenuSounds::LoadSelectedMusic);
+    music_worker = std::jthread([this](std::stop_token stop) { MusicWorker(stop); });
     if (const char* const dump = std::getenv("CHEEZYEMU_SOUND_DUMP");
         dump != nullptr && dump[0] != '\0') {
         Dump(QString::fromLocal8Bit(dump));
@@ -539,6 +588,12 @@ void MenuSounds::Tick() {
     const bool music = UISettings::values.menu_game_music.GetValue() && music_available &&
                        music_wanted && music_wanted() && (active || !home);
     music_wanted_now.store(music ? 1.0f : 0.0f);
+    // The playing song is near its end: load the next one.
+    // (Not while another game's music is on its way: it replaces this song anyway.)
+    if (want_next_music.exchange(false) && playing_program_id != 0 &&
+        sounding_program_id == playing_program_id) {
+        RequestMusic(true);
+    }
     if (music) {
         Wake();
     }
@@ -574,25 +629,58 @@ void MenuSounds::LoadSelectedMusic() {
         return;
     }
     playing_program_id = selected_program_id;
-    // Read and decoded on its own thread (the first time a game is picked: its files are read;
-    // after that the cached track is). A newer pick replaces the result of an older one.
-    music_loader = std::jthread([this, path = selected_path,
-                                 program_id = selected_program_id](std::stop_token stop) {
-        auto track = GameMusic::Load(path, program_id);
+    playing_path = selected_path;
+    RequestMusic(false);
+}
+
+void MenuSounds::RequestMusic(bool queued) {
+    {
+        std::scoped_lock lock{request_mutex};
+        request = MusicRequest{playing_path, playing_program_id,
+                               UISettings::values.menu_music_random.GetValue(), queued,
+                               ++request_serial};
+    }
+    request_ready.notify_one();
+}
+
+void MenuSounds::MusicWorker(std::stop_token stop) {
+    // Read and decoded here (the first time a game is picked: its files are read; after that
+    // its kept songs are). Only the newest request is loaded, and only its result is used.
+    while (true) {
+        MusicRequest wanted;
+        {
+            std::unique_lock lock{request_mutex};
+            if (!request_ready.wait(lock, stop, [this] { return request.has_value(); })) {
+                return;
+            }
+            wanted = std::move(*request);
+            request.reset();
+        }
+        auto track = GameMusic::Load(wanted.path, wanted.program_id,
+                                     wanted.random ? GameMusic::Choice::Random
+                                                   : GameMusic::Choice::Title);
         if (stop.stop_requested()) {
             return;
         }
-        QMetaObject::invokeMethod(this, [this, loaded = std::move(track)]() mutable {
-            if (!loaded || loaded->program_id != playing_program_id) {
-                return;
-            }
-            music_available = !loaded->samples.empty();
-            std::scoped_lock lock{next_music_mutex};
-            next_music = std::move(loaded);
-            next_music_ready = true;
-            Wake();
-        });
-    });
+        QMetaObject::invokeMethod(
+            this, [this, serial = wanted.serial, follows = wanted.queued,
+                   loaded = std::move(track)]() mutable {
+                if (!loaded || serial != request_serial ||
+                    loaded->program_id != playing_program_id) {
+                    return; // a newer pick
+                }
+                if (follows && loaded->samples.empty()) {
+                    return;
+                }
+                music_available = !loaded->samples.empty();
+                sounding_program_id = loaded->program_id;
+                std::scoped_lock lock{next_music_mutex};
+                next_music = std::move(loaded);
+                next_music_ready = true;
+                next_music_queued = follows;
+                Wake();
+            });
+    }
 }
 
 void MenuSounds::Wake() {

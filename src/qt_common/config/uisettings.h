@@ -166,6 +166,8 @@ struct Values {
     /// The picked game's own title music (from the player's copy) on the home screen and
     /// while it loads.
     Setting<bool> menu_game_music{linkage, true, "menu_game_music", Category::Ui};
+    /// That music: random songs from the game's soundtrack (true), or its title theme.
+    Setting<bool> menu_music_random{linkage, true, "menu_music_random", Category::Ui};
     Setting<u32, true> menu_sound_volume{linkage, 60, 0, 100, "menu_sound_volume", Category::Ui};
 
     // logging

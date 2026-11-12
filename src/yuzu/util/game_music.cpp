@@ -6,10 +6,17 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <fstream>
 #include <functional>
+#include <mutex>
+#include <optional>
+#include <random>
+#include <set>
+#include <unordered_map>
 
 #include <opus.h>
 
@@ -29,6 +36,16 @@ constexpr u32 RATE = 48000;
 constexpr u32 MAX_SECONDS = 180;
 constexpr u32 CACHE_MAGIC = 0x554D5A43; // "CZMU"
 constexpr u32 CACHE_VERSION = 2; // 2: the quiet opening trimmed
+constexpr u32 SONGS_KEPT = 16;   // .bwav copies kept per game (Random)
+constexpr u64 SONG_MIN_BYTES = 2'500'000;
+constexpr u32 SONG_MIN_SECONDS = 30;
+constexpr std::string_view SONG_LIST_HEADER = "CheezyEmu songs 3"; // 2: sections left out
+
+std::string Lower(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
 
 template <typename T>
 bool Read(const std::vector<u8>& data, size_t offset, T& value) {
@@ -194,9 +211,7 @@ FileSys::VirtualFile FindTrack(const FileSys::VirtualDir& root) {
     std::array<FileSys::VirtualFile, 3> best{};
     std::function<void(const FileSys::VirtualDir&)> walk = [&](const FileSys::VirtualDir& dir) {
         for (const auto& file : dir->GetFiles()) {
-            std::string name = file->GetName();
-            std::transform(name.begin(), name.end(), name.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            const std::string name = Lower(file->GetName());
             if (!name.ends_with(".bwav")) {
                 continue;
             }
@@ -211,10 +226,7 @@ FileSys::VirtualFile FindTrack(const FileSys::VirtualDir& root) {
             }
         }
         for (const auto& sub : dir->GetSubdirectories()) {
-            std::string name = sub->GetName();
-            std::transform(name.begin(), name.end(), name.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (name != "voice") {
+            if (Lower(sub->GetName()) != "voice") {
                 walk(sub);
             }
         }
@@ -226,6 +238,333 @@ FileSys::VirtualFile FindTrack(const FileSys::VirtualDir& root) {
         }
     }
     return nullptr;
+}
+
+/// The player's copy, opened: its loader (kept, as the files may read through it) and RomFS.
+struct OpenGame {
+    std::unique_ptr<Loader::AppLoader> loader;
+    FileSys::VirtualDir root;
+};
+
+OpenGame Open(const std::string& game_path) {
+    OpenGame game;
+    game.loader = Loader::GetLoader(
+        *QtCommon::system, QtCommon::vfs->OpenFile(game_path, FileSys::OpenMode::Read));
+    FileSys::VirtualFile image;
+    if (game.loader) {
+        game.loader->ReadRomFS(image);
+    }
+    game.root = image ? FileSys::ExtractRomFS(image) : nullptr;
+    return game;
+}
+
+/// Whether a file is one of a game's whole songs: a .bwav with "bgm" in its name, at least
+/// 2.5 MB, and none of its name's parts ("BGM_Kokiri_Night_Intro": bgm, kokiri, night, intro)
+/// mark an intro, outro, cutscene or one layer of a layered piece.
+bool IsSong(const std::string& file_name, u64 size) {
+    const std::string name = Lower(file_name);
+    if (size < SONG_MIN_BYTES || !name.ends_with(".bwav") || name.find("bgm") == std::string::npos) {
+        return false;
+    }
+    static const std::set<std::string, std::less<>> not_songs{
+        "dm",    "demo", "intro",      "outro", "noise",   "pad",   "base",  "close",
+        "far",   "jingle", "oneshot", "transition", "gong", "roar", "voice", "stinger",
+        "other", "fanfare", "se",     "sfx",   "ambient", "amb",   "env",   "nointro",
+    };
+    const std::string_view stem = std::string_view{name}.substr(0, name.size() - 5);
+    size_t start = 0;
+    while (start <= stem.size()) {
+        size_t end = stem.find_first_of("_-. ", start);
+        if (end == std::string_view::npos) {
+            end = stem.size();
+        }
+        std::string_view part = stem.substr(start, end - start);
+        while (!part.empty() && std::isdigit(static_cast<unsigned char>(part.back()))) {
+            part.remove_suffix(1);
+        }
+        if (not_songs.contains(part)) {
+            return false;
+        }
+        start = end + 1;
+    }
+    return true;
+}
+
+/// "bgm_market_daytime_02.bwav" -> "bgm_market_daytime": the name of a numbered section of a
+/// piece (empty when the name doesn't end in "_<number>").
+std::string SectionOf(const std::string& file_name) {
+    const std::string name = Lower(file_name);
+    const size_t dot = name.rfind('.');
+    const size_t bar = name.rfind('_', dot);
+    if (dot == std::string::npos || bar == std::string::npos || bar + 1 == dot ||
+        !std::all_of(name.begin() + static_cast<std::ptrdiff_t>(bar + 1),
+                     name.begin() + static_cast<std::ptrdiff_t>(dot),
+                     [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return {};
+    }
+    return name.substr(0, bar);
+}
+
+struct Song {
+    std::string path; ///< In the RomFS, '/' between folders
+    u64 size{};
+    [[nodiscard]] std::string FileName() const {
+        return path.substr(path.find_last_of('/') + 1);
+    }
+};
+
+/// The game's songs: every IsSong file that isn't one numbered section of a piece (Morning_01,
+/// Morning_02 ...), one per size (the layers of a layered piece, and the same song kept under
+/// several names, are the same size), in name order.
+std::vector<Song> FindSongs(const FileSys::VirtualDir& root,
+                            std::unordered_map<std::string, FileSys::VirtualFile>& files) {
+    std::vector<Song> found;
+    std::function<void(const FileSys::VirtualDir&, const std::string&)> walk =
+        [&](const FileSys::VirtualDir& dir, const std::string& prefix) {
+            const auto dir_files = dir->GetFiles();
+            std::unordered_map<std::string, int> sections;
+            for (const auto& file : dir_files) {
+                if (std::string section = SectionOf(file->GetName()); !section.empty()) {
+                    ++sections[section];
+                }
+            }
+            for (const auto& file : dir_files) {
+                const auto section = sections.find(SectionOf(file->GetName()));
+                if (section != sections.end() && section->second > 1) {
+                    continue;
+                }
+                if (IsSong(file->GetName(), file->GetSize())) {
+                    Song song{prefix + file->GetName(), file->GetSize()};
+                    files[song.path] = file;
+                    found.push_back(std::move(song));
+                }
+            }
+            for (const auto& sub : dir->GetSubdirectories()) {
+                if (Lower(sub->GetName()) != "voice") {
+                    walk(sub, prefix + sub->GetName() + "/");
+                }
+            }
+        };
+    walk(root, "");
+    std::sort(found.begin(), found.end(),
+              [](const Song& a, const Song& b) { return a.path < b.path; });
+    std::set<u64> sizes;
+    std::erase_if(found, [&sizes](const Song& song) { return !sizes.insert(song.size).second; });
+    return found;
+}
+
+std::filesystem::path SongFolder(u64 program_id) {
+    return Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir) / "menu_music" /
+           fmt::format("{:016X}", program_id);
+}
+
+/// songs.txt: the header, then "<size> <path>" per song. Nothing when it isn't there yet.
+std::optional<std::vector<Song>> ReadSongList(u64 program_id) {
+    std::ifstream file{SongFolder(program_id) / "songs.txt"};
+    std::string line;
+    if (!std::getline(file, line) || line != SONG_LIST_HEADER) {
+        return std::nullopt;
+    }
+    std::vector<Song> listed;
+    while (std::getline(file, line)) {
+        const size_t space = line.find(' ');
+        if (space == std::string::npos || space + 1 >= line.size()) {
+            continue;
+        }
+        listed.push_back({line.substr(space + 1), std::strtoull(line.c_str(), nullptr, 10)});
+    }
+    return listed;
+}
+
+void WriteSongList(u64 program_id, const std::vector<Song>& listed) {
+    std::error_code ec;
+    std::filesystem::create_directories(SongFolder(program_id), ec);
+    std::ofstream file{SongFolder(program_id) / "songs.txt", std::ios::trunc};
+    file << SONG_LIST_HEADER << '\n';
+    for (const Song& song : listed) {
+        file << song.size << ' ' << song.path << '\n';
+    }
+}
+
+std::filesystem::path KeptSong(u64 program_id, const Song& song) {
+    return SongFolder(program_id) / song.FileName();
+}
+
+/// Keeps a song's .bwav, and drops the least recently played beyond SONGS_KEPT.
+void KeepSong(u64 program_id, const Song& song, const std::vector<u8>& bytes) {
+    {
+        std::ofstream file{KeptSong(program_id, song), std::ios::binary | std::ios::trunc};
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+    }
+    std::error_code ec;
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> kept;
+    for (const auto& entry : std::filesystem::directory_iterator(SongFolder(program_id), ec)) {
+        if (entry.path().extension() == ".bwav") {
+            kept.emplace_back(entry.last_write_time(ec), entry.path());
+        }
+    }
+    if (kept.size() <= SONGS_KEPT) {
+        return;
+    }
+    std::sort(kept.begin(), kept.end());
+    for (size_t i = 0; i + SONGS_KEPT < kept.size(); ++i) {
+        std::filesystem::remove(kept[i].second, ec);
+    }
+}
+
+std::optional<std::vector<u8>> ReadKeptSong(u64 program_id, const Song& song) {
+    const auto path = KeptSong(program_id, song);
+    std::ifstream file{path, std::ios::binary};
+    if (!file) {
+        return std::nullopt;
+    }
+    std::vector<u8> bytes(song.size);
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size())) ||
+        file.peek() != std::ifstream::traits_type::eof()) {
+        return std::nullopt; // not the same file (an update changed it, or cut short)
+    }
+    std::error_code ec;
+    std::filesystem::last_write_time(path, std::filesystem::file_time_type::clock::now(), ec);
+    return bytes;
+}
+
+/// The picked game's songs, kept between picks while it stays picked.
+struct SongPool {
+    u64 program_id{};
+    std::vector<Song> songs;
+    bool listed = false;
+    OpenGame game; ///< Opened this session (else picks come from the kept songs first)
+    std::unordered_map<std::string, FileSys::VirtualFile> files;
+    std::deque<std::string> recent; ///< The last songs played, newest last
+    std::mt19937 rng{std::random_device{}()};
+};
+
+std::mutex song_pool_mutex;
+SongPool song_pool;
+
+std::shared_ptr<const Track> LoadTitle(const std::string& game_path, u64 program_id) {
+    if (auto cached = ReadCache(program_id)) {
+        return cached;
+    }
+    auto track = std::make_shared<Track>();
+    track->program_id = program_id;
+    try {
+        const OpenGame game = Open(game_path);
+        if (const auto file = game.root ? FindTrack(game.root) : nullptr) {
+            track->name = file->GetName();
+            track->samples = DecodeBwav(file->ReadAllBytes(), MAX_SECONDS);
+            LOG_INFO(Frontend, "Menu music for {:016X}: {} ({:.0f} s)", program_id,
+                     file->GetName(), track->samples.size() / 2.0 / RATE);
+        } else {
+            LOG_INFO(Frontend, "Menu music for {:016X}: no title track found", program_id);
+        }
+    } catch (const std::exception& error) {
+        LOG_WARNING(Frontend, "Menu music for {:016X}: {}", program_id, error.what());
+    }
+    WriteCache(*track); // also "none", so the game isn't read again
+    return track;
+}
+
+std::shared_ptr<const Track> LoadRandom(const std::string& game_path, u64 program_id) {
+    std::scoped_lock lock{song_pool_mutex};
+    SongPool& pool_now = song_pool;
+    if (pool_now.program_id != program_id) {
+        pool_now = SongPool{};
+        pool_now.program_id = program_id;
+        if (auto listed = ReadSongList(program_id)) {
+            pool_now.songs = std::move(*listed);
+            pool_now.listed = true;
+        }
+    }
+    const auto open_game = [&] {
+        if (!pool_now.game.root) {
+            pool_now.game = Open(game_path);
+            pool_now.files.clear();
+            if (pool_now.game.root) {
+                std::vector<Song> found = FindSongs(pool_now.game.root, pool_now.files);
+                if (!pool_now.listed || found.size() != pool_now.songs.size()) {
+                    pool_now.songs = std::move(found);
+                    WriteSongList(program_id, pool_now.songs);
+                    std::string names;
+                    for (const Song& song : pool_now.songs) {
+                        names += (names.empty() ? "" : ", ") + song.FileName();
+                    }
+                    LOG_INFO(Frontend, "Menu music for {:016X}: {} songs: {}", program_id,
+                             pool_now.songs.size(), names);
+                }
+                pool_now.listed = true;
+            }
+        }
+        return pool_now.game.root != nullptr;
+    };
+    try {
+        if (!pool_now.listed && !open_game()) {
+            return LoadTitle(game_path, program_id);
+        }
+        for (int attempt = 0; attempt < 6 && !pool_now.songs.empty(); ++attempt) {
+            // Not one of the last few (a third of the songs, at most 8).
+            const size_t avoid = std::min<size_t>(8, pool_now.songs.size() / 3);
+            while (pool_now.recent.size() > avoid) {
+                pool_now.recent.pop_front();
+            }
+            std::vector<const Song*> fresh;
+            std::vector<const Song*> fresh_kept;
+            for (const Song& song : pool_now.songs) {
+                if (std::find(pool_now.recent.begin(), pool_now.recent.end(), song.path) !=
+                    pool_now.recent.end()) {
+                    continue;
+                }
+                fresh.push_back(&song);
+                std::error_code ec;
+                if (std::filesystem::exists(KeptSong(program_id, song), ec)) {
+                    fresh_kept.push_back(&song);
+                }
+            }
+            if (fresh.empty()) {
+                pool_now.recent.clear();
+                continue;
+            }
+            // Until the game is opened this session, a kept song starts right away.
+            const auto& from = (!pool_now.game.root && !fresh_kept.empty()) ? fresh_kept : fresh;
+            const Song song = *from[std::uniform_int_distribution<size_t>(0, from.size() - 1)(
+                pool_now.rng)];
+            std::optional<std::vector<u8>> bytes = ReadKeptSong(program_id, song);
+            if (!bytes) {
+                if (!open_game()) {
+                    break;
+                }
+                const auto file = pool_now.files.find(song.path);
+                if (file == pool_now.files.end()) {
+                    std::erase_if(pool_now.songs,
+                                  [&song](const Song& s) { return s.path == song.path; });
+                    continue;
+                }
+                bytes = file->second->ReadAllBytes();
+                KeepSong(program_id, song, *bytes);
+            }
+            auto track = std::make_shared<Track>();
+            track->program_id = program_id;
+            track->name = song.FileName();
+            track->samples = DecodeBwav(*bytes, MAX_SECONDS);
+            const double seconds = track->samples.size() / 2.0 / RATE;
+            if (seconds < SONG_MIN_SECONDS) {
+                // Too short to be a song (or it didn't decode): not picked again.
+                std::erase_if(pool_now.songs,
+                              [&song](const Song& s) { return s.path == song.path; });
+                continue;
+            }
+            // A short loop plays twice before the next song.
+            track->plays = seconds < 75.0 ? 2 : 1;
+            pool_now.recent.push_back(song.path);
+            LOG_INFO(Frontend, "Menu music for {:016X}: {} ({:.0f} s, of {} songs)", program_id,
+                     track->name, seconds, pool_now.songs.size());
+            return track;
+        }
+    } catch (const std::exception& error) {
+        LOG_WARNING(Frontend, "Menu music for {:016X}: {}", program_id, error.what());
+    }
+    return LoadTitle(game_path, program_id); // no songs found: the title theme
 }
 
 } // Anonymous namespace
@@ -332,32 +671,9 @@ std::vector<s16> DecodeBwav(const std::vector<u8>& bwav, u32 max_seconds) {
     return result;
 }
 
-std::shared_ptr<const Track> Load(const std::string& game_path, u64 program_id) {
-    if (auto cached = ReadCache(program_id)) {
-        return cached;
-    }
-    auto track = std::make_shared<Track>();
-    track->program_id = program_id;
-    try {
-        const auto loader = Loader::GetLoader(
-            *QtCommon::system, QtCommon::vfs->OpenFile(game_path, FileSys::OpenMode::Read));
-        FileSys::VirtualFile image;
-        if (loader) {
-            loader->ReadRomFS(image);
-        }
-        const auto root = image ? FileSys::ExtractRomFS(image) : nullptr;
-        if (const auto file = root ? FindTrack(root) : nullptr) {
-            track->samples = DecodeBwav(file->ReadAllBytes(), MAX_SECONDS);
-            LOG_INFO(Frontend, "Menu music for {:016X}: {} ({:.0f} s)", program_id,
-                     file->GetName(), track->samples.size() / 2.0 / RATE);
-        } else {
-            LOG_INFO(Frontend, "Menu music for {:016X}: no title track found", program_id);
-        }
-    } catch (const std::exception& error) {
-        LOG_WARNING(Frontend, "Menu music for {:016X}: {}", program_id, error.what());
-    }
-    WriteCache(*track); // also "none", so the game isn't read again
-    return track;
+std::shared_ptr<const Track> Load(const std::string& game_path, u64 program_id, Choice choice) {
+    return choice == Choice::Random ? LoadRandom(game_path, program_id)
+                                    : LoadTitle(game_path, program_id);
 }
 
 } // namespace GameMusic

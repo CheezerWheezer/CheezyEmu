@@ -3,8 +3,11 @@
 
 #pragma once
 
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -38,8 +41,10 @@ public:
     static void Click(int volume = -1);
     /// The chime for starting a game.
     static void Chime();
-    /// The game now picked in the game list: its own title music fades in a moment later (read
-    /// from its files on another thread the first time), crossfading from the last game's.
+    /// The game now picked in the game list: its music (a random song from its soundtrack, or
+    /// its title theme; read from its files on another thread) fades in a moment later,
+    /// crossfading from the last game's. While it stays picked, each song that ends crossfades
+    /// into another random one.
     static void SelectGame(const std::string& path, u64 program_id);
 
 private:
@@ -47,6 +52,9 @@ private:
     void Wake();
 
     void LoadSelectedMusic();
+    /// Loads the playing game's music on music_worker: `queued` for the song after this one.
+    void RequestMusic(bool queued);
+    void MusicWorker(std::stop_token stop);
 
     std::function<bool()> ambient_wanted;
     std::function<bool()> music_wanted;
@@ -54,10 +62,25 @@ private:
     QTimer music_timer; ///< A short wait after a pick, so scrolling past games loads nothing
     std::string selected_path;
     u64 selected_program_id = 0;
+    std::string playing_path;
     u64 playing_program_id = 0;
+    u64 sounding_program_id = 0;  ///< The game whose music the sound now has
     bool music_available = false; ///< The playing game has a track
-    std::jthread music_loader;
     SDL_AudioStream* stream = nullptr;
     bool paused = false;
     int silent_ticks = 0;
+
+    /// What music_worker loads next (only the newest request; older ones are dropped).
+    struct MusicRequest {
+        std::string path;
+        u64 program_id{};
+        bool random{};
+        bool queued{};
+        u64 serial{};
+    };
+    std::mutex request_mutex;
+    std::condition_variable_any request_ready;
+    std::optional<MusicRequest> request;
+    u64 request_serial = 0; ///< UI thread: a result from an older request is dropped
+    std::jthread music_worker; ///< Last, so it stops before the rest goes
 };

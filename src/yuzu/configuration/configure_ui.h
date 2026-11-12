@@ -16,6 +16,7 @@ class ConfigureUi;
 }
 
 class QCheckBox;
+class QComboBox;
 class QSlider;
 
 class ConfigureUi : public QWidget {
@@ -58,6 +59,7 @@ private:
     QCheckBox* menu_sounds_box = nullptr;
     QCheckBox* menu_ambient_box = nullptr;
     QCheckBox* menu_game_music_box = nullptr;
+    QComboBox* menu_music_choice = nullptr;
     QSlider* menu_volume_slider = nullptr;
 
     Settings::AspectRatio ratio;
