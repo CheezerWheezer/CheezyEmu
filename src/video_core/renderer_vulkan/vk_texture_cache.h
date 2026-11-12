@@ -316,6 +316,8 @@ public:
         u64 tick;
         vk::Image image;
         std::vector<vk::ImageView> views;
+        /// Per level and layer (level * layers + layer), for a texture done in batches of layers.
+        std::vector<vk::ImageView> layer_views;
         u32 width;
         u32 height;
         u32 levels;
