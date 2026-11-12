@@ -22,6 +22,7 @@
 #include <QLinearGradient>
 #include <QMenu>
 #include <QObject>
+#include <QGuiApplication>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPainterPath>
@@ -592,6 +593,18 @@ private:
         Glass& state = glass[widget];
         state.composed = {};
         if (source == nullptr || source == widget || !source->isVisible()) {
+            state.behind = {};
+            return;
+        }
+        // A window of its own (Configure, Properties) is placed by the compositor on Wayland, which
+        // doesn't tell the app where: the photo of the main window landed in the wrong place (a
+        // Linux player saw blurred game covers in the middle of Configure). There it gets the
+        // frost without the photo; menus and dropdowns, placed by Qt from their parent, keep it.
+        // Both windows "at" the screen's corner means the same thing anywhere.
+        if (widget->isWindow() && !IsGlassPopup(widget) &&
+            (QGuiApplication::platformName().startsWith(QStringLiteral("wayland")) ||
+             (widget->mapToGlobal(QPoint{}) == QPoint{} &&
+              source->mapToGlobal(QPoint{}) == QPoint{}))) {
             state.behind = {};
             return;
         }
