@@ -3502,6 +3502,10 @@ public:
              "CalculateDecoderImagePoolBuffer"},
             {901, &INx2GraphicsSystemSession::Stub, "VideoInitialize (guessed)"},
             {902, &INx2GraphicsSystemSession::OpenVideoSession, "OpenVideoDecoderSession (guessed)"},
+            // After the intro video's decoder finalizes (vdecsvc 115): a Mac player's game stopped
+            // on 903 as an unimplemented command. Its pair 904 too. Success, as 901.
+            {903, &INx2GraphicsSystemSession::Stub, "CloseVideoDecoderSession (guessed)"},
+            {904, &INx2GraphicsSystemSession::Stub, "VideoFinalize (guessed)"},
             {905, &INx2GraphicsSystemSession::OpenVideoSession, "OpenVideoDecoderSessionWithFlag"},
             {906, &INx2GraphicsSystemSession::OpenVideoSession, "OpenVideoDecoderSessionWithVersion"},
             {1001, &INx2GraphicsSystemSession::Stub, "VideoInitialize2 (guessed)"},
