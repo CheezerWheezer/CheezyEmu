@@ -11,5 +11,12 @@ evaluation (`src/video_core/renderer_vulkan/vk_fsr3_upscaler.cpp`).
 - `shaders/fsr3upscaler/`: the Vulkan pass files from `sdk/src/backends/vk/shaders/fsr3upscaler/`
   (the eight upscaling passes; not the autogen-reactive or debug-view pass).
 
+- Frame generation (FSR 3.1.4's optical flow and frame interpolation, same tag and commit), for
+  Linux and macOS, where AMD ships no frame generation runtime:
+  `include/FidelityFX/gpu/opticalflow/` and `include/FidelityFX/gpu/frameinterpolation/` from
+  `sdk/include/FidelityFX/gpu/` (without the HLSL callbacks and the debug view), and
+  `shaders/opticalflow/`, `shaders/frameinterpolation/`: the Vulkan pass files from
+  `sdk/src/backends/vk/shaders/` (without the debug-view pass).
+
 The files are unmodified. They are compiled to SPIR-V by `src/video_core/host_shaders`; no
 prebuilt binary or AMD tool from the SDK is used.
