@@ -33,6 +33,7 @@
 #include <QWidget>
 
 #include "qt_common/config/uisettings.h"
+#include "yuzu/util/cheezy_theme.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -246,9 +247,11 @@ QImage Droplet(const QImage& backdrop, QRectF where, qreal radius, Look look, qr
     const bool honey = look == Look::Honey || look == Look::HoneyHover || look == Look::HoneyPressed;
     const bool hover = look == Look::Hover || look == Look::HoneyHover;
     const bool pressed = look == Look::Pressed || look == Look::HoneyPressed;
-    const double body_r = honey ? 255 : 255;
-    const double body_g = honey ? 196 : 244;
-    const double body_b = honey ? 46 : 222;
+    const QColor body_color = honey ? CheezyTheme::Recolor(QColor(255, 196, 46))
+                                    : CheezyTheme::Recolor(QColor(255, 244, 222));
+    const double body_r = body_color.red();
+    const double body_g = body_color.green();
+    const double body_b = body_color.blue();
     const double body = honey ? (hover ? 0.70 : 0.62) : (hover ? 0.15 : 0.07);
     const double light = hover ? 1.25 : (pressed ? 0.7 : 1.0);
     const double zoom = pressed ? 0.85 : 0.92;
@@ -341,6 +344,7 @@ struct Glass {
     QPixmap composed;      ///< The finished glass for `composed_at` and the window's size
     QImage composed_image; ///< `composed`, to read from (the glass controls refract it)
     QPoint composed_at;
+    u32 composed_generation = 0; ///< CheezyTheme::Generation it was drawn for
 };
 
 class Filter final : public QObject {
@@ -454,15 +458,15 @@ private:
         } else {
             QPainter painter{widget};
             painter.setRenderHint(QPainter::Antialiasing);
-            painter.setPen(QPen(QColor(0xFF, 0xE2, 0x96, 110), 1.0));
-            painter.setBrush(QColor(0xFF, 0xD6, 0x78, hover ? 80 : 40));
+            painter.setPen(QPen(CheezyTheme::Recolor(QColor(0xFF, 0xE2, 0x96, 110)), 1.0));
+            painter.setBrush(CheezyTheme::Recolor(QColor(0xFF, 0xD6, 0x78, hover ? 80 : 40)));
             const QRectF shape = QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5);
             const qreal radius = std::min(shape.width(), shape.height()) / 2;
             painter.drawRoundedRect(shape, radius, radius);
         }
         QPainter painter{widget};
         painter.setRenderHint(QPainter::Antialiasing);
-        QPen pen{button->isEnabled() ? QColor(0xFF, 0xF1, 0xC8) : QColor(0xFF, 0xF1, 0xC8, 80),
+        QPen pen{button->isEnabled() ? CheezyTheme::Recolor(QColor(0xFF, 0xF1, 0xC8)) : CheezyTheme::Recolor(QColor(0xFF, 0xF1, 0xC8, 80)),
                  2.0};
         pen.setCapStyle(Qt::RoundCap);
         pen.setJoinStyle(Qt::RoundJoin);
@@ -559,7 +563,8 @@ private:
                                 .arg(in_window.width())
                                 .arg(in_window.height())
                                 .arg(radius)
-                                .arg(state.composed.cacheKey());
+                                .arg(state.composed.cacheKey() ^
+                                     (qint64{CheezyTheme::Generation()} << 48));
         auto cached = droplets.find(key);
         if (cached == droplets.end()) {
             if (droplets.size() > 300) {
@@ -568,7 +573,8 @@ private:
             const QRectF device{in_window.x() * dpr, in_window.y() * dpr, in_window.width() * dpr,
                                 in_window.height() * dpr};
             cached = droplets.insert(
-                key, Droplet(state.composed_image, device, radius * dpr, look, dpr));
+                key, Droplet(state.composed_image, device, CheezyTheme::Radius(radius) * dpr,
+                             look, dpr));
         }
         QPainter painter{widget};
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
@@ -602,6 +608,7 @@ private:
         const qreal dpr = widget->devicePixelRatioF();
         const QPoint at = widget->mapToGlobal(QPoint{});
         if (state.composed.isNull() || state.composed_at != at ||
+            state.composed_generation != CheezyTheme::Generation() ||
             state.composed.size() != widget->size() * dpr) {
             Compose(widget, state, at, dpr);
         }
@@ -621,13 +628,13 @@ private:
         p.setRenderHint(QPainter::Antialiasing);
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         // Popups are rounded like their border in the theme; windows keep the system's frame.
-        const qreal radius = popup ? 14.0 : 0.0;
+        const qreal radius = popup ? CheezyTheme::Radius(14.0) : 0.0;
         QPainterPath shape;
         shape.addRoundedRect(area, radius, radius);
         p.setClipPath(shape);
 
         // What is behind, blurred (the warm base when there is nothing to photograph).
-        p.fillRect(area, QColor(0x3A, 0x28, 0x0C));
+        p.fillRect(area, CheezyTheme::Recolor(QColor(0x3A, 0x28, 0x0C)));
         if (!state.behind.isNull()) {
             QSizeF covered;
             const QImage part = BehindPart(state.behind, state.step,
@@ -638,22 +645,22 @@ private:
         // Honey: colours behind are pulled toward gold (multiply), then a warm amber tint,
         // deeper toward the bottom so text stays easy to read.
         p.setCompositionMode(QPainter::CompositionMode_Multiply);
-        p.fillRect(area, QColor(0xFF, 0xDC, 0x96));
+        p.fillRect(area, CheezyTheme::Recolor(QColor(0xFF, 0xDC, 0x96)));
         p.setCompositionMode(QPainter::CompositionMode_SourceOver);
         QLinearGradient tint{area.topLeft(), area.bottomLeft()};
-        tint.setColorAt(0, QColor(0x7A, 0x52, 0x08, 34));
-        tint.setColorAt(1, QColor(0x2A, 0x1A, 0x04, 100));
+        tint.setColorAt(0, CheezyTheme::Recolor(QColor(0x7A, 0x52, 0x08, 34)));
+        tint.setColorAt(1, CheezyTheme::Recolor(QColor(0x2A, 0x1A, 0x04, 100)));
         p.fillRect(area, tint);
         // Light through the glass: a warm glow from the top left, a sheen across the top.
         QRadialGradient glow{QPointF(area.width() * 0.18, -area.height() * 0.1),
                              std::max(area.width(), area.height()) * 0.7};
-        glow.setColorAt(0, QColor(0xFF, 0xD8, 0x70, 60));
-        glow.setColorAt(1, QColor(0xFF, 0xE2, 0x9A, 0));
+        glow.setColorAt(0, CheezyTheme::Recolor(QColor(0xFF, 0xD8, 0x70, 60)));
+        glow.setColorAt(1, CheezyTheme::Recolor(QColor(0xFF, 0xE2, 0x9A, 0)));
         p.fillRect(area, glow);
         QLinearGradient sheen{area.topLeft(), area.bottomLeft()};
-        sheen.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, 34));
-        sheen.setColorAt(popup ? 0.5 : 0.12, QColor(0xFF, 0xEA, 0xB0, 12));
-        sheen.setColorAt(1, QColor(0xFF, 0xEA, 0xB0, 0));
+        sheen.setColorAt(0, CheezyTheme::Recolor(QColor(0xFF, 0xF4, 0xD6, 34)));
+        sheen.setColorAt(popup ? 0.5 : 0.12, CheezyTheme::Recolor(QColor(0xFF, 0xEA, 0xB0, 12)));
+        sheen.setColorAt(1, CheezyTheme::Recolor(QColor(0xFF, 0xEA, 0xB0, 0)));
         p.fillRect(area, sheen);
         // Frost.
         p.fillRect(area, QBrush(Frost()));
@@ -661,11 +668,11 @@ private:
         // that shines at the top-left and bottom-right and fades along the sides between.
         QConicalGradient light{area.center(), 135.0};
         const auto shine = [&light](int strongest) {
-            light.setColorAt(0.0, QColor(0xFF, 0xFB, 0xEC, strongest));
-            light.setColorAt(0.2, QColor(0xFF, 0xE6, 0xAA, strongest / 5));
-            light.setColorAt(0.5, QColor(0xFF, 0xF0, 0xC8, strongest * 3 / 5));
-            light.setColorAt(0.8, QColor(0xFF, 0xE6, 0xAA, strongest / 5));
-            light.setColorAt(1.0, QColor(0xFF, 0xFB, 0xEC, strongest));
+            light.setColorAt(0.0, CheezyTheme::Recolor(QColor(0xFF, 0xFB, 0xEC, strongest)));
+            light.setColorAt(0.2, CheezyTheme::Recolor(QColor(0xFF, 0xE6, 0xAA, strongest / 5)));
+            light.setColorAt(0.5, CheezyTheme::Recolor(QColor(0xFF, 0xF0, 0xC8, strongest * 3 / 5)));
+            light.setColorAt(0.8, CheezyTheme::Recolor(QColor(0xFF, 0xE6, 0xAA, strongest / 5)));
+            light.setColorAt(1.0, CheezyTheme::Recolor(QColor(0xFF, 0xFB, 0xEC, strongest)));
         };
         p.setBrush(Qt::NoBrush);
         shine(popup ? 40 : 34);
@@ -677,6 +684,7 @@ private:
         p.drawRoundedRect(area.adjusted(0.65, 0.65, -0.65, -0.65), radius, radius);
         p.end();
         state.composed = pixmap;
+        state.composed_generation = CheezyTheme::Generation();
         state.composed_image = pixmap.toImage();
         state.composed_at = at;
     }

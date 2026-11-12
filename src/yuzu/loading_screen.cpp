@@ -21,6 +21,7 @@
 #include <cmath>
 #include <functional>
 #include "common/container/unordered_map.h"
+#include "yuzu/util/cheezy_theme.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "core/loader/loader.h"
 #include "ui_loading_screen.h"
@@ -140,9 +141,9 @@ protected:
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(0, 0, 0, 70));
         painter.drawRoundedRect(track.translated(0, 4), radius, radius);
-        painter.setBrush(QColor(0x3A, 0x2E, 0x1E));
+        painter.setBrush(CheezyTheme::Recolor(QColor(0x3A, 0x2E, 0x1E)));
         painter.drawRoundedRect(track, radius, radius);
-        painter.setBrush(QColor(0x2A, 0x21, 0x15));
+        painter.setBrush(CheezyTheme::Recolor(QColor(0x2A, 0x21, 0x15)));
         painter.drawRoundedRect(track.adjusted(4, 4, -4, -4), radius - 4, radius - 4);
 
         const bool busy = maximum <= minimum;
@@ -174,9 +175,9 @@ protected:
         melt.arcTo(QRectF(fill.right() - 2 * r, fill.top(), 2 * r, 2 * r), 90, -180);
         melt.closeSubpath();
         QLinearGradient gradient{fill.topLeft(), fill.bottomLeft()};
-        gradient.setColorAt(0, QColor(0xFF, 0xE2, 0x86));
+        gradient.setColorAt(0, CheezyTheme::Recolor(QColor(0xFF, 0xE2, 0x86)));
         gradient.setColorAt(0.5, Cheese);
-        gradient.setColorAt(1, QColor(0xF0, 0xA8, 0x1C));
+        gradient.setColorAt(1, CheezyTheme::Recolor(QColor(0xF0, 0xA8, 0x1C)));
         painter.setBrush(gradient);
         painter.drawPath(melt);
 
@@ -191,8 +192,8 @@ protected:
             const qreal y = fill.center().y() + 2 + ((n % 2) ? -3 : 3) +
                             std::sin(phase * 2 + n) * 1.2;
             QRadialGradient hole{QPointF(x, y), w};
-            hole.setColorAt(0, QColor(0xC9, 0x84, 0x08, 200));
-            hole.setColorAt(1, QColor(0xE8, 0x9E, 0x10, 60));
+            hole.setColorAt(0, CheezyTheme::Recolor(QColor(0xC9, 0x84, 0x08, 200)));
+            hole.setColorAt(1, CheezyTheme::Recolor(QColor(0xE8, 0x9E, 0x10, 60)));
             painter.setBrush(hole);
             painter.drawEllipse(QPointF(x, y), w, w * 0.8);
         }
@@ -290,7 +291,7 @@ LoadingScreen::LoadingScreen(QWidget* parent)
 
     // Shown while shaders are precached: starts the game without waiting for the rest.
     skip_button = new QPushButton(tr("Skip"), this);
-    skip_button->setStyleSheet(QString::fromUtf8(SKIP_BUTTON_STYLE));
+    skip_button->setStyleSheet(CheezyTheme::Transform(QString::fromUtf8(SKIP_BUTTON_STYLE)));
     skip_button->setToolTip(tr("Start the game now. The shaders not built yet are built the next "
                                "time the game starts, or while you play when the game needs "
                                "them."));
@@ -469,7 +470,7 @@ void LoadingScreen::paintEvent(QPaintEvent* event) {
         p.setRenderHint(QPainter::SmoothPixmapTransform);
         p.drawPixmap(tile_rect.toRect(), game_icon);
         p.restore();
-        p.setPen(QPen(QColor(0xFF, 0xC8, 0x3D), 4));
+        p.setPen(QPen(CheezyTheme::Recolor(QColor(0xFF, 0xC8, 0x3D)), 4));
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(tile_rect, radius, radius);
     }

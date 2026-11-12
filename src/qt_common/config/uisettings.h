@@ -226,6 +226,11 @@ struct Values {
     Setting<bool> show_game_name{linkage, true, "show_game_name", Category::UiGameList};
     /// The status bar shows build 11's graphics buttons and the FSR sizes (its DETAILS toggle).
     Setting<bool> show_status_details{linkage, false, "show_status_details", Category::Ui};
+    /// Customize menu (yuzu/util/cheezy_theme.h): the CheezyEmu theme's accent and background
+    /// colours (#rrggbb; empty is the theme's own) and button shape (0 pill, 1 soft, 2 square).
+    Setting<std::string> theme_accent{linkage, std::string{}, "theme_accent", Category::Ui};
+    Setting<std::string> theme_background{linkage, std::string{}, "theme_background", Category::Ui};
+    Setting<u32> theme_shape{linkage, 0, "theme_shape", Category::Ui};
     /// The home view's tile size, in percent of the size that suits the window (its slider).
     Setting<u32, true> home_tile_scale{linkage, 100, 60, 160, "home_tile_scale", Category::UiGameList};
 

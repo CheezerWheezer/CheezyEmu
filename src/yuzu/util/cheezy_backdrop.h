@@ -15,6 +15,9 @@
 #include <QRadialGradient>
 #include <QRandomGenerator>
 
+#include "common/common_types.h"
+#include "yuzu/util/cheezy_theme.h"
+
 /// CheezyEmu's moving backdrop for the home view and the loading screen: a warm dark base, the
 /// picked game's picture blurred into an ambient glow, and cozy sunbeams with dust motes.
 namespace CheezyBackdrop {
@@ -128,6 +131,10 @@ public:
         const std::array<qint64, 6> key{area.width(), area.height(), ambient.cacheKey(),
                                         previous.cacheKey(), strength(ambient_strength),
                                         strength(previous_strength)};
+        if (still_generation != CheezyTheme::Generation()) {
+            still_generation = CheezyTheme::Generation();
+            still_key = {}; // the Customize menu's colours changed
+        }
         if (key != still_key || still.size() != area.size()) {
             still_key = key;
             still = QPixmap(area.size());
@@ -135,8 +142,8 @@ public:
             s.setRenderHint(QPainter::Antialiasing);
             const QRect local{QPoint(0, 0), area.size()};
             QLinearGradient base{local.topLeft(), local.bottomLeft()};
-            base.setColorAt(0, QColor(0x24, 0x1B, 0x12));
-            base.setColorAt(1, QColor(0x10, 0x0C, 0x08));
+            base.setColorAt(0, CheezyTheme::Recolor(QColor(0x24, 0x1B, 0x12)));
+            base.setColorAt(1, CheezyTheme::Recolor(QColor(0x10, 0x0C, 0x08)));
             s.fillRect(local, base);
             const auto draw_ambient = [&](const QPixmap& pixmap, qreal opacity) {
                 if (pixmap.isNull() || opacity <= 0.0) {
@@ -153,9 +160,9 @@ public:
             s.setPen(Qt::NoPen);
             s.setCompositionMode(QPainter::CompositionMode_Screen);
             QRadialGradient bloom{source, reach * 0.6};
-            bloom.setColorAt(0, QColor(0xFF, 0xE2, 0x9A, 64));
-            bloom.setColorAt(0.5, QColor(0xFF, 0xC8, 0x5A, 16));
-            bloom.setColorAt(1, QColor(0xFF, 0xC8, 0x5A, 0));
+            bloom.setColorAt(0, CheezyTheme::Recolor(QColor(0xFF, 0xE2, 0x9A, 64)));
+            bloom.setColorAt(0.5, CheezyTheme::Recolor(QColor(0xFF, 0xC8, 0x5A, 16)));
+            bloom.setColorAt(1, CheezyTheme::Recolor(QColor(0xFF, 0xC8, 0x5A, 0)));
             s.setBrush(bloom);
             s.drawRect(local);
             s.setCompositionMode(QPainter::CompositionMode_SourceOver);
@@ -305,6 +312,12 @@ private:
         for (int k = 0; k < bins; ++k) {
             table[k] = float(AngleLight(beams, angle_min + (angle_max - angle_min) * k / (bins - 1)));
         }
+        // Warm, a little whiter where it is brightest: between these two (Customize recolours).
+        const QColor dim = CheezyTheme::Recolor(QColor(255, 220, 150));
+        const QColor bright = CheezyTheme::Recolor(QColor(255, 250, 220));
+        const int dim_r = dim.red(), dim_g = dim.green(), dim_b = dim.blue();
+        const int span_r = bright.red() - dim_r, span_g = bright.green() - dim_g,
+                  span_b = bright.blue() - dim_b;
         static constexpr int dither[4][4] = {
             {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
         for (int y = 0; y < h; ++y) {
@@ -314,8 +327,9 @@ private:
                 const float light = table[pixel_bin[base + x]] * pixel_fall[base + x];
                 const int a = std::min(255, int(light * 120.0f + dither[y & 3][x & 3] / 16.0f));
                 // Warm, a little whiter where it is brightest (premultiplied).
-                row[x] = qRgba(a, a * (220 + int(light * 30)) / 255,
-                               a * (150 + int(light * 70)) / 255, a);
+                row[x] = qRgba(a * (dim_r + int(light * span_r)) / 255,
+                               a * (dim_g + int(light * span_g)) / 255,
+                               a * (dim_b + int(light * span_b)) / 255, a);
             }
         }
         // Scaled up smoothly once per update, not every frame.
@@ -347,15 +361,21 @@ private:
 
     /// A mote's soft glow, drawn once.
     static const QPixmap& MoteSprite() {
-        static const QPixmap sprite = [] {
+        static QPixmap sprite;
+        static u32 sprite_generation = ~0U;
+        if (sprite_generation == CheezyTheme::Generation()) {
+            return sprite;
+        }
+        sprite_generation = CheezyTheme::Generation();
+        sprite = [] {
             QPixmap pixmap(64, 64);
             pixmap.fill(Qt::transparent);
             QPainter painter{&pixmap};
             painter.setRenderHint(QPainter::Antialiasing);
             QRadialGradient glow{QPointF(32, 32), 32};
-            glow.setColorAt(0, QColor(0xFF, 0xF4, 0xD6, 255));
-            glow.setColorAt(0.35, QColor(0xFF, 0xE2, 0x9A, 128));
-            glow.setColorAt(1, QColor(0xFF, 0xD0, 0x70, 0));
+            glow.setColorAt(0, CheezyTheme::Recolor(QColor(0xFF, 0xF4, 0xD6, 255)));
+            glow.setColorAt(0.35, CheezyTheme::Recolor(QColor(0xFF, 0xE2, 0x9A, 128)));
+            glow.setColorAt(1, CheezyTheme::Recolor(QColor(0xFF, 0xD0, 0x70, 0)));
             painter.setPen(Qt::NoPen);
             painter.setBrush(glow);
             painter.drawEllipse(QPointF(32, 32), 32, 32);
@@ -369,6 +389,7 @@ private:
     mutable QPixmap rays_scaled;              ///< `rays` at the view's size
     mutable QPixmap still;                    ///< The layers that don't move (Paint)
     mutable std::array<qint64, 6> still_key{};
+    mutable u32 still_generation = ~0U; ///< CheezyTheme::Generation `still` was drawn for
     mutable std::vector<uint16_t> pixel_bin;  ///< Per pixel of `rays`: its angle bin
     mutable std::vector<float> pixel_fall;    ///< Per pixel of `rays`: the distance falloff
     mutable qreal angle_min = 0.0;

@@ -16,6 +16,7 @@
 #include <QScrollBar>
 #include <QVariantAnimation>
 #include "qt_common/config/uisettings.h"
+#include "yuzu/util/cheezy_theme.h"
 #include "qt_common/game_list/game_list_p.h"
 #include "yuzu/util/cheezy_backdrop.h"
 #include "qt_common/game_list/model.h"
@@ -222,17 +223,17 @@ void GameCarousel::paintEvent(QPaintEvent* event) {
         const int left = 40;
         const int top = 18;
         painter.setFont(big);
-        painter.setPen(QColor(0xFF, 0xF4, 0xDA));
+        painter.setPen(CheezyTheme::Recolor(QColor(0xFF, 0xF4, 0xDA)));
         const QFontMetrics big_metrics{big};
         painter.drawText(QPoint(left, top + big_metrics.ascent()), greeting);
         painter.setFont(small);
-        painter.setPen(QColor(0xE8, 0xD9, 0xB5, 190));
+        painter.setPen(CheezyTheme::Recolor(QColor(0xE8, 0xD9, 0xB5, 190)));
         painter.drawText(QPoint(left + 2, top + big_metrics.height() + QFontMetrics{small}.ascent()),
                          model() != nullptr && model()->rowCount() > 0
                              ? tr("Pick a game and let's play.")
                              : tr("Add a game folder to get started."));
         painter.setFont(big);
-        painter.setPen(QColor(0xFF, 0xC8, 0x3D));
+        painter.setPen(CheezyTheme::Recolor(QColor(0xFF, 0xC8, 0x3D)));
         const QString time = QTime::currentTime().toString(QStringLiteral("h:mm"));
         painter.drawText(QPoint(area.width() - left - big_metrics.horizontalAdvance(time),
                                 top + big_metrics.ascent()),

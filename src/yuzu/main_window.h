@@ -293,6 +293,10 @@ private:
 
     void ConnectWidgetEvents();
     void ConnectMenuEvents();
+    /// The Customize menu (theme, accent and background colours, button shape).
+    void SetupCustomizeMenu();
+    void FillCustomizeMenu(QMenu* menu);
+    void ApplyCustomization();
     void UpdateMenuState();
 
     void SetupPrepareForSleep();

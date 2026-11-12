@@ -47,6 +47,7 @@
 #include "set_play_time_dialog.h"
 #include "util/util.h"
 #include "yuzu/util/rounded_popups.h"
+#include "yuzu/util/cheezy_theme.h"
 #include "yuzu/util/menu_sounds.h"
 #include "yuzu/util/fit_window.h"
 #include "yuzu/game/game_list.h"
@@ -95,6 +96,8 @@
 #include <QVBoxLayout>
 #include <QClipboard>
 #include <QDesktopServices>
+#include <QColorDialog>
+#include <QPainter>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -1738,7 +1741,159 @@ void MainWindow::ConnectWidgetEvents() {
             &MultiplayerState::UpdateThemedIcons);
 }
 
+void MainWindow::SetupCustomizeMenu() {
+    // In the menu bar before Help; rebuilt each time it opens, so the ticks are current.
+    auto* const menu = new QMenu(tr("&Customize"), this);
+    menuBar()->insertMenu(ui->menu_Help->menuAction(), menu);
+    connect(menu, &QMenu::aboutToShow, this, [this, menu] { FillCustomizeMenu(menu); });
+}
+
+void MainWindow::ApplyCustomization() {
+    UpdateUITheme();
+    // The parts CheezyEmu draws itself redraw with the new colours (CheezyTheme::Generation).
+    for (QWidget* const widget : QApplication::topLevelWidgets()) {
+        widget->update();
+    }
+    if (game_list != nullptr) {
+        for (QWidget* const child : game_list->findChildren<QWidget*>()) {
+            child->update();
+        }
+    }
+}
+
+void MainWindow::FillCustomizeMenu(QMenu* menu) {
+    menu->clear();
+    const auto swatch = [](const QColor& color) {
+        QPixmap pixmap(16, 16);
+        pixmap.fill(Qt::transparent);
+        QPainter painter{&pixmap};
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(QColor(255, 255, 255, 90), 1));
+        painter.setBrush(color);
+        painter.drawEllipse(QRectF(1.5, 1.5, 13, 13));
+        return QIcon{pixmap};
+    };
+
+    // Theme: CheezyEmu's, or the classic ones (build 11's default was Dark Colorful).
+    QMenu* const theme_menu = menu->addMenu(tr("Theme"));
+    auto* const themes = new QActionGroup(theme_menu);
+    struct ThemeChoice {
+        QString name;
+        const char* key;
+    };
+    for (const ThemeChoice& choice : {
+             ThemeChoice{tr("CheezyEmu"), "cheezy"},
+             ThemeChoice{tr("Classic (Dark Colorful, the old look)"), "colorful_dark"},
+             ThemeChoice{tr("Classic Midnight Blue"), "colorful_midnight_blue"},
+             ThemeChoice{tr("System (follows your desktop)"), "default"},
+         }) {
+        QAction* const action = theme_menu->addAction(choice.name, [this, key = choice.key] {
+            UISettings::values.theme = key;
+            ApplyCustomization();
+        });
+        action->setCheckable(true);
+        action->setChecked(UISettings::values.theme == choice.key);
+        themes->addAction(action);
+    }
+    const bool cheezy = UISettings::values.theme == "cheezy";
+    menu->addSeparator();
+
+    // A colour: presets, and Custom... (a colour wheel).
+    struct Swatch {
+        QString name;
+        QColor color;
+    };
+    const auto colour_menu = [&](const QString& title, Setting<std::string>& setting,
+                                 const QColor& theme_default, const std::vector<Swatch>& presets) {
+        QMenu* const sub = menu->addMenu(title);
+        sub->setEnabled(cheezy);
+        if (!cheezy) {
+            sub->setToolTip(tr("For the CheezyEmu theme"));
+        }
+        const QColor current = setting.GetValue().empty()
+                                   ? theme_default
+                                   : QColor(QString::fromStdString(setting.GetValue()));
+        auto* const group = new QActionGroup(sub);
+        bool matched = false;
+        for (const Swatch& preset : presets) {
+            QAction* const action =
+                sub->addAction(swatch(preset.color), preset.name, [this, &setting, preset, theme_default] {
+                    setting = preset.color == theme_default
+                                  ? std::string{}
+                                  : preset.color.name(QColor::HexRgb).toStdString();
+                    ApplyCustomization();
+                });
+            action->setCheckable(true);
+            const bool is_current = preset.color == current;
+            matched = matched || is_current;
+            action->setChecked(is_current);
+            group->addAction(action);
+        }
+        sub->addSeparator();
+        QAction* const custom = sub->addAction(
+            swatch(matched ? QColor(Qt::transparent) : current), tr("Custom..."),
+            [this, &setting, current, title] {
+                const QColor chosen = QColorDialog::getColor(current, this, title);
+                if (chosen.isValid()) {
+                    setting = chosen.name(QColor::HexRgb).toStdString();
+                    ApplyCustomization();
+                }
+            });
+        custom->setCheckable(true);
+        custom->setChecked(!matched);
+        group->addAction(custom);
+    };
+    colour_menu(tr("Accent Colour"), UISettings::values.theme_accent, CheezyTheme::DefaultAccent,
+                {
+                    {tr("Cheese (default)"), CheezyTheme::DefaultAccent},
+                    {tr("Tangerine"), QColor(0xFF, 0x8A, 0x3D)},
+                    {tr("Strawberry"), QColor(0xFF, 0x4F, 0x6D)},
+                    {tr("Bubblegum"), QColor(0xFF, 0x6F, 0xCF)},
+                    {tr("Grape"), QColor(0xA9, 0x7C, 0xFF)},
+                    {tr("Ocean"), QColor(0x3D, 0xA5, 0xFF)},
+                    {tr("Mint"), QColor(0x3D, 0xE8, 0xB0)},
+                    {tr("Lime"), QColor(0x9B, 0xE8, 0x3D)},
+                    {tr("Snow"), QColor(0xE8, 0xE8, 0xE8)},
+                });
+    colour_menu(tr("Background Colour"), UISettings::values.theme_background,
+                CheezyTheme::DefaultBackground,
+                {
+                    {tr("Warm Charcoal (default)"), CheezyTheme::DefaultBackground},
+                    {tr("Cool Slate"), QColor(0x1B, 0x20, 0x26)},
+                    {tr("Deep Blue"), QColor(0x12, 0x1A, 0x2A)},
+                    {tr("Forest"), QColor(0x14, 0x20, 0x1A)},
+                    {tr("Plum"), QColor(0x22, 0x14, 0x2A)},
+                    {tr("Midnight Black"), QColor(0x16, 0x16, 0x16)},
+                });
+
+    // Button shape.
+    QMenu* const shape_menu = menu->addMenu(tr("Button Shape"));
+    shape_menu->setEnabled(cheezy);
+    auto* const shapes = new QActionGroup(shape_menu);
+    const u32 current_shape = UISettings::values.theme_shape.GetValue();
+    for (const auto& [value, name] : std::initializer_list<std::pair<u32, QString>>{
+             {0, tr("Rounded Pills (default)")}, {1, tr("Soft Corners")}, {2, tr("Square")}}) {
+        QAction* const action = shape_menu->addAction(name, [this, shape = value] {
+            UISettings::values.theme_shape = shape;
+            ApplyCustomization();
+        });
+        action->setCheckable(true);
+        action->setChecked(current_shape == value);
+        shapes->addAction(action);
+    }
+
+    menu->addSeparator();
+    menu->addAction(tr("Reset to Defaults"), [this] {
+        UISettings::values.theme = "cheezy";
+        UISettings::values.theme_accent = std::string{};
+        UISettings::values.theme_background = std::string{};
+        UISettings::values.theme_shape = 0;
+        ApplyCustomization();
+    });
+}
+
 void MainWindow::ConnectMenuEvents() {
+    SetupCustomizeMenu();
     const auto connect_menu = [&]<typename Fn>(QAction* action, const Fn& event_fn) {
         connect(action, &QAction::triggered, this, event_fn);
         // Add actions to this window so that hiding menus in fullscreen won't disable them
@@ -6328,8 +6483,18 @@ void MainWindow::UpdateUITheme() {
     QFile f(theme_uri);
     if (f.open(QFile::ReadOnly | QFile::Text)) {
         QTextStream ts(&f);
-        qApp->setStyleSheet(ts.readAll());
-        setStyleSheet(ts.readAll());
+        // The Customize menu's colours and button shape (CheezyEmu theme only).
+        CheezyTheme::Configure(
+            QColor(QString::fromStdString(UISettings::values.theme_accent.GetValue())),
+            QColor(QString::fromStdString(UISettings::values.theme_background.GetValue())),
+            static_cast<CheezyTheme::Shape>(
+                (std::min)(UISettings::values.theme_shape.GetValue(), 2U)));
+        QString stylesheet = ts.readAll();
+        if (current_theme == QStringLiteral("cheezy")) {
+            stylesheet = CheezyTheme::Transform(stylesheet);
+        }
+        qApp->setStyleSheet(stylesheet);
+        setStyleSheet(QString{});
     } else {
         LOG_ERROR(Frontend, "Unable to set style \"{}\", stylesheet file not found",
                   UISettings::values.theme);

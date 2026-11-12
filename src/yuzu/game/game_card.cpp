@@ -4,14 +4,15 @@
 #include <QPainter>
 #include <QPainterPath>
 #include "game_card.h"
+#include "yuzu/util/cheezy_theme.h"
 #include "qt_common/config/uisettings.h"
 #include "qt_common/game_list/game_list_p.h"
 
 namespace {
 // CheezyEmu's colours (dist/qt_themes/cheezy/style.qss).
-const QColor Cheese{0xFF, 0xC8, 0x3D};
-const QColor CheeseDeep{0xE8, 0x9E, 0x10};
-const QColor Cream{0xFF, 0xF4, 0xDA};
+const QColor CheeseBase{0xFF, 0xC8, 0x3D};
+const QColor CheeseDeepBase{0xE8, 0x9E, 0x10};
+const QColor CreamBase{0xFF, 0xF4, 0xDA};
 /// How far the home tiles sit in from their cells' centre (room for the first one's glow).
 constexpr int HomeInset = 28;
 } // Anonymous namespace
@@ -45,11 +46,11 @@ void GameCard::paint(QPainter* painter, const QStyleOptionViewItem& option,
     QPen borderPen{borderColor, 1};
     if (option.state & QStyle::State_Selected) {
         backgroundColor = backgroundColor.lighter(125);
-        borderPen = QPen(Cheese, 3);
-        textColor = Cream;
+        borderPen = QPen(CheezyTheme::Recolor(CheeseBase), 3);
+        textColor = CheezyTheme::Recolor(CreamBase);
     } else if (option.state & QStyle::State_MouseOver) {
         backgroundColor = backgroundColor.lighter(120);
-        borderPen = QPen(Cheese.darker(130), 1);
+        borderPen = QPen(CheezyTheme::Recolor(CheeseBase).darker(130), 1);
     }
 
     painter->setBrush(backgroundColor);
@@ -133,7 +134,7 @@ void GameCard::PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& opti
     // The selected tile glows cheese.
     if (selected) {
         for (int i = 8; i >= 1; --i) {
-            QColor glow = Cheese;
+            QColor glow = CheezyTheme::Recolor(CheeseBase);
             glow.setAlpha(static_cast<int>((6 + (8 - i) * 4) * m_lift));
             painter->setPen(QPen(glow, 2));
             painter->setBrush(Qt::NoBrush);
@@ -176,14 +177,14 @@ void GameCard::PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& opti
         painter->drawPixmap(tile_rect, scaled, source);
     } else {
         QLinearGradient fill{tile_rect.topLeft(), tile_rect.bottomRight()};
-        fill.setColorAt(0, Cheese);
-        fill.setColorAt(1, CheeseDeep);
+        fill.setColorAt(0, CheezyTheme::Recolor(CheeseBase));
+        fill.setColorAt(1, CheezyTheme::Recolor(CheeseDeepBase));
         painter->fillRect(tile_rect, fill);
         QFont font = option.font;
         font.setBold(true);
         font.setPixelSize(tile_rect.height() / 4);
         painter->setFont(font);
-        painter->setPen(QColor(0x3A, 0x26, 0x00));
+        painter->setPen(CheezyTheme::Recolor(QColor(0x3A, 0x26, 0x00)));
         painter->drawText(tile_rect, Qt::AlignCenter, title.left(2).toUpper());
     }
     if (!selected) {
@@ -195,11 +196,11 @@ void GameCard::PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& opti
     // Outline: thick cheese when selected, a soft cream line on hover.
     painter->setBrush(Qt::NoBrush);
     if (selected) {
-        painter->setPen(QPen(Cheese, std::max(3, tile / 70)));
+        painter->setPen(QPen(CheezyTheme::Recolor(CheeseBase), std::max(3, tile / 70)));
     } else if (hovered) {
-        painter->setPen(QPen(QColor(0xFF, 0xF4, 0xDA, 170), 2));
+        painter->setPen(QPen(CheezyTheme::Recolor(QColor(0xFF, 0xF4, 0xDA, 170)), 2));
     } else {
-        painter->setPen(QPen(QColor(0xFF, 0xFF, 0xFF, 28), 1));
+        painter->setPen(QPen(CheezyTheme::Recolor(QColor(0xFF, 0xFF, 0xFF, 28)), 1));
     }
     painter->drawRoundedRect(QRectF(tile_rect), radius, radius);
 
@@ -216,9 +217,9 @@ void GameCard::PaintHomeTile(QPainter* painter, const QStyleOptionViewItem& opti
         const QRect pill{tile_rect.center().x() - text_width / 2 - 14, tile_rect.bottom() + 18,
                          text_width + 28, metrics.height() + 10};
         painter->setPen(Qt::NoPen);
-        painter->setBrush(QColor(0x2A, 0x22, 0x14, 230));
+        painter->setBrush(CheezyTheme::Recolor(QColor(0x2A, 0x22, 0x14, 230)));
         painter->drawRoundedRect(QRectF(pill), pill.height() / 2.0, pill.height() / 2.0);
-        painter->setPen(Cream);
+        painter->setPen(CheezyTheme::Recolor(CreamBase));
         painter->drawText(pill, Qt::AlignCenter, shown);
     }
     painter->restore();
