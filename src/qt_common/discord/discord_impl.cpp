@@ -11,6 +11,7 @@
 
 #include <boost/algorithm/string/replace.hpp>
 #include "common/httplib.h"
+#include "common/net/ca_certificates.h"
 
 #include <discord_rpc.h>
 #include <fmt/format.h>
@@ -22,10 +23,6 @@
 #include "core/loader/loader.h"
 
 #include "discord_impl.h"
-
-#ifdef YUZU_BUNDLED_OPENSSL
-#include <openssl/cert.h>
-#endif
 
 namespace DiscordRPC {
 
@@ -160,9 +157,7 @@ void DiscordImpl::Update() {
                 client.set_connection_timeout(3);
                 client.set_read_timeout(3);
                 client.set_follow_location(true);
-#ifdef YUZU_BUNDLED_OPENSSL
-                client.load_ca_cert_store(kCert, sizeof(kCert));
-#endif
+                Common::Net::ConfigureCaCertificates(client);
                 httplib::Request request{
                     .method = "HEAD",
                     .path = url,

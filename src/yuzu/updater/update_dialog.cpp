@@ -28,10 +28,7 @@
 #include "update_dialog.h"
 
 #include "common/httplib.h"
-
-#ifdef YUZU_BUNDLED_OPENSSL
-#include <openssl/cert.h>
-#endif
+#include "common/net/ca_certificates.h"
 
 #include <QDesktopServices>
 
@@ -336,10 +333,7 @@ bool UpdateDialog::DownloadTo(const QString& filename) {
     client->set_read_timeout(timeout_seconds);
     client->set_write_timeout(timeout_seconds);
     client->set_follow_location(true);
-
-#ifdef YUZU_BUNDLED_OPENSSL
-    client->load_ca_cert_store(kCert, sizeof(kCert));
-#endif
+    Common::Net::ConfigureCaCertificates(*client);
 
     if (client == nullptr) {
         LOG_ERROR(Frontend, "Invalid URL {}{}", m_asset.url, m_asset.path);
