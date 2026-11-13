@@ -8,6 +8,7 @@ A short guide for players:
   4. AMD frame generation
   5. If something looks wrong
   6. Other switches
+  7. HDR
 
 What changed in each build, and who made it, is in CHEEZYEMU.md (open it with Notepad).
 
@@ -158,9 +159,10 @@ Low frame rate? (FSR 4 on RX 6000 / RX 7000)
 -----------------------
 
 Frame generation shows one extra, generated frame after each real one: 30 FPS on screen
-becomes 60. It is AMD's FSR frame generation, the same as in PC games. It works on any GPU on
-Windows: FSR 4 frame generation on Radeon RX 9000, FSR 3.1 frame generation on every other GPU.
-Not on Linux or macOS.
+becomes 60. It is AMD's FSR frame generation, the same as in PC games. On Windows it works on
+any GPU: FSR 4 frame generation on Radeon RX 9000, FSR 3.1 frame generation on every other GPU.
+On Linux and macOS (new in build 12) the FSR 3 frame generation built into CheezyEmu runs
+instead, from the same game data.
 
 Turning it on
   1. Emulation > Configure > Graphics: turn on "Enable Frame Generation".
@@ -175,18 +177,16 @@ Turning it on
     (RESTART)       close and reopen CheezyEmu after changing the Frame Generation Type
     (OOT ONLY)      it works in Ocarina of Time only
     (WAITING)       menus, cutscenes and loading screens have no motion data (normal)
-    (WINDOWS ONLY)  AMD frame generation doesn't run on Linux or macOS
   Hover over it for the full reason. Check "Frame Generation Type" too: "Optical Flow
   Interpolation (built-in)" is a different frame generator, not AMD's.
 
 The FPS counter and a locked 60
-  The number on screen is always the real frame rate x 2. With "FPS Unlock (built-in)" (or
-  another FPS mod) on, the game runs above 30, so you see more than 60 (for example 45 real =
-  90). FPS Limit and Target Frame Rate cap the game's own frames, not AMD's generated ones.
+  Since build 12 the frame rate limit counts every frame shown, generated ones included: a 60
+  limit gives 30 real frames + 30 generated = 60 on screen. Menus and loading screens have no
+  motion data, so nothing is generated there and they run at the full 60 on their own.
   For a steady 60 on screen:
-    1. Turn the "FPS Unlock (built-in)" add-on OFF (the game runs at its normal 30).
-    2. Set "Frame rate limit (Switch 2)" to 60 Hz.
-    3. Set VSync Mode to FIFO.
+    1. Set "Frame rate limit (Switch 2)" (or FPS Limit / Target Frame Rate) to 60.
+    2. Set VSync Mode to FIFO.
 
 FSR 4 or FSR 3.1 frame generation
   "AMD Frame Generation Version" (under the frame generation options, restart CheezyEmu after
@@ -201,8 +201,7 @@ Good to know
     Ocarina. In other games the frame generator pauses (nothing generated).
   - The HUD is kept still (hearts, items, minimap), so it doesn't smear when you turn the
     camera.
-  - Don't cap the game at 30 with FPS Limit: the generated frames then land at the wrong time
-    and it looks like 30. Turn FPS Unlock off instead (see above).
+  - The limit is for what you see: set it to 60 (or 90, 120) for 30 (45, 60) real frames.
   - Fast movement can look soft. The generator guesses the in-between frame; the higher the
     real frame rate, the better it looks. Below about 30 real FPS, fast motion (Link running,
     swaying grass) smears a little.
@@ -221,6 +220,12 @@ Seeing what it does (for bug reports)
 ---------------------------
 
 Ocarina of Time's own settings (right-click the game > Properties) override the global ones.
+
+Capture Glitch (new in build 12): when something looks wrong, press Ctrl+G (or Home + D-pad
+left on a controller), also under Tools > Capture Glitch. It saves what is on screen and every
+picture the game drew for that frame to %APPDATA%\cheezyemu\log\glitch\<date and time>\
+(a few seconds to finish writing). Zip that folder and send it with your log: it shows exactly
+which step of the frame went wrong.
 
   - Frame generation or FSR doesn't seem to work: look in the log for "AMD FSR: upscaler ...
     running" and "AMD frame generation: generating frames". Send the log
@@ -258,6 +263,11 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
     the cause by itself. On a desktop Radeon on Windows, turn on
     EDEN_NX2_FORCE_MESH_FALLBACK=1 (below). The first start after that builds shaders for
     several minutes.
+  - Dark or blocky boxes on water and walls around Link, Zoras or broken pots: fixed in build 12.
+  - Objects or flowers vanishing for a frame (popping, also when swinging the sword): fixed in
+    build 12.
+  - The first start of build 12 builds a lot of shaders again (the water and lighting fixes
+    change about 330 of them): expect extra hitching the first time you visit each area.
   - A white flash across the whole picture, or huge glowing triangles, after playing a while:
     restarting the game clears it. The cause is known and a fix is being worked on. To help,
     set EDEN_NX2_FLASH_WATCH to a folder (below), play until it happens, then send that folder
@@ -291,3 +301,21 @@ Ocarina of Time's own settings (right-click the game > Properties) override the 
   EDEN_NX2_SEC_RESERVE=0            Commits all of the console's memory at boot again (the
                                     build 8 behaviour), if build 9's lower memory use causes
                                     trouble
+
+
+7. HDR
+------
+
+New in build 12. If your monitor shows HDR, CheezyEmu can show the game's own HDR picture.
+  1. Turn on HDR in Windows (Settings > System > Display > Use HDR).
+  2. Emulation > Configure > Graphics: set "HDR output" to Auto (HDR whenever Windows shows
+     this monitor in HDR) or On.
+  3. "HDR format": HDR10 (10-bit) normally; scRGB (16-bit) if you see banding.
+
+Good to know
+  - It is Off by default. With no HDR monitor (or Windows HDR off) the picture stays SDR,
+    whatever the setting.
+  - Frame generation pauses while HDR is on.
+  - Auto needs Windows to tell whether the monitor is in HDR; on Linux and macOS use On (it
+    falls back to SDR where the display doesn't offer HDR).
+  - HDR Peak Luminance and HDR Reference White: 0 follows the monitor.

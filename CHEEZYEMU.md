@@ -8,15 +8,43 @@ upscaling, AMD frame generation, and the community's AMD performance work.
 
 ## New in build 12
 
-Not released yet: this section grows as the work lands.
-
+- **Dark boxes on water and walls are gone.** Blocky dark (or clear) patches with hard edges
+  appeared on water, mist and rock around Link, Zoras standing above the water and broken pots,
+  and came and went. Each light near them reads its character's shadow map from a table, per
+  pixel, which CheezyEmu couldn't follow, so it compared against an arbitrary texture across the
+  light's screen tiles. Upstream's fix ([zortos293/Lichii#1485](https://github.com/zortos293/Lichii/pull/1485))
+  is in: every light's shadow map is bound as an array the game's shader picks from.
+- **Objects and flowers no longer vanish for a frame** (popping, also on sword swings). The
+  game's occlusion count ran just past a limit (1,024 slots) several times a minute and was
+  thrown away each time, so occlusion-tested objects blinked. The limit is now 8,192
+  ([zortos293/Lichii#1428](https://github.com/zortos293/Lichii/issues/1428)).
+- **HDR output** ([zortos293/Lichii#1326](https://github.com/zortos293/Lichii/pull/1326)): the
+  game's own HDR picture on an HDR monitor, Off by default (Graphics > HDR output; README.txt, section 7). Frame
+  generation pauses while HDR is on.
+- **Frame generation on Linux and macOS**: the FSR 3 frame generation built into CheezyEmu runs
+  where AMD's Windows runtime isn't available.
+- **The frame rate limit counts every frame shown**: a 60 limit with frame generation is 30 real
+  + 30 generated. **Menus and loading screens run at the full limit** (60, not 30): nothing is
+  generated there, so they get all of it, on Windows, Linux and macOS.
+- **The HUD no longer jitters** with the built-in frame generation.
+- **Crash after a while on 6 GB cards** (out of memory, then an exception): build 12 had taken
+  AMD's "overflow video memory into system memory" option from upstream, which filled Windows'
+  commit limit; it is off again.
+- **Capture Glitch** (Ctrl+G, or Home + D-pad left): saves the screen and every picture of that
+  frame to log/glitch, for bug reports (README.txt, section 5).
+- **Home screen**: the game's own music plays (a random song, or its title theme: Configure >
+  General > UI), a new start chime, a volume slider next to the speaker (which mutes all menu
+  sounds), and a short quote under the greeting.
+- **Lichii build 160 fixes** brought in (19 changes, among them Duskbloods network test support,
+  fewer shader compile stalls and a statically linked NX converter).
+- **First start takes longer once**: the water and lighting fixes change about 330 of the game's
+  shaders, so their pipelines are built again the first time each area is seen.
 - **AMD FSR on Linux and macOS (new, needs testing there).** Ocarina's FSR path was only
   compiled into Windows builds (the status bar said "FSR (WINDOWS ONLY)"). It is in every desktop
   build now. Where AMD's own runtime is not there, which is every system but Windows, the FSR 3.1
   passes built into CheezyEmu do the upscale and anti-aliasing from the same inputs (the game's
   colour, depth and the camera and character motion). On Windows nothing changes: AMD's runtime
-  (FSR 4 or 3.1) is still used, and the built-in one takes over when that cannot start. Frame
-  generation stays Windows only. Tested on Windows by forcing it (`EDEN_NX2_FSR_BUILTIN=1`):
+  (FSR 4 or 3.1) is still used, and the built-in one takes over when that cannot start. Tested on Windows by forcing it (`EDEN_NX2_FSR_BUILTIN=1`):
   standing and moving in Hyrule Field, 55 fps at Native AA on an RX 6750 XT. Not yet run on Linux.
 - **Ghosting on Link's arms and legs (walking, jumping, crawling) with FSR and frame
   generation.** His bare forearms, hands and thighs smeared or tore whenever he moved against
