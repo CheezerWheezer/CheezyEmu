@@ -4,6 +4,7 @@
 #ifdef EGLANTINE_STREAMLINE
 
 #include "common/httplib.h"
+#include "common/net/ca_certificates.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -37,10 +38,6 @@
 #include "common/logging.h"
 #include "video_core/vulkan_common/streamline.h"
 #include "yuzu/configuration/nvidia_dlss_panel.h"
-
-#ifdef YUZU_BUNDLED_OPENSSL
-#include <openssl/cert.h>
-#endif
 
 namespace {
 
@@ -262,9 +259,7 @@ private:
         client->set_connection_timeout(30);
         client->set_read_timeout(30);
         client->set_write_timeout(30);
-#ifdef YUZU_BUNDLED_OPENSSL
-        client->load_ca_cert_store(kCert, sizeof(kCert));
-#endif
+        Common::Net::ConfigureCaCertificates(*client);
         return client;
     }
 

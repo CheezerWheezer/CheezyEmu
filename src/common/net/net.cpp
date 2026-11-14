@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <filesystem>
-#include <system_error>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -16,10 +14,7 @@
 #include "common/logging.h"
 
 #include "common/httplib.h"
-
-#ifdef YUZU_BUNDLED_OPENSSL
-#include <openssl/cert.h>
-#endif
+#include "common/net/ca_certificates.h"
 
 namespace Common::Net {
 
@@ -213,24 +208,7 @@ RequestResult Fetch(const std::string& url, const std::string& path) {
         client->set_read_timeout(timeout_seconds);
         client->set_write_timeout(timeout_seconds);
 
-#ifdef YUZU_BUNDLED_OPENSSL
-        client->load_ca_cert_store(kCert, sizeof(kCert));
-#elif !defined(_WIN32)
-        // An AppImage or a portable build carries an OpenSSL whose default certificate folder is
-        // the build machine's, which the player's system may not have: the request then fails
-        // before it is sent (the update check logged "returned null" on SteamOS). Use the
-        // system's own certificate bundle where one of the usual places has it.
-        for (const char* const bundle : {"/etc/ssl/certs/ca-certificates.crt",
-                                         "/etc/pki/tls/certs/ca-bundle.crt",
-                                         "/etc/ssl/ca-bundle.pem", "/etc/ssl/cert.pem",
-                                         "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"}) {
-            std::error_code error;
-            if (std::filesystem::exists(bundle, error)) {
-                client->set_ca_cert_path(bundle);
-                break;
-            }
-        }
-#endif
+        ConfigureCaCertificates(*client);
 
         if (client == nullptr) {
             LOG_ERROR(Common, "Invalid URL {}{}", url, path);
